@@ -188,10 +188,13 @@ class ExamApp:
         self.reviewed_add_path = tk.StringVar()
         self.add_questions_filter_var = tk.StringVar(value="todas")
         self.revised_xlsx_output_dir_var = tk.StringVar()
-        # CAMBIO: Se añaden las variables que faltaban para la pestaña de gestión.
         self.revised_docx_path_var = tk.StringVar()
         self.new_xlsx_filename_var = tk.StringVar()
         self.duplicate_check_var = tk.StringVar(value="pregunta_unica")
+
+        # Añadimos variables para gestionar el tooltip de la tabla de modelos
+        self.tree_tooltip = None
+        self.last_hovered_cell = (None, None) # Almacenará (row_id, col_id)
 
         self.create_question_tab()
         self.create_manage_bank_tab()
@@ -688,17 +691,26 @@ class ExamApp:
         models_table_frame = ttk.Frame(model_api_frame)
         models_table_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='nsew')
 
-        cols = ('name', 'display_name', 'description')
-        self.models_tree = ttk.Treeview(models_table_frame, columns=cols, show='headings', height=5)
+        # Ampliamos las columnas a mostrar
+        cols = ('name', 'display_name', 'version', 'input_tokens', 'output_tokens', 'methods', 'description')
+        self.models_tree = ttk.Treeview(models_table_frame, columns=cols, show='headings', height=6)
 
         # Definir encabezados
         self.models_tree.heading('name', text='Nombre Técnico')
         self.models_tree.heading('display_name', text='Nombre')
+        self.models_tree.heading('version', text='Versión')
+        self.models_tree.heading('input_tokens', text='Tokens Entrada')
+        self.models_tree.heading('output_tokens', text='Tokens Salida')
+        self.models_tree.heading('methods', text='Métodos Soportados')
         self.models_tree.heading('description', text='Descripción')
 
-        # Definir anchos de columna
-        self.models_tree.column('name', width=150, stretch=tk.NO)
+        # Definir anchos y alineación de columna
+        self.models_tree.column('name', width=180, stretch=tk.NO)
         self.models_tree.column('display_name', width=150, stretch=tk.NO)
+        self.models_tree.column('version', width=60, stretch=tk.NO, anchor='center')
+        self.models_tree.column('input_tokens', width=100, stretch=tk.NO, anchor='e')  # 'e' para alinear a la derecha (este)
+        self.models_tree.column('output_tokens', width=100, stretch=tk.NO, anchor='e')
+        self.models_tree.column('methods', width=200)
         self.models_tree.column('description', width=400)
 
         # Añadir scrollbars
@@ -715,6 +727,9 @@ class ExamApp:
 
         # Vincular el evento de selección
         self.models_tree.bind('<<TreeviewSelect>>', self.on_model_select)
+        # Vinculamos los eventos de movimiento y salida del ratón para el tooltip
+        self.models_tree.bind('<Motion>', self.on_treeview_motion)
+        self.models_tree.bind('<Leave>', self.hide_tree_tooltip)
 
         model_api_frame.columnconfigure(1, weight=1)
         model_api_frame.rowconfigure(1, weight=1)
@@ -778,10 +793,18 @@ class ExamApp:
                 self.update_status("No se encontraron modelos compatibles.")
                 return
 
+            # Insertamos todas las nuevas columnas de datos
             for model in available_models:
+                # Convertimos la lista de métodos a una cadena de texto legible
+                methods_str = ', '.join(model.supported_generation_methods)
+
                 self.models_tree.insert("", "end", values=(
                     model.name,
                     model.display_name,
+                    model.version,
+                    model.input_token_limit,
+                    model.output_token_limit,
+                    methods_str,
                     model.description.replace('\n', ' ')  # Evitar saltos de línea en la descripción
                 ))
 
@@ -808,6 +831,74 @@ class ExamApp:
 
             self.selected_model_var.set(technical_name)
             self.update_status(f"Modelo seleccionado: {technical_name}")
+
+    def on_treeview_motion(self, event):
+        """
+        Shows a tooltip with the full cell text if the mouse hovers over a cell
+        where the content is wider than the column.
+        """
+        # Identificar la fila y columna bajo el cursor
+        row_id = self.models_tree.identify_row(event.y)
+        col_id = self.models_tree.identify_column(event.x)
+
+        # Si no estamos sobre una celda válida, ocultar tooltip y salir
+        if not row_id or not col_id:
+            self.hide_tree_tooltip()
+            return
+
+        # Evitar parpadeo si seguimos en la misma celda
+        if (row_id, col_id) == self.last_hovered_cell:
+            return
+
+        # Si nos movemos a una nueva celda, ocultar el tooltip anterior
+        self.hide_tree_tooltip()
+        self.last_hovered_cell = (row_id, col_id)
+
+        try:
+            # Convertir el identificador de columna (ej. '#3') a un índice numérico (ej. 2)
+            col_index = int(col_id.replace('#', '')) - 1
+            if col_index < 0: return
+
+            # Obtener el texto completo de la celda
+            cell_text = self.models_tree.item(row_id, 'values')[col_index]
+
+            # Comprobar si el texto es más ancho que la columna
+            col_width = self.models_tree.column(col_id, 'width')
+
+            ### CAMBIO ###
+            # Usamos la fuente por defecto de la aplicación para medir el ancho del texto
+            from tkinter import font
+            f = font.Font()  # Obtiene la fuente por defecto de la aplicación
+            text_width = f.measure(str(cell_text))
+
+            # Solo mostrar el tooltip si el texto es más largo que la columna
+            if text_width > col_width:
+                # Crear la ventana del tooltip
+                self.tree_tooltip = tw = tk.Toplevel(self.root)
+                tw.wm_overrideredirect(True)  # Sin bordes ni barra de título
+
+                # Posicionar el tooltip cerca del cursor
+                x = self.root.winfo_pointerx() + 15
+                y = self.root.winfo_pointery() + 10
+                tw.wm_geometry(f"+{x}+{y}")
+
+                # Añadir una etiqueta con el texto completo
+                label = ttk.Label(tw, text=cell_text, justify='left',
+                                  background="#FFFFE0", relief='solid', borderwidth=1,
+                                  wraplength=500)  # wraplength para descripciones muy largas
+                label.pack(ipadx=2, ipady=2)
+
+        except (ValueError, IndexError):
+            # Ocurre si el cursor está sobre un área vacía o hay un error al obtener datos
+            pass
+
+    def hide_tree_tooltip(self, event=None):
+        """Hides the treeview tooltip."""
+        if self.tree_tooltip:
+            self.tree_tooltip.destroy()
+            self.tree_tooltip = None
+        # Reseteamos la última celda para que el tooltip se vuelva a mostrar si volvemos a entrar
+        self.last_hovered_cell = (None, None)
 
     def load_api_key(self) -> Optional[str]:
         """
