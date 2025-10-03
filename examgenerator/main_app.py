@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import tkinter as tk
+import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import pandas as pd
 from examgenerator.question_generator import QuestionGenerator
@@ -106,7 +107,18 @@ class ExamApp:
         main_title_label = ttk.Label(self.root, text=f"ExamGenerator v{version}", font=title_font)
         main_title_label.pack(pady=(10, 5), padx=10, anchor='w')
 
-        self.api_key = self.load_api_key()
+        # Lógica de carga de API Key actualizada con GEMINI_API_KEY
+        initial_status = "Aplicación iniciada."
+        # 1. Intentar cargar desde la variable de entorno (máxima prioridad)
+        env_api_key = os.getenv('GEMINI_API_KEY') # <--- NOMBRE CORREGIDO
+        if env_api_key:
+            self.api_key = env_api_key
+            initial_status = "Clave API cargada desde la variable de entorno GEMINI_API_KEY."
+            print(initial_status)
+        else:
+            # 2. Si no existe, intentar cargar desde config.json (fallback)
+            self.api_key = self.load_api_key()
+
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
 
@@ -189,7 +201,21 @@ class ExamApp:
         self.root.config(menu=menubar)
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Ayuda", menu=help_menu)
+
+        help_menu.add_command(label="Configurar API Key (Ayuda)...", command=self.open_api_key_help)
+        help_menu.add_separator()
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
+
+    def open_api_key_help(self):
+        """Opens the Google AI documentation for setting up API key environment variables."""
+        url = "https://ai.google.dev/gemini-api/docs/api-key?hl=es-419#set-api-env-var"
+        try:
+            webbrowser.open_new_tab(url)
+            self.update_status(f"Abriendo enlace de ayuda en el navegador: {url}")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir el enlace en el navegador.\n\nError: {e}")
+            self.update_status("Error al intentar abrir el enlace de ayuda.")
+
 
     def load_prompt_types(self) -> Dict[str, str]:
         """

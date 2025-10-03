@@ -34,13 +34,14 @@ class QuestionGenerator:
     Generates multiple-choice questions from PDF files using the Gemini model.
     """
 
-    def __init__(self, api_key: str, model_name: str = 'models/gemini-1.5-flash'):
+    def __init__(self, api_key: str, model_name: str):
         """
         Initializes the QuestionGenerator class.
 
         Args:
             api_key (str): The API key for the Gemini model.
-            model_name (str): The name of the Gemini model to use (e.g., 'models/gemini-1.5-flash').
+            model_name (str): The name of the Gemini model to use (e.g., 'models/gemini-1.5-pro').
+                              This is a required argument.
         """
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(model_name)
