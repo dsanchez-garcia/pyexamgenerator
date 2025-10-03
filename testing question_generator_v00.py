@@ -1,12 +1,12 @@
 from examgenerator.question_generator import QuestionGenerator
 import os
 
-my_api_key = os.environ.get("GEMINI_API_KEY")
+# my_api_key = os.environ.get("GEMINI_API_KEY")
 
 
 if __name__ == '__main__':
     # api_key = "my api key"  # Reemplaza con tu API key de Gemini
-    api_key = my_api_key
+    # api_key = my_api_key
 
     # model_name = 'models/gemini-2.5-flash-lite-preview-06-17'
     # model_name = 'models/gemini-2.5-pro'
@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
     output = model_name.split('/')[-1]
     generator = QuestionGenerator(
-        api_key=api_key,
+        # api_key=api_key,
         model_name=model_name
     )
     pdf_files = [

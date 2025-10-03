@@ -25,6 +25,7 @@ from docx import Document
 import os
 import json
 from ttkwidgets.frames import ScrolledFrame
+import google.generativeai as genai
 
 try:
     # Para Python 3.8+
@@ -151,12 +152,12 @@ class ExamApp:
         self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else "TU_CLAVE_API")
         self.gen_questions_output_dir_var = tk.StringVar()
 
-        self.gemini_models = {
-            "gemini-1.5-flash": "models/gemini-1.5-flash",
-            "gemini-1.5-pro": "models/gemini-1.5-pro",
-            "gemini-1.0-pro": "models/gemini-1.0-pro"
-        }
-        self.selected_model_var = tk.StringVar(value='gemini-1.5-flash')
+        # self.gemini_models = {
+        #     "gemini-1.5-flash": "models/gemini-1.5-flash",
+        #     "gemini-1.5-pro": "models/gemini-1.5-pro",
+        #     "gemini-1.0-pro": "models/gemini-1.0-pro"
+        # }
+        self.selected_model_var = tk.StringVar(value='')
 
         self.existing_bank_for_gen_path = tk.StringVar()
         self.process_by_pages_var = tk.BooleanVar(value=False)
@@ -634,33 +635,63 @@ class ExamApp:
         enunciados_resp_radio.pack(anchor='w', padx=10, pady=2)
         ToolTip(enunciados_resp_radio, "En el prompt, las preguntas de ejemplo mostrarán su enunciado y sus opciones de respuesta.")
 
-        # Row 6: Model and API Key
-        model_api_frame = ttk.Frame(config_frame)
-        model_api_frame.grid(row=6, column=0, columnspan=3, padx=0, pady=5, sticky='ew')
+        # Row 6: Model and API Key - Ahora con una tabla
+        model_api_frame = ttk.LabelFrame(config_frame, text="Modelo y Clave API")
+        model_api_frame.grid(row=6, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
 
-        model_label = ttk.Label(model_api_frame, text="Modelo de Gemini:")
-        model_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(model_label, "Seleccione el modelo de IA a utilizar para la generación.")
-        model_combo = ttk.Combobox(
-            model_api_frame,
-            textvariable=self.selected_model_var,
-            values=list(self.gemini_models.keys()),
-            state='readonly'
-        )
-        model_combo.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ToolTip(model_combo, "Seleccione un modelo o escriba uno personalizado. En caso de escribir uno personalizado, se debe escribir únicamente el nombre del modelo, sin 'models/' (ej. gemini-1.5-pro-001).")
-
+        # API Key sigue igual
         api_key_label = ttk.Label(model_api_frame, text="Clave API de Gemini:")
-        api_key_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        api_key_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
         ToolTip(api_key_label, "Su clave personal de API para Google Gemini.")
         self.api_key_entry = ttk.Entry(model_api_frame, width=40, textvariable=self.api_key_var, show="*")
-        self.api_key_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        self.api_key_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(self.api_key_entry, "Introduzca aquí su clave de API.")
-        save_api_key_button = ttk.Button(model_api_frame, text="Guardar Clave", command=self.save_current_api_key)
-        save_api_key_button.grid(row=1, column=2, padx=5, pady=5)
+
+        api_buttons_frame = ttk.Frame(model_api_frame)
+        api_buttons_frame.grid(row=0, column=2, padx=5, pady=5, sticky='w')
+
+        save_api_key_button = ttk.Button(api_buttons_frame, text="Guardar Clave", command=self.save_current_api_key)
+        save_api_key_button.pack(side='left', padx=2)
         ToolTip(save_api_key_button, text="Guarda la clave de API actual en la configuración.")
 
+        load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
+        load_models_button.pack(side='left', padx=2)
+        ToolTip(load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
+
+        # Nueva tabla para los modelos
+        models_table_frame = ttk.Frame(model_api_frame)
+        models_table_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='nsew')
+
+        cols = ('name', 'display_name', 'description')
+        self.models_tree = ttk.Treeview(models_table_frame, columns=cols, show='headings', height=5)
+
+        # Definir encabezados
+        self.models_tree.heading('name', text='Nombre Técnico')
+        self.models_tree.heading('display_name', text='Nombre')
+        self.models_tree.heading('description', text='Descripción')
+
+        # Definir anchos de columna
+        self.models_tree.column('name', width=150, stretch=tk.NO)
+        self.models_tree.column('display_name', width=150, stretch=tk.NO)
+        self.models_tree.column('description', width=400)
+
+        # Añadir scrollbars
+        vsb = ttk.Scrollbar(models_table_frame, orient="vertical", command=self.models_tree.yview)
+        hsb = ttk.Scrollbar(models_table_frame, orient="horizontal", command=self.models_tree.xview)
+        self.models_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        self.models_tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb.grid(row=1, column=0, sticky='ew')
+
+        models_table_frame.grid_rowconfigure(0, weight=1)
+        models_table_frame.grid_columnconfigure(0, weight=1)
+
+        # Vincular el evento de selección
+        self.models_tree.bind('<<TreeviewSelect>>', self.on_model_select)
+
         model_api_frame.columnconfigure(1, weight=1)
+        model_api_frame.rowconfigure(1, weight=1)
 
         # Row 7: Checkbox to print raw response
         debug_options_frame = ttk.Frame(config_frame)
@@ -690,6 +721,67 @@ class ExamApp:
 
         config_frame.columnconfigure(1, weight=1)
         inner_frame_question.columnconfigure(0, weight=1)
+
+    def populate_models_table(self):
+        """
+        Fetches available Gemini models using the provided API key and populates the Treeview table.
+        """
+        api_key = self.api_key_var.get()
+        if not api_key or api_key == "TU_CLAVE_API":
+            messagebox.showerror("Error", "Por favor, introduce una clave API de Gemini válida antes de cargar los modelos.")
+            return
+
+        self.update_status("Cargando lista de modelos...")
+        self.root.update_idletasks()
+
+        # Limpiar la tabla antes de llenarla
+        for i in self.models_tree.get_children():
+            self.models_tree.delete(i)
+
+        try:
+            genai.configure(api_key=api_key)
+
+            # Obtenemos todos los modelos y filtramos por los que pueden generar contenido
+            available_models = [
+                m for m in genai.list_models()
+                if 'generateContent' in m.supported_generation_methods
+            ]
+
+            if not available_models:
+                messagebox.showwarning("Sin Modelos", "No se encontraron modelos compatibles con la generación de contenido.")
+                self.update_status("No se encontraron modelos compatibles.")
+                return
+
+            for model in available_models:
+                self.models_tree.insert("", "end", values=(
+                    model.name,
+                    model.display_name,
+                    model.description.replace('\n', ' ')  # Evitar saltos de línea en la descripción
+                ))
+
+            self.update_status(f"Se cargaron {len(available_models)} modelos. Por favor, seleccione uno de la tabla.")
+
+        except Exception as e:
+            messagebox.showerror("Error de API", f"No se pudo obtener la lista de modelos. Verifica tu clave API y conexión a internet.\n\nError: {e}")
+            self.update_status("Error al cargar modelos.")
+
+    # Nueva función para manejar la selección en la tabla
+    def on_model_select(self, event=None):
+        """
+        Handles the selection of a model in the Treeview table.
+        Updates the selected_model_var with the technical name of the chosen model.
+        """
+        selected_items = self.models_tree.selection()
+        if selected_items:
+            # Obtenemos el primer item seleccionado
+            selected_item = selected_items[0]
+            # Obtenemos los valores de la fila seleccionada
+            item_values = self.models_tree.item(selected_item, 'values')
+            # El primer valor es el nombre técnico (ej. 'models/gemini-1.5-pro')
+            technical_name = item_values[0]
+
+            self.selected_model_var.set(technical_name)
+            self.update_status(f"Modelo seleccionado: {technical_name}")
 
     def load_api_key(self) -> Optional[str]:
         """
@@ -793,20 +885,12 @@ class ExamApp:
             return
 
         output_filename = self.output_filename_var.get()
-        user_input_model = self.selected_model_var.get().strip()
 
-        if not user_input_model:
-            messagebox.showerror("Error", "Por favor, selecciona un modelo de Gemini.")
+        # Obtenemos el modelo directamente de la variable que se actualiza con la tabla
+        technical_model_name = self.selected_model_var.get()
+        if not technical_model_name:
+            messagebox.showerror("Error", "Por favor, carga y selecciona un modelo de la tabla.")
             return
-
-        # Always use the 'models/' prefix if not present for models from the list.
-        # For custom models, the user should know if they need it or not.
-        if user_input_model in self.gemini_models:
-            technical_model_name = self.gemini_models[user_input_model]
-        else:
-            # If the user types a custom model, we use it as is.
-            technical_model_name = user_input_model
-            print(f"Usando modelo personalizado (escrito por el usuario): {technical_model_name}")
 
         if not api_key or api_key == "TU_CLAVE_API":
             messagebox.showerror("Error", "Por favor, introduce tu clave API de Gemini.")
