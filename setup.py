@@ -6,7 +6,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
 
 setup(
     name='examgenerator',
-    version='0.1.16',
+    version='0.1.0',
     author='Daniel Sánchez-García',
     author_email='daniel.sanchezgarcia@uca.es',  # Opcional: añade tu email de contacto
     description='Una herramienta de escritorio para generar exámenes desde PDFs usando IA.',

@@ -32,6 +32,8 @@ La forma más cómoda de trabajar es abrir la aplicación directamente en la car
     ```
 ¡Listo! La ventana de la aplicación ExamGenerator debería aparecer en tu pantalla. Al iniciarla de esta forma, cualquier archivo que generes se guardará directamente en esta carpeta.
 
+![](docs/source/_static/gifs/parte1_v00.gif)
+
 ### Parte 2: Generando Preguntas (Pestaña "Generar Preguntas")
 
 Ahora vamos a realizar nuestro ejemplo práctico: generar preguntas de dos temas diferentes, la Ley de Prevención y el Reglamento de los Servicios de Prevención.
@@ -113,6 +115,8 @@ Ya está todo configurado.
 *   **Botón "Generar Preguntas":** Haz clic en este gran botón en la parte inferior.
 *   **¿Qué pasará ahora?:** La aplicación se quedará "pensando" por unos segundos. Cuando termine, aparecerá una ventana emergente confirmando que las preguntas se han generado con éxito.
 
+![](docs/source/_static/gifs/parte2-3_v01_parte2.gif)
+
 ### Parte 3: Revisa tus Resultados
 
 Ve a tu carpeta de trabajo. Dentro, encontrarás dos archivos nuevos:
@@ -123,3 +127,5 @@ Ve a tu carpeta de trabajo. Dentro, encontrarás dos archivos nuevos:
 **Tu siguiente paso sería leer este archivo de Word, corregir cualquier error que veas, y prepararlo para añadirlo a tu banco de preguntas principal, ¡pero eso lo veremos en el tutorial de la siguiente pestaña!**
 
 ¡Felicidades! Has usado con éxito la inteligencia artificial para automatizar la creación de preguntas de examen a partir de múltiples fuentes.
+
+![](docs/source/_static/gifs/parte2-3_v01_parte3.gif)
