@@ -78,7 +78,7 @@ Aquí personalizas el aspecto visual de tu examen en el archivo de Word.
 *   **Acción para nuestro ejemplo:** Crea una carpeta llamada **`examenes generados`** en tu carpeta de trabajo, y selecciónala.
 *   **Botón "Generar Exámenes":** ¡El momento de la verdad! Haz clic en este botón.
 
-![](docs/source/_static/gifs/parte6_v01.gif)
+![](/_static/gifs/parte6_v01.gif)
 
 ## Parte 7: ¡Tus exámenes están listos!
 
@@ -116,4 +116,4 @@ Además, si abres tu archivo `banco_principal.xlsx`, verás que se ha añadido u
 
 ¡Felicidades! Has completado todo el ciclo: desde múltiples PDFs en bruto hasta un examen multi-tema profesional, listo para entregar en papel y con un sistema de auto-corrección para Moodle que te ahorrará horas de trabajo.
 
-![](docs/source/_static/gifs/parte7_v01.gif)
+![](/_static/gifs/parte7_v01.gif)

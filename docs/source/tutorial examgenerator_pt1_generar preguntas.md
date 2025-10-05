@@ -81,7 +81,7 @@ Ya está todo configurado.
 *   **Botón "Generar Preguntas":** Haz clic en este gran botón en la parte inferior.
 *   **¿Qué pasará ahora?:** La aplicación se quedará "pensando" por unos segundos. Cuando termine, aparecerá una ventana emergente confirmando que las preguntas se han generado con éxito.
 
-![](docs/source/_static/gifs/parte2-3_v01_parte2.gif)
+![](/_static/gifs/parte2-3_v01_parte2.gif)
 
 ## Parte 3: Revisa tus resultados
 
@@ -94,4 +94,4 @@ Ve a tu carpeta de trabajo. Dentro, encontrarás dos archivos nuevos:
 
 ¡Felicidades! Has usado con éxito la inteligencia artificial para automatizar la creación de preguntas de examen a partir de múltiples fuentes.
 
-![](docs/source/_static/gifs/parte2-3_v01_parte3.gif)
+![](/_static/gifs/parte2-3_v01_parte3.gif)

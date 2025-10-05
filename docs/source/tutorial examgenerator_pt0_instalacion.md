@@ -32,5 +32,5 @@ La forma más cómoda de trabajar es abrir la aplicación directamente en la car
     ```
 ¡Listo! La ventana de la aplicación ExamGenerator debería aparecer en tu pantalla. Al iniciarla de esta forma, cualquier archivo que generes se guardará directamente en esta carpeta.
 
-![](docs/source/_static/gifs/parte1_v00.gif)
+![](/_static/gifs/parte1_v00.gif)
 

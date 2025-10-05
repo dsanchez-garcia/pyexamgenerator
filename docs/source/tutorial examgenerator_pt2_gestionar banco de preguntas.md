@@ -17,7 +17,7 @@ Antes de usar la siguiente pestaña, hay un paso vital que ocurre fuera de la ap
 
 Ahora que tenemos nuestro documento de Word revisado y aprobado, estamos listos para volver a ExamGenerator.
 
-![](docs/source/_static/gifs/parte4_v01.gif)
+![](/_static/gifs/parte4_v01.gif)
 
 ## Parte 5: Usando la pestaña "Gestionar Banco de Preguntas"
 
@@ -39,7 +39,7 @@ El programa no puede trabajar directamente con un archivo de Word. Primero, nece
 *   **Botón "Guardar XLSX Revisado":**
     *   **Acción:** Haz clic en él. En un instante, la aplicación leerá tu documento de Word y creará un archivo `preguntas_PRL_varias_aceptadas.xlsx` en tu carpeta de trabajo.
 
-![](docs/source/_static/gifs/parte5_tarea1_v01.gif)
+![](/_static/gifs/parte5_tarea1_v01.gif)
 
 ### Tarea 1.5: Organizar los nombres de los temas
 
@@ -55,7 +55,7 @@ Ten en cuenta que este paso es opcional. Si desde el principio, hubiéramos llam
 
 ¡Perfecto! Ahora tienes un lote de preguntas de alta calidad, revisadas y perfectamente organizadas por temas, listas para ser añadidas a tu colección principal.
 
-![](docs/source/_static/gifs/parte5_tarea1.5_v01.gif)
+![](/_static/gifs/parte5_tarea1.5_v01.gif)
 
 ### Tarea 2: Añadir tus nuevas preguntas al banco principal
 
@@ -87,4 +87,4 @@ Luego, te preguntará cómo quieres guardar el resultado. Tienes tres opciones:
 
 ¡Y ya está! Ve a tu carpeta de trabajo y abre tu archivo `banco_principal.xlsx`. Verás que ahora contiene las 6 preguntas de los temas **`PRL - LPRL`** y **`PRL - RSP`** que generamos, revisamos y añadimos. Tu banco de preguntas ha crecido, ¡y todo de forma organizada y sin duplicados
 
-![](docs/source/_static/gifs/parte5_tarea2_v01.gif)
+![](/_static/gifs/parte5_tarea2_v01.gif)

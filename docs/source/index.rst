@@ -21,6 +21,12 @@ gestionar bancos de preguntas y crear múltiples versiones de exámenes personal
 
    api/modules
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Información del Proyecto
+
+   license
+
 Indices and tables
 ==================
 
