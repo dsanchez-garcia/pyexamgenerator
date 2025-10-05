@@ -1,60 +1,26 @@
-## Tutorial de ExamGenerator: Generando tus Primeras Preguntas con IA
+## Uso de la pestaña "Generar Preguntas"
 
-¡Bienvenido a ExamGenerator! Esta guía te enseñará a usar la aplicación para convertir automáticamente un documento PDF en un banco de preguntas de examen. No necesitas saber nada de programación, solo sigue los pasos.
-
-### Parte 0: Antes de Empezar (Instalación Única)
-
-Antes de poder usar la aplicación, necesitamos prepararlo todo. Esto solo se hace una vez.
-
-1.  **Instalar Python:** Si no lo tienes, descarga e instala Python desde su web oficial: [python.org](https://www.python.org/downloads/). Durante la instalación, **asegúrate de marcar la casilla que dice "Add Python to PATH"**. Esto es muy importante.
-
-2.  **Instalar ExamGenerator:** Abre la **Línea de Comandos** de Windows (busca `cmd` en el menú de Inicio). En la ventana negra que aparece, escribe el siguiente comando y presiona Enter.
-    ```
-    pip install examgenerator
-    ```
-    Este único comando instalará la aplicación y todas sus dependencias automáticamente.
-
-3.  **Conseguir tu Clave API de Gemini:** La "Clave API" es como una contraseña personal que te da acceso a la inteligencia artificial de Google.
-    *   Puedes conseguir una gratis siguiendo las instrucciones de Google. En la aplicación, hemos añadido un atajo para ayudarte: ve al menú **Ayuda > Configurar API Key (Ayuda)...** para abrir la guía oficial.
-    *   Una vez que tengas tu clave, la forma más fácil y segura de usarla es configurarla como una "variable de entorno" (`GEMINI_API_KEY`). El enlace de ayuda te explica cómo hacerlo. Si sigues esos pasos, ¡la aplicación la detectará automáticamente!
-
-### Parte 1: Cómo Iniciar ExamGenerator
-
-La forma más cómoda de trabajar es abrir la aplicación directamente en la carpeta donde tienes tus documentos.
-
-1.  **Abre la Línea de Comandos en tu Carpeta de Trabajo:**
-    *   Usa el Explorador de Archivos para ir a la carpeta donde tienes los PDFs que quieres usar (por ejemplo, `Mis Documentos\Examenes`).
-    *   Haz clic en la barra de direcciones de la parte superior, borra la ruta que aparece, escribe `cmd` y presiona Enter.
-
-2.  **Ejecuta el Comando:** En la ventana negra que se acaba de abrir, simplemente escribe el siguiente comando y presiona Enter:
-    ```
-    examgenerator
-    ```
-¡Listo! La ventana de la aplicación ExamGenerator debería aparecer en tu pantalla. Al iniciarla de esta forma, cualquier archivo que generes se guardará directamente en esta carpeta.
-
-![](docs/source/_static/gifs/parte1_v00.gif)
-
-### Parte 2: Generando Preguntas (Pestaña "Generar Preguntas")
+### Parte 2: Generando preguntas
 
 Ahora vamos a realizar nuestro ejemplo práctico: generar preguntas de dos temas diferentes, la Ley de Prevención y el Reglamento de los Servicios de Prevención.
 
 Asegúrate de tener ambos archivos en tu carpeta de trabajo: `RD 31-95 LPRL_fragmento.pdf` y `RD 39-97 RSP_fragmento.pdf`.
 
-#### Sección 1: Seleccionar/Editar Tipo de Prompt
+#### Sección 1: Seleccionar/Editar tipo de prompt
 
 Un "Prompt" son las instrucciones que le damos a la inteligencia artificial.
 
 *   **Tipo de Prompt:** Este menú desplegable contiene plantillas de instrucciones. Como ambos documentos son de temática legal sobre prevención, la mejor opción es **PRL**.
 *   **Acción para nuestro ejemplo:** Selecciona **PRL** en el menú desplegable.
 
-#### Sección 2: Seleccionar Archivos PDF
+#### Sección 2: Seleccionar archivos PDF
 
 Aquí le decimos al programa qué documentos debe leer.
 
 *   **Botón "Seleccionar PDFs":** Haz clic en este botón para buscar archivos en tu ordenador.
 *   **Acción para nuestro ejemplo:** En la ventana que se abre, busca tus archivos. Para seleccionar ambos a la vez, haz clic en el primero (`RD 31-95...`) y, **manteniendo pulsada la tecla `Ctrl`**, haz clic en el segundo (`RD 39-97...`). Luego, pulsa "Abrir". Verás las rutas de ambos archivos en el campo de texto, separadas por una coma.
 
-#### Sección 3: Configuración de Generación
+#### Sección 3: Configuración de generación
 
 Esta es la parte más importante, donde personalizamos la tarea.
 
@@ -108,7 +74,7 @@ Esta es la parte más importante, donde personalizamos la tarea.
     *   **Qué es:** La carpeta donde se guardarán los archivos generados.
     *   **Acción para nuestro ejemplo:** Puedes dejar este campo **en blanco**. Como iniciamos la aplicación desde nuestra carpeta de trabajo, los archivos se guardarán allí automáticamente.
 
-#### Sección 4: ¡A Generar!
+#### Sección 4: ¡A generar!
 
 Ya está todo configurado.
 
@@ -117,7 +83,7 @@ Ya está todo configurado.
 
 ![](docs/source/_static/gifs/parte2-3_v01_parte2.gif)
 
-### Parte 3: Revisa tus Resultados
+### Parte 3: Revisa tus resultados
 
 Ve a tu carpeta de trabajo. Dentro, encontrarás dos archivos nuevos:
 

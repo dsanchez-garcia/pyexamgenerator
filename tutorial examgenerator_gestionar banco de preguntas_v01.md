@@ -1,4 +1,6 @@
-### Parte 4: El Toque Humano - Revisar y Aprobar las Preguntas
+## Uso de la pestaña "Gestionar Banco de Preguntas"
+
+### Parte 4: Revisar y aprobar las preguntas
 
 Antes de usar la siguiente pestaña, hay un paso vital que ocurre fuera de la aplicación: **tu revisión experta**. La IA es una herramienta fantástica, pero tú eres quien garantiza la calidad.
 
@@ -11,20 +13,22 @@ Antes de usar la siguiente pestaña, hay un paso vital que ocurre fuera de la ap
 
 3.  **¡El Paso Clave! Cambia el Estado:** Para cada pregunta que consideres que está lista para ser usada en un examen, busca la línea `Estado: Pendiente de revisar` y cámbiala por `Estado: Aceptable`. **No te preocupes por el nombre del tema en este paso, lo ajustaremos más eficientemente después.**
 
-4.  **Guarda el Archivo:** Una vez que hayas revisado y aprobado tus preguntas, usa "Guardar como..." y dale un nombre nuevo para no confundirte, por ejemplo: **`preguntas_PRL_varias_REVISADO.docx`**.
+4.  **Guarda el Archivo:** Una vez que hayas revisado y aprobado tus preguntas, usa "Guardar como..." y dale un nombre nuevo para no confundirte, por ejemplo: **`preguntas_PRL_varias_revisadas.docx`**.
 
 Ahora que tenemos nuestro documento de Word revisado y aprobado, estamos listos para volver a ExamGenerator.
 
-### Parte 5: Usando la Pestaña "Gestionar Banco de Preguntas"
+![](docs/source/_static/gifs/parte4_v01.gif)
+
+### Parte 5: Usando la pestaña "Gestionar Banco de Preguntas"
 
 Esta pestaña es tu centro de control para mantener y hacer crecer tu colección de preguntas.
 
-#### Tarea 1: Generar un Archivo Excel (XLSX) desde tu Word Revisado
+#### Tarea 1: Generar un archivo Excel (XLSX) desde tu Word revisado
 
 El programa no puede trabajar directamente con un archivo de Word. Primero, necesitamos convertir nuestro `.docx` revisado de nuevo a un formato de datos estructurado que la aplicación entienda: un archivo de Excel (`.xlsx`).
 
 *   **Archivo DOCX Revisado:**
-    *   **Acción:** Haz clic en el botón **"Seleccionar DOCX"** y elige tu archivo **`preguntas_PRL_varias_REVISADO.docx`**.
+    *   **Acción:** Haz clic en el botón **"Seleccionar DOCX"** y elige tu archivo **`preguntas_PRL_varias_revisadas.docx`**.
 
 *   **Directorio de Salida (XLSX):**
     *   **Acción:** Déjalo **en blanco**. Se guardará en tu carpeta de trabajo actual.
@@ -35,7 +39,9 @@ El programa no puede trabajar directamente con un archivo de Word. Primero, nece
 *   **Botón "Guardar XLSX Revisado":**
     *   **Acción:** Haz clic en él. En un instante, la aplicación leerá tu documento de Word y creará un archivo `preguntas_PRL_varias_aceptadas.xlsx` en tu carpeta de trabajo.
 
-#### Tarea 1.5: Organizar los Nombres de los Temas (El Paso Final de Limpieza)
+![](docs/source/_static/gifs/parte5_tarea1_v01.gif)
+
+#### Tarea 1.5: Organizar los nombres de los temas
 
 Ahora tenemos un archivo Excel limpio con nuestras preguntas aprobadas. Antes de fusionarlo, vamos a darle los nombres de tema definitivos.
 
@@ -45,14 +51,18 @@ Ahora tenemos un archivo Excel limpio con nuestras preguntas aprobadas. Antes de
     *   Para las preguntas que vinieron del `RD 39-97...`, reemplaza el nombre largo del archivo por **`PRL - RSP`**.
 3.  **Guarda y Cierra** el archivo de Excel.
 
+Ten en cuenta que este paso es opcional. Si desde el principio, hubiéramos llamado a los pdfs "Tema 1.pdf" y "Tema 2.pdf", no haría falta modificarlos en el archivo Excel.
+
 ¡Perfecto! Ahora tienes un lote de preguntas de alta calidad, revisadas y perfectamente organizadas por temas, listas para ser añadidas a tu colección principal.
 
-#### Tarea 2: Añadir tus Nuevas Preguntas al Banco Principal
+![](docs/source/_static/gifs/parte5_tarea1.5_v01.gif)
+
+#### Tarea 2: Añadir tus nuevas preguntas al banco principal
 
 Ahora vamos a fusionar las preguntas de nuestros dos nuevos temas con tu colección principal de preguntas (tu "banco").
 
 *   **Banco Existente:**
-    *   **Acción:** Haz clic en **"Seleccionar"** y elige tu archivo maestro, **`banco_principal.xlsx`**. (Si no tienes uno, puedes simplemente renombrar `preguntas_PRL_varias_aceptadas.xlsx` a `banco_principal.xlsx` y seleccionarlo).
+    *   **Acción:** Haz clic en **"Seleccionar"** y elige tu archivo maestro, **`banco_principal.xlsx`**.
 
 *   **Archivo a Añadir:**
     *   **Acción:** Haz clic en **"Seleccionar"** y elige el archivo que acabamos de editar: **`preguntas_PRL_varias_aceptadas.xlsx`**.
@@ -66,8 +76,6 @@ Ahora vamos a fusionar las preguntas de nuestros dos nuevos temas con tu colecci
 *   **Botón "Añadir Preguntas sin Duplicados":**
     *   **Acción:** Haz clic en él.
 
-### Parte 6: El Resultado - Tu Banco de Preguntas Actualizado
-
 Después de hacer clic en el botón, la aplicación analizará ambos archivos y te mostrará una ventana emergente informándote cuántas preguntas nuevas (no duplicadas y con estado "Aceptable") ha encontrado.
 
 Luego, te preguntará cómo quieres guardar el resultado. Tienes tres opciones:
@@ -78,3 +86,5 @@ Luego, te preguntará cómo quieres guardar el resultado. Tienes tres opciones:
 **Acción para nuestro ejemplo:** Haz clic en **"Sí"** para actualizar directamente tu banco principal.
 
 ¡Y ya está! Ve a tu carpeta de trabajo y abre tu archivo `banco_principal.xlsx`. Verás que ahora contiene las 6 preguntas de los temas **`PRL - LPRL`** y **`PRL - RSP`** que generamos, revisamos y añadimos. Tu banco de preguntas ha crecido, ¡y todo de forma organizada y sin duplicados
+
+![](docs/source/_static/gifs/parte5_tarea2_v01.gif)

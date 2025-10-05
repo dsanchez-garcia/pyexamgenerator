@@ -1,45 +1,27 @@
-.. examgenerator documentation master file, created by
-   sphinx-quickstart on Mon May 27 10:00:00 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. examgenerator documentation master file.
 
 Bienvenido a la Documentación de ExamGenerator
-===============================================
+================================================
 
-**ExamGenerator** es una suite de aplicaciones de escritorio diseñada para automatizar y simplificar el ciclo completo de creación de exámenes. Permite generar preguntas a partir de documentos PDF utilizando IA, gestionar un banco centralizado de preguntas, y finalmente, producir exámenes en múltiples formatos listos para ser distribuidos.
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Empezando
-
-   installation
-   quickstart
+ExamGenerator es una herramienta de escritorio para generar exámenes desde PDFs usando IA,
+gestionar bancos de preguntas y crear múltiples versiones de exámenes personalizables.
 
 .. toctree::
    :maxdepth: 2
    :caption: Guía de Usuario
 
-   guide/tab1_generate_questions
-   guide/tab2_manage_bank
-   guide/tab3_generate_exams
+   tutorial examgenerator_pt0_instalacion
+   tutorial examgenerator_pt1_generar preguntas
+   tutorial examgenerator_pt2_gestionar banco de preguntas
+   tutorial examgenerator_pt3_generar examenes
 
 .. toctree::
    :maxdepth: 2
    :caption: Referencia de la API
 
-   api/main_app
-   api/question_generator
-   api/exam_generator
-   api/question_bank_manager
+   api/modules
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Información del Proyecto
-
-   license
-
-
-Índices y tablas
+Indices and tables
 ==================
 
 * :ref:`genindex`

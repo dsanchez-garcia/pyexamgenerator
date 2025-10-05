@@ -21,7 +21,7 @@ except ImportError:
         release = pkg_resources.get_distribution('examgenerator').version
     except:
         # Como último recurso
-        release = '0.1.8'
+        release = 'X.X.X'
 
 
 # -- General configuration ---------------------------------------------------
@@ -30,6 +30,8 @@ extensions = [
     'sphinx.ext.napoleon',     # Soporte para docstrings de estilo Google y NumPy
     'sphinx.ext.viewcode',     # Añade enlaces al código fuente
     'sphinx.ext.intersphinx',  # Enlaces a otra documentación
+    'myst_parser',  # Construir markdown
+
 ]
 
 templates_path = ['_templates']
