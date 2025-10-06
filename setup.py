@@ -54,9 +54,6 @@ setup(
         'Topic :: Text Processing',
         'Topic :: Utilities',
 
-        # Licencia (debe coincidir con el campo 'license')
-        'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
-
         # Versiones de Python soportadas
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.8',
