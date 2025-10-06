@@ -1,0 +1,31 @@
+# ----------------------------------------------------
+# Requisitos para el desarrollo de ExamGenerator
+# Instalar todo con: pip install -r requirements-dev.txt
+# ----------------------------------------------------
+
+# === Dependencias Principales de la Aplicación ===
+# (Las mismas que en setup.py)
+google-generativeai
+PyPDF2
+python-docx
+pandas
+openpyxl
+ttkwidgets
+importlib-metadata; python_version < "3.8"
+
+# === Herramientas de Documentación ===
+# Para construir la documentación desde la carpeta /docs
+sphinx
+sphinx_rtd_theme  # Tema popular para la documentación
+myst-parser     # Para que Sphinx entienda los archivos Markdown (.md)
+
+# === Herramientas de Empaquetado y Distribución ===
+# Para construir y subir el paquete a PyPI
+setuptools
+wheel
+build
+twine
+
+# === Herramientas de Testing (Recomendado) ===
+# Para ejecutar pruebas y asegurar la calidad del código
+pytest

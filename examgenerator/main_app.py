@@ -28,6 +28,10 @@ import json
 from ttkwidgets.frames import ScrolledFrame
 import google.generativeai as genai
 
+# Importamos la versión directamente desde nuestro paquete
+from examgenerator import __version__
+# Ya no necesitamos importlib_metadata para la versión, pero lo dejamos por si se usa en otro sitio.
+# Si no se usa en ningún otro sitio, se puede eliminar.
 try:
     # Para Python 3.8+
     import importlib.metadata as importlib_metadata
@@ -96,10 +100,8 @@ class ExamApp:
         """
         self.root = root
 
-        try:
-            version = importlib_metadata.version('examgenerator')
-        except importlib_metadata.PackageNotFoundError:
-            version = "DEV"
+        # Usamos la variable __version__ importada
+        version = __version__
 
         self.root.title(f"ExamGenerator v{version}")
 

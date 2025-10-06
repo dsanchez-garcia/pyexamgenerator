@@ -5,24 +5,20 @@ import sys
 # Añade la ruta raíz del proyecto para que Sphinx pueda encontrar tus módulos
 sys.path.insert(0, os.path.abspath('../../'))
 
+# Importa la versión desde tu paquete
+from examgenerator import __version__
+
+
 # -- Project information -----------------------------------------------------
 project = 'examgenerator'
 copyright = '2025, Daniel Sánchez-García'
 author = 'Daniel Sánchez-García'
 
-# Intenta obtener la versión del paquete para mostrarla en la documentación
-try:
-    from examgenerator import __version__
-    release = __version__
-except ImportError:
-    # Si no se puede importar, usa la versión de setup.py o una por defecto
-    try:
-        import pkg_resources
-        release = pkg_resources.get_distribution('examgenerator').version
-    except:
-        # Como último recurso
-        release = 'X.X.X'
 
+# La versión corta X.Y
+version = '.'.join(__version__.split('.')[:2])
+# La versión completa, incluyendo alpha/beta/rc tags
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -31,7 +27,6 @@ extensions = [
     'sphinx.ext.viewcode',     # Añade enlaces al código fuente
     'sphinx.ext.intersphinx',  # Enlaces a otra documentación
     'myst_parser',  # Construir markdown
-
 ]
 
 templates_path = ['_templates']
