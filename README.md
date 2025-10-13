@@ -1,7 +1,7 @@
 # ExamGenerator
 
 [![DOI](https://zenodo.org/badge/1068439434.svg)](https://doi.org/10.5281/zenodo.17337856)
-
+![alt text](https://readthedocs.org/projects/examgenerator/badge/?version=latest)
 
 ExamGenerator es una suite de aplicaciones de escritorio construida con Python y Tkinter para automatizar y simplificar el ciclo completo de creación de exámenes. Permite generar preguntas a partir de documentos PDF utilizando la IA de Google Gemini, gestionar un banco centralizado de preguntas y producir exámenes en múltiples formatos.
 
@@ -101,10 +101,10 @@ Con un banco de preguntas robusto y validado, ya puedes crear los exámenes fina
 ### Documentación Completa
 
 Para una guía visual y más detallada de cada paso, incluyendo GIFs animados de cada proceso, consulta los **tutoriales completos** en la documentación oficial:
-PENDIENTE-DE-REEMPLAZAR
--   [Tutorial Parte 1: Generar Preguntas](docs/source/tutorial_examgenerator_pt1_generar_preguntas.md)
--   [Tutorial Parte 2: Gestionar el Banco de Preguntas](docs/source/tutorial_examgenerator_pt2_gestionar_banco_de_preguntas.md)
--   [Tutorial Parte 3: Generar Exámenes](docs/source/tutorial_examgenerator_pt3_generar_examenes.md)
+-   [Tutorial Parte 0: Instalación e iniciación del programa](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt0_instalacion.html)
+-   [Tutorial Parte 1: Generar Preguntas](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt1_generar_preguntas.html)
+-   [Tutorial Parte 2: Gestionar el Banco de Preguntas](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt2_gestionar_banco_de_preguntas.html)
+-   [Tutorial Parte 3: Generar Exámenes](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt3_generar_examenes.html)
 
 
 ## Uso Avanzado: Scripting y Automatización
