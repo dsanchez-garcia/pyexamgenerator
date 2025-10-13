@@ -1,0 +1,6 @@
+# docs/requirements.txt
+# Dependencias necesarias para construir la documentación de ExamGenerator
+
+sphinx
+sphinx_rtd_theme
+myst-parser

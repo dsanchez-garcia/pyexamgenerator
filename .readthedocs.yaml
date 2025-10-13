@@ -1,0 +1,31 @@
+# .readthedocs.yaml
+# Archivo de configuración para Read the Docs
+# Documentación de referencia: https://docs.readthedocs.io/en/stable/config-file/v2.html
+
+version: 2
+
+# Define el entorno de construcción que usará Read the Docs.
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.9"  # Usa la misma versión de Python con la que desarrollas.
+
+# Configuración específica para Sphinx.
+sphinx:
+  configuration: docs/source/conf.py
+  # (Opcional pero muy recomendado) Hace que la construcción falle si hay alguna advertencia.
+  # Esto te obliga a mantener una documentación de alta calidad (sin enlaces rotos, etc.).
+  fail_on_warning: true
+
+# Define cómo se instalarán las dependencias de Python.
+python:
+  install:
+    # Paso 1: Instala el propio paquete 'examgenerator'.
+    # Esto es CRUCIAL para que la extensión 'sphinx.ext.autodoc' pueda
+    # importar tu código y leer las docstrings.
+    - method: pip
+      path: .
+
+    # Paso 2: Instala las dependencias necesarias para construir la documentación
+    # (Sphinx, el tema, el parser de Markdown, etc.) desde el archivo que creamos.
+    - requirements: docs/requirements.txt
