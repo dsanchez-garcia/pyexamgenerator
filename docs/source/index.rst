@@ -10,10 +10,10 @@ gestionar bancos de preguntas y crear múltiples versiones de exámenes personal
    :maxdepth: 2
    :caption: Guía de Usuario
 
-   tutorial examgenerator_pt0_instalacion
-   tutorial examgenerator_pt1_generar preguntas
-   tutorial examgenerator_pt2_gestionar banco de preguntas
-   tutorial examgenerator_pt3_generar examenes
+   tutorial_examgenerator_pt0_instalacion
+   tutorial_examgenerator_pt1_generar_preguntas
+   tutorial_examgenerator_pt2_gestionar_banco_de_preguntas
+   tutorial_examgenerator_pt3_generar_examenes
 
 .. toctree::
    :maxdepth: 2

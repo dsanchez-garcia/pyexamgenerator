@@ -60,7 +60,7 @@ Aquí es donde se crea el contenido inicial a partir de tus documentos.
 3.  **Configura la Generación**:
     *   Define cuántas **preguntas objetivo** quieres por cada PDF.
     *   (Opcional) Activa el **filtro de duplicados** seleccionando tu banco de preguntas principal para evitar generar preguntas repetidas.
-4.  **Carga y Selecciona un Modelo**: Haz clic en **"Cargar Modelos"** y selecciona uno de la tabla (ej. `gemini-1.5-flash`).
+4.  **Carga y Selecciona un Modelo**: Haz clic en **"Cargar Modelos"** y selecciona uno de la tabla (ej. `gemini-2.5-flash`).
 5.  **Genera**: Haz clic en **"Generar Preguntas"**. La aplicación creará un archivo `.xlsx` y un `.docx` con las nuevas preguntas, marcadas como "pendiente de revisar".
 
 #### Fase 2: Gestionar el Banco de Preguntas (Pestaña "Gestionar Banco de Preguntas")
@@ -99,11 +99,10 @@ Con un banco de preguntas robusto y validado, ya puedes crear los exámenes fina
 
 Para una guía visual y más detallada de cada paso, incluyendo GIFs animados de cada proceso, consulta los **tutoriales completos** en la documentación oficial:
 PENDIENTE-DE-REEMPLAZAR
--   [Tutorial Parte 1: Generar Preguntas](URL_A_TU_DOCUMENTACION/tutorial_generar_preguntas.html)
--   [Tutorial Parte 2: Gestionar el Banco de Preguntas](URL_A_TU_DOCUMENTACION/tutorial_gestionar_banco.html)
--   [Tutorial Parte 3: Generar Exámenes](URL_A_TU_DOCUMENTACION/tutorial_generar_examenes.html)
+-   [Tutorial Parte 1: Generar Preguntas](docs/source/tutorial_examgenerator_pt1_generar_preguntas.md)
+-   [Tutorial Parte 2: Gestionar el Banco de Preguntas](docs/source/tutorial_examgenerator_pt2_gestionar_banco_de_preguntas.md)
+-   [Tutorial Parte 3: Generar Exámenes](docs/source/tutorial_examgenerator_pt3_generar_examenes.md)
 
-*(Nota: Deberás reemplazar `URL_A_TU_DOCUMENTACION` con el enlace a tu documentación una vez que la publiques, por ejemplo, en GitHub Pages o Read the Docs).*
 
 ## Uso Avanzado: Scripting y Automatización
 
