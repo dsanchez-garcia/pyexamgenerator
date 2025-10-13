@@ -302,6 +302,10 @@ if __name__ == "__main__":
     print(f"\nExámenes personalizados generados en la carpeta: '{OUTPUT_DIRECTORY}'")
 ```
 
+## Historial de Cambios
+
+Para ver una lista detallada de los cambios, mejoras y correcciones de errores en cada versión, consulta el archivo [CHANGELOG.md](CHANGELOG.md).
+
 ## Contribución
 
 Las contribuciones son bienvenidas. Si encuentras un error o tienes una idea para una nueva funcionalidad, por favor, abre un "issue" en el repositorio de GitHub.
