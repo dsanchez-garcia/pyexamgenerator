@@ -32,3 +32,6 @@ dist/
 # Archivos de sistema operativo
 .DS_Store
 Thumbs.db
+
+# Backup de onedrive
+onedrive_backup
