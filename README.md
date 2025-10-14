@@ -24,7 +24,7 @@ pyexamgenerator es una suite de aplicaciones de escritorio construida con Python
 Puedes instalar pyexamgenerator directamente desde PyPI usando pip. Abre tu terminal o línea de comandos y ejecuta:
 
 ```bash
-pip install ExamGenerator
+pip install pyexamgenerator
 ```
 
 ## Configuración Inicial: La Clave de API
@@ -46,7 +46,7 @@ Antes del primer uso, necesitas tu propia clave de API de Google Gemini.
 Una vez instalado, puedes lanzar la aplicación desde tu terminal con el siguiente comando:
 
 ```bash
-ExamGenerator
+pyexamgenerator
 ```
 Se recomienda ejecutar este comando desde la carpeta donde vayas a trabajar (donde tengas tus PDFs y donde quieras que se guarden los archivos generados).
 
