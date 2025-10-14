@@ -129,7 +129,7 @@ import os
 
 PDF_FILES = ['ruta/a/tu/TEMA_01.pdf', 'ruta/a/tu/TEMA_02.pdf']
 OUTPUT_FILENAME = "banco_generado_script"
-MODEL_NAME = 'models/gemini-1.5-flash' # O el modelo que prefieras
+MODEL_NAME = 'models/gemini-2.5-flash' # O el modelo que prefieras
 
 # --- Lógica del Script ---
 if __name__ == '__main__':
