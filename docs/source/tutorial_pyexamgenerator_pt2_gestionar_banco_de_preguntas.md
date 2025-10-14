@@ -15,7 +15,7 @@ Antes de usar la siguiente pestaña, hay un paso vital que ocurre fuera de la ap
 
 4.  **Guarda el Archivo:** Una vez que hayas revisado y aprobado tus preguntas, usa "Guardar como..." y dale un nombre nuevo para no confundirte, por ejemplo: **`preguntas_PRL_varias_revisadas.docx`**.
 
-Ahora que tenemos nuestro documento de Word revisado y aprobado, estamos listos para volver a ExamGenerator.
+Ahora que tenemos nuestro documento de Word revisado y aprobado, estamos listos para volver a pyexamgenerator.
 
 ![](/_static/gifs/parte4_v01.gif)
 

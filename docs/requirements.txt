@@ -1,5 +1,5 @@
 # docs/requirements.txt
-# Dependencias necesarias para construir la documentación de ExamGenerator
+# Dependencias necesarias para construir la documentación de pyexamgenerator
 
 sphinx
 sphinx_rtd_theme

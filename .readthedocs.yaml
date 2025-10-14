@@ -20,7 +20,7 @@ sphinx:
 # Define cómo se instalarán las dependencias de Python.
 python:
   install:
-    # Paso 1: Instala el propio paquete 'examgenerator'.
+    # Paso 1: Instala el propio paquete 'pyexamgenerator'.
     # Esto es CRUCIAL para que la extensión 'sphinx.ext.autodoc' pueda
     # importar tu código y leer las docstrings.
     - method: pip

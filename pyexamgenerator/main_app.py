@@ -1,4 +1,4 @@
-# examgenerator: A tool for generating exams from PDF files using AI.
+# pyexamgenerator: A tool for generating exams from PDF files using AI.
 # Copyright (C) 2024 Daniel Sánchez-García
 
 # This program is free software: you can redistribute it and/or modify
@@ -18,10 +18,10 @@ import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import pandas as pd
-from examgenerator.question_generator import QuestionGenerator
-from examgenerator.exam_generator import ExamGenerator
-from examgenerator.question_bank_manager import QuestionBankManager
-from examgenerator.tooltip import ToolTip
+from pyexamgenerator.question_generator import QuestionGenerator
+from pyexamgenerator.exam_generator import ExamGenerator
+from pyexamgenerator.question_bank_manager import QuestionBankManager
+from pyexamgenerator.tooltip import ToolTip
 from docx import Document
 import os
 import json
@@ -29,7 +29,7 @@ from ttkwidgets.frames import ScrolledFrame
 import google.generativeai as genai
 
 # Importamos la versión directamente desde nuestro paquete
-from examgenerator import __version__
+from pyexamgenerator import __version__
 # Ya no necesitamos importlib_metadata para la versión, pero lo dejamos por si se usa en otro sitio.
 # Si no se usa en ningún otro sitio, se puede eliminar.
 try:
@@ -48,7 +48,7 @@ class ExamApp:
 
     This class builds the graphical user interface (GUI) using Tkinter,
     and orchestrates the interactions between the user and the backend modules
-    (QuestionGenerator, ExamGenerator, QuestionBankManager).
+    (QuestionGenerator, pyexamgenerator, QuestionBankManager).
 
     Attributes:
         root (tk.Tk): The main window of the application.
@@ -103,10 +103,10 @@ class ExamApp:
         # Usamos la variable __version__ importada
         version = __version__
 
-        self.root.title(f"ExamGenerator v{version}")
+        self.root.title(f"pyexamgenerator v{version}")
 
         title_font = ("Helvetica", 16, "bold")
-        main_title_label = ttk.Label(self.root, text=f"ExamGenerator v{version}", font=title_font)
+        main_title_label = ttk.Label(self.root, text=f"pyexamgenerator v{version}", font=title_font)
         main_title_label.pack(pady=(10, 5), padx=10, anchor='w')
 
         # Lógica de carga de API Key actualizada con GEMINI_API_KEY
@@ -1578,7 +1578,7 @@ class ExamApp:
         """
         Gathers all parameters from the 'Generate Exams' tab and triggers the exam generation process.
         It validates user input, constructs the `questions_per_topic` dictionary, and calls the
-        `generate_exam_from_excel` method from the backend `ExamGenerator` class.
+        `generate_exam_from_excel` method from the backend `pyexamgenerator` class.
         """
         excel_path = self.excel_filepath.get()
         subject = self.subject.get()
@@ -1783,7 +1783,7 @@ class ExamApp:
     def show_about_dialog(self):
         """Displays an 'About' dialog with program and license information."""
         about_text = (
-            "ExamGenerator\n\n"
+            "pyexamgenerator\n\n"
             "Copyright (C) 2024 Daniel Sánchez-García\n\n"
             "Este programa es software libre: usted puede redistribuirlo y/o modificarlo "
             "bajo los términos de la Licencia Pública General de GNU publicada por la "
@@ -1793,7 +1793,7 @@ class ExamApp:
             "sin siquiera la garantía implícita de COMERCIABILIDAD o APTITUD PARA UN PROPÓSITO PARTICULAR. "
             "Consulte la Licencia Pública General de GNU para más detalles."
         )
-        messagebox.showinfo("Acerca de ExamGenerator", about_text, parent=self.root)
+        messagebox.showinfo("Acerca de pyexamgenerator", about_text, parent=self.root)
 
     def select_gen_questions_output_dir(self) -> None:
         """Opens a dialog to select the output directory for generated questions."""

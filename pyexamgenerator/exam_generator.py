@@ -1,4 +1,4 @@
-# examgenerator: A tool for generating exams from PDF files using AI.
+# pyexamgenerator: A tool for generating exams from PDF files using AI.
 # Copyright (C) 2024 Daniel Sánchez-García
 
 # This program is free software: you can redistribute it and/or modify
@@ -41,7 +41,7 @@ class ExamGenerator:
 
     def __init__(self):
         """
-        Initializes the ExamGenerator instance.
+        Initializes the pyexamgenerator instance.
         """
         # Added self.df attribute to persist the DataFrame between calls.
         self.df = None
@@ -726,7 +726,7 @@ class ExamGenerator:
 
 ## Example of use
 
-# generator = ExamGenerator()
+# generator = pyexamgenerator()
 #
 # df = pd.read_excel('banco_prueba_pendiente_de_revisar.xlsx')
 # temas = [i for i in df['Tema']]

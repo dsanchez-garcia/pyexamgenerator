@@ -1,4 +1,4 @@
-# examgenerator: A tool for generating exams from PDF files using AI.
+# pyexamgenerator: A tool for generating exams from PDF files using AI.
 # Copyright (C) 2024 Daniel Sánchez-García
 
 # This program is free software: you can redistribute it and/or modify

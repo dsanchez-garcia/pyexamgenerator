@@ -60,7 +60,7 @@ Aquí personalizas el aspecto visual de tu examen en el archivo de Word.
 
 ### Sección 6: Configuración para Moodle
 
-¡Una de las funciones más potentes! Si usas la plataforma online Moodle, ExamGenerator puede crear un archivo especial para que subas las preguntas del examen directamente a tu curso.
+¡Una de las funciones más potentes! Si usas la plataforma online Moodle, pyexamgenerator puede crear un archivo especial para que subas las preguntas del examen directamente a tu curso.
 
 *   **Exportar a Moodle XML:** Marca esta casilla para activar la exportación.
 *   **Penalización (-%):** En Moodle, puedes hacer que las respuestas incorrectas resten puntos. Aquí indicas el porcentaje negativo (ej. `-25` para que un error reste un 25% del valor de la pregunta).

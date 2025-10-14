@@ -1,9 +1,9 @@
-# ExamGenerator
+# pyexamgenerator
 
 [![DOI](https://zenodo.org/badge/1068439434.svg)](https://doi.org/10.5281/zenodo.17337856)
-![alt text](https://readthedocs.org/projects/examgenerator/badge/?version=latest)
+![alt text](https://readthedocs.org/projects/pyexamgenerator/badge/?version=latest)
 
-ExamGenerator es una suite de aplicaciones de escritorio construida con Python y Tkinter para automatizar y simplificar el ciclo completo de creación de exámenes. Permite generar preguntas a partir de documentos PDF utilizando la IA de Google Gemini, gestionar un banco centralizado de preguntas y producir exámenes en múltiples formatos.
+pyexamgenerator es una suite de aplicaciones de escritorio construida con Python y Tkinter para automatizar y simplificar el ciclo completo de creación de exámenes. Permite generar preguntas a partir de documentos PDF utilizando la IA de Google Gemini, gestionar un banco centralizado de preguntas y producir exámenes en múltiples formatos.
 
 ## Características Principales
 
@@ -21,10 +21,10 @@ ExamGenerator es una suite de aplicaciones de escritorio construida con Python y
 
 ### Instalación del Paquete
 
-Puedes instalar ExamGenerator directamente desde PyPI usando pip. Abre tu terminal o línea de comandos y ejecuta:
+Puedes instalar pyexamgenerator directamente desde PyPI usando pip. Abre tu terminal o línea de comandos y ejecuta:
 
 ```bash
-pip install examgenerator
+pip install ExamGenerator
 ```
 
 ## Configuración Inicial: La Clave de API
@@ -36,7 +36,7 @@ Antes del primer uso, necesitas tu propia clave de API de Google Gemini.
 
     *   **(Recomendado) Usar una Variable de Entorno:** Es el método más seguro. Crea una variable de entorno llamada `GEMINI_API_KEY` con el valor de tu clave. La aplicación la detectará automáticamente al iniciarse.
     *   **(Alternativa) Guardar en la Aplicación:**
-        *   Abre la aplicación `examgenerator`.
+        *   Abre la aplicación `pyexamgenerator`.
         *   Ve a la pestaña **"Generar Preguntas"**.
         *   Introduce tu clave en el campo **"Clave API de Gemini"**.
         *   Haz clic en el botón **"Guardar Clave"**. La clave se guardará en un archivo `config.json` local.
@@ -46,7 +46,7 @@ Antes del primer uso, necesitas tu propia clave de API de Google Gemini.
 Una vez instalado, puedes lanzar la aplicación desde tu terminal con el siguiente comando:
 
 ```bash
-examgenerator
+ExamGenerator
 ```
 Se recomienda ejecutar este comando desde la carpeta donde vayas a trabajar (donde tengas tus PDFs y donde quieras que se guarden los archivos generados).
 
@@ -101,15 +101,15 @@ Con un banco de preguntas robusto y validado, ya puedes crear los exámenes fina
 ### Documentación Completa
 
 Para una guía visual y más detallada de cada paso, incluyendo GIFs animados de cada proceso, consulta los **tutoriales completos** en la documentación oficial:
--   [Tutorial Parte 0: Instalación e iniciación del programa](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt0_instalacion.html)
--   [Tutorial Parte 1: Generar Preguntas](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt1_generar_preguntas.html)
--   [Tutorial Parte 2: Gestionar el Banco de Preguntas](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt2_gestionar_banco_de_preguntas.html)
--   [Tutorial Parte 3: Generar Exámenes](https://examgenerator.readthedocs.io/es/latest/tutorial_examgenerator_pt3_generar_examenes.html)
+-   [Tutorial Parte 0: Instalación e iniciación del programa](https://pyexamgenerator.readthedocs.io/es/latest/tutorial_pyexamgenerator_pt0_instalacion.html)
+-   [Tutorial Parte 1: Generar Preguntas](https://pyexamgenerator.readthedocs.io/es/latest/tutorial_pyexamgenerator_pt1_generar_preguntas.html)
+-   [Tutorial Parte 2: Gestionar el Banco de Preguntas](https://pyexamgenerator.readthedocs.io/es/latest/tutorial_pyexamgenerator_pt2_gestionar_banco_de_preguntas.html)
+-   [Tutorial Parte 3: Generar Exámenes](https://pyexamgenerator.readthedocs.io/es/latest/tutorial_pyexamgenerator_pt3_generar_examenes.html)
 
 
 ## Uso Avanzado: Scripting y Automatización
 
-Además de la interfaz gráfica, todos los componentes de ExamGenerator están diseñados para ser utilizados en scripts de Python. Esto te permite automatizar la generación de preguntas, la gestión de bancos y la creación de exámenes, ideal para procesos por lotes o para integrar ExamGenerator en otros sistemas.
+Además de la interfaz gráfica, todos los componentes de pyexamgenerator están diseñados para ser utilizados en scripts de Python. Esto te permite automatizar la generación de preguntas, la gestión de bancos y la creación de exámenes, ideal para procesos por lotes o para integrar pyexamgenerator en otros sistemas.
 
 A continuación se muestran ejemplos de uso para cada uno de los módulos principales.
 
@@ -120,7 +120,7 @@ Este script utiliza la IA para leer uno o más archivos PDF y generar un banco d
 ```python
 # archivo: generar_preguntas.py
 
-from examgenerator.question_generator import QuestionGenerator
+from pyexamgenerator.question_generator import QuestionGenerator
 import os
 
 # --- Configuración ---
@@ -162,7 +162,7 @@ Este script toma un archivo `.docx` que has revisado manualmente y lo convierte 
 ```python
 # archivo: convertir_docx.py
 
-from examgenerator.question_bank_manager import QuestionBankManager
+from pyexamgenerator.question_bank_manager import QuestionBankManager
 import os
 
 # --- Configuración ---
@@ -191,7 +191,7 @@ Este script añade las preguntas de un archivo Excel a tu banco principal, aplic
 ```python
 # archivo: fusionar_bancos.py
 
-from examgenerator.question_bank_manager import QuestionBankManager
+from pyexamgenerator.question_bank_manager import QuestionBankManager
 import os
 
 # --- Configuración ---
@@ -223,7 +223,7 @@ if __name__ == "__main__":
         print("\nNo se encontraron preguntas nuevas para añadir.")
 ```
 
-### 3. Generar Exámenes con `ExamGenerator`
+### 3. Generar Exámenes con `pyexamgenerator`
 
 #### 3.1. Crear un Examen Sencillo
 
@@ -232,7 +232,7 @@ Este script genera rápidamente dos versiones de un examen utilizando todas las 
 ```python
 # archivo: crear_examen_simple.py
 
-from examgenerator.exam_generator import ExamGenerator
+from pyexamgenerator.exam_generator import ExamGenerator
 import os
 
 # --- Configuración ---
@@ -248,7 +248,7 @@ if __name__ == "__main__":
         subject="Asignatura de Prueba",
         exam="Parcial 1",
         course="24-25",
-        num_exams=2, # Generará 'Tipo 1' y 'Tipo 2'
+        num_exams=2,  # Generará 'Tipo 1' y 'Tipo 2'
         selection_method="azar"
     )
     print(f"\nExámenes simples generados en la carpeta: '{OUTPUT_DIRECTORY}'")
@@ -261,7 +261,7 @@ Este ejemplo muestra el poder de la personalización, definiendo la estructura e
 ```python
 # archivo: crear_examen_personalizado.py
 
-from examgenerator.exam_generator import ExamGenerator
+from pyexamgenerator.exam_generator import ExamGenerator
 import os
 
 # --- Configuración ---
@@ -277,32 +277,33 @@ QUESTIONS_PER_TOPIC_CONFIG = {
 # --- Lógica del Script ---
 if __name__ == "__main__":
     exam_gen = ExamGenerator()
-    
+
     # Usamos diccionarios para una configuración limpia
     exam_gen.generate_exam_from_excel(
         bank_excel_path=BANK_FILE_PATH,
         output_dir=OUTPUT_DIRECTORY,
         questions_per_topic=QUESTIONS_PER_TOPIC_CONFIG,
-        
+
         # Metadatos
         subject="Prevención de Riesgos Laborales",
         exam="Examen Final",
         course="24-25",
-        
+
         # Selección y versiones
         selection_method="menos usadas",
         exam_names=["Modelo A", "Modelo B"],
-        
+
         # Estilo y exportación
         answer_sheet_instructions="Marque con una 'X' la respuesta correcta.",
         export_moodle_xml=True,
         update_excel=True,
-        
+
         # Opciones para scripting
-        check=False, # Desactiva la previsualización interactiva
-        verbose=True # Muestra más información de progreso
+        check=False,  # Desactiva la previsualización interactiva
+        verbose=True  # Muestra más información de progreso
     )
-    print(f"\nExámenes personalizados generados en la carpeta: '{OUTPUT_DIRECTORY}'")
+    print(
+        f"\nExámenes personalizados generados en la carpeta: '{OUTPUT_DIRECTORY}'")
 ```
 
 ## Historial de Cambios

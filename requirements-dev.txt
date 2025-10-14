@@ -1,5 +1,5 @@
 # ----------------------------------------------------
-# Requisitos para el desarrollo de ExamGenerator
+# Requisitos para el desarrollo de pyexamgenerator
 # Instalar todo con: pip install -r requirements-dev.txt
 # ----------------------------------------------------
 

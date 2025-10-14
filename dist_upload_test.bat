@@ -17,5 +17,5 @@ twine upload --repository testpypi dist/*
 
 ECHO.
 ECHO --- Proceso completado ---
-ECHO Revisa tu paquete en: https://test.pypi.org/project/examgenerator/
+ECHO Revisa tu paquete en: https://test.pypi.org/project/pyexamgenerator/
 PAUSE

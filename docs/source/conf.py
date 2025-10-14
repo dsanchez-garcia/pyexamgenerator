@@ -6,11 +6,11 @@ import sys
 sys.path.insert(0, os.path.abspath('../../'))
 
 # Importa la versión desde tu paquete
-from examgenerator import __version__
+from pyexamgenerator import __version__
 
 
 # -- Project information -----------------------------------------------------
-project = 'examgenerator'
+project = 'pyexamgenerator'
 copyright = '2025, Daniel Sánchez-García'
 author = 'Daniel Sánchez-García'
 

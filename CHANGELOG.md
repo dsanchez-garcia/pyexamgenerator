@@ -6,7 +6,7 @@ Todas las novedades de este proyecto están documentadas en este archivo.
 
 ### ¡Lanzamiento Inicial! 🎉
 
-Esta es la primera versión pública de ExamGenerator.
+Esta es la primera versión pública de pyexamgenerator.
 
 ### Añadido
 - Interfaz gráfica completa con tres pestañas para un flujo de trabajo integral.
@@ -26,4 +26,4 @@ Esta es la primera versión pública de ExamGenerator.
 - **Documentación:**
     - Tutoriales completos y documentación de la API generada con Sphinx.
 - **Empaquetado:**
-    - Paquete instalable a través de `pip` y comando `examgenerator` para un fácil acceso.
+    - Paquete instalable a través de `pip` y comando `pyexamgenerator` para un fácil acceso.

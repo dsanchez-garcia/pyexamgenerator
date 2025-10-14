@@ -4,7 +4,7 @@ import re
 
 # Función para leer la versión desde __init__.py sin importar el paquete
 def get_version():
-    version_file = os.path.join('examgenerator', '__init__.py')
+    version_file = os.path.join('pyexamgenerator', '__init__.py')
     with open(version_file, 'r', encoding='utf-8') as f:
         version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", f.read(), re.M)
     if version_match:
@@ -15,14 +15,14 @@ with open('README.md', 'r', encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='examgenerator',
+    name='pyexamgenerator',
     version=get_version(),
     author='Daniel Sánchez-García',
     author_email='daniel.sanchezgarcia@uca.es',  # Opcional: añade tu email de contacto
     description='Una herramienta de escritorio para generar exámenes desde PDFs usando IA.',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/dsanchez-garcia/examgenerator',  # URL del repositorio de tu proyecto
+    url='https://github.com/dsanchez-garcia/pyexamgenerator',  # URL del repositorio de tu proyecto
     packages=find_packages(),
     install_requires=[
         'google-generativeai',
@@ -35,7 +35,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'examgenerator=examgenerator.main_app:main',
+            'pyexamgenerator=pyexamgenerator.main_app:main',
         ],
     },
     python_requires='>=3.8',  # Especifica la versión mínima de Python compatible

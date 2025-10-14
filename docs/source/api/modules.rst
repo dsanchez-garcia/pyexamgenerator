@@ -1,7 +1,7 @@
-examgenerator
-=============
+pyexamgenerator
+===============
 
 .. toctree::
    :maxdepth: 4
 
-   examgenerator
+   pyexamgenerator
