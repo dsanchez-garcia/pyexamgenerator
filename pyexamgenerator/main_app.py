@@ -18,7 +18,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import pandas as pd
-from pyexamgenerator.question_generator import QuestionGenerator
+from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededError
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
@@ -1089,6 +1089,16 @@ class ExamApp:
                 # This message may appear if, after all attempts and filters, no questions are left.
                 self.update_status("No se generaron preguntas o ninguna pasó los filtros.")
                 messagebox.showinfo("Resultado", "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, errores de API). Revisa la consola para más detalles.")
+
+        except QuotaExceededError as e:
+            title = "Límite de Cuota Excedido"
+            # El mensaje 'e' ya viene formateado desde QuestionGenerator
+            message = str(e)
+
+            self.update_status("Error: Límite de cuota de la API excedido.")
+            messagebox.showerror(title, message)
+            print(f"ERROR: {title}\n{message}")
+
         except Exception as e:
             self.update_status(f"Error durante la generación de preguntas: {e}")
             messagebox.showerror("Error", f"Error: {e}")

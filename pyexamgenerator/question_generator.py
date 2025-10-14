@@ -606,7 +606,6 @@ class QuestionGenerator:
                             current_topic=current_pdf_topic,
                             full_document_context_text=context_for_chunks if process_by_pages else None,
                             bank_prompt_scope=bank_prompt_scope,
-                            # NEW: Pass the already accepted questions for this chunk for guidance
                             questions_from_current_chunk_attempts=questions_accepted_for_this_chunk
                         )
 
@@ -635,9 +634,27 @@ class QuestionGenerator:
                                 f"    Intento {attempts_for_this_chunk}: {len(unique_newly_accepted)} preguntas nuevas aceptadas para este fragmento. Total para fragmento: {len(questions_accepted_for_this_chunk)}/{num_questions_per_chunk_target}")
 
                         except Exception as e_gen:
-                            print(f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}")
-                            import traceback
-                            print(traceback.format_exc())
+                            error_str = str(e_gen)
+                            # Comprobamos si el error es por límite de cuota
+                            if "429" in error_str and "quota" in error_str:
+                                # Construimos el mensaje de error mejorado
+                                suggestion = (
+                                    "\n\nSugerencias para solucionarlo:\n"
+                                    "1. Espera unos minutos: La cuota gratuita se reinicia cada cierto tiempo.\n"
+                                    "2. Cambia de modelo: Los modelos 'Pro' son más potentes pero consumen la cuota más rápido. "
+                                    "Prueba a cambiar a un modelo 'Flash' (como 'gemini-1.5-flash'), que es más rápido y económico."
+                                )
+                                message = (
+                                    "Has excedido el límite de solicitudes a la API de Gemini (Error 429).\n"
+                                    f"{suggestion}"
+                                )
+                                # Lanzamos nuestra excepción personalizada con el mensaje mejorado
+                                raise QuotaExceededError(message) from e_gen
+                            else:
+                                # Si es otro error, lo imprimimos para depuración pero no detenemos el proceso
+                                print(f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}")
+                                import traceback
+                                print(traceback.format_exc())
 
                     if len(questions_accepted_for_this_chunk) < num_questions_per_chunk_target:
                         print(
