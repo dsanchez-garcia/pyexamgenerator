@@ -31,6 +31,9 @@ from typing import Optional, Tuple  # Importing Optional and Tuple for type hint
 # Define the WordML namespace used for direct XML manipulation in docx files.
 WML_NAMESPACE = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 
+class NoAcceptableQuestionsError(Exception):
+    """Excepción personalizada para cuando no se encuentran preguntas aceptables."""
+    pass
 
 class ExamGenerator:
     """
@@ -390,6 +393,11 @@ class ExamGenerator:
             self.df[col] = self.df[col].fillna(0)
 
         self.acceptable_df = self.df[(self.df['Estado'] == 'Aceptable')]
+
+        # Comprobación temprana: si no hay NINGUNA pregunta aceptable, paramos aquí.
+        if self.acceptable_df.empty:
+            raise NoAcceptableQuestionsError("No se encontraron preguntas con estado 'Aceptable' en el banco de preguntas.")
+
         if questions_per_topic:
             self.selected_questions = []
             # Iterate directly over the questions_per_topic dictionary.
@@ -397,6 +405,12 @@ class ExamGenerator:
                 if verbose:
                     print(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
                 topic_questions = self.acceptable_df[self.acceptable_df['Tema'] == topic]
+                # Comprobación por tema: si no hay suficientes preguntas para un tema, lanzamos un error claro.
+                if len(topic_questions) < quantity:
+                    raise ValueError(
+                        f"No hay suficientes preguntas 'Aceptables' para el tema '{topic}'. "
+                        f"Se solicitaron {quantity}, pero solo hay {len(topic_questions)} disponibles."
+                    )
                 if selection_method == "azar":
                     try:
                         topic_questions = topic_questions.sample(n=quantity).copy()

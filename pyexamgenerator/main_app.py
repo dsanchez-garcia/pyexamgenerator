@@ -19,7 +19,7 @@ import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import pandas as pd
 from pyexamgenerator.question_generator import QuestionGenerator
-from pyexamgenerator.exam_generator import ExamGenerator
+from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
 from docx import Document
@@ -1692,9 +1692,24 @@ class ExamApp:
             )
             self.update_status("Exámenes generados.")
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
+
+        except (NoAcceptableQuestionsError, ValueError) as e:
+            # Capturamos nuestro error personalizado y el ValueError del bucle
+            error_message = (
+                "No se pudo generar el examen. Revisa el estado de las preguntas en tu banco.\n\n"
+                "Es posible que no haya preguntas 'Aceptables' o que estés solicitando más preguntas "
+                "de las disponibles para un tema."
+            )
+            detailed_error = f"Detalle del error: {e}"
+
+            self.update_status("Error: No se encontraron preguntas aceptables o suficientes.")
+            messagebox.showerror("Error en el Banco de Preguntas", f"{error_message}\n\n{detailed_error}")
+            print(f"ERROR: {error_message}\n{detailed_error}")
+
         except Exception as e:
+            # Mantenemos un bloque genérico para cualquier otro error inesperado
             self.update_status(f"Error al generar exámenes: {e}")
-            messagebox.showerror("Error", f"Ocurrió un error al generar los exámenes: {e}")
+            messagebox.showerror("Error", f"Ocurrió un error inesperado al generar los exámenes: {e}")
 
     def select_existing_bank_file(self) -> None:
         """

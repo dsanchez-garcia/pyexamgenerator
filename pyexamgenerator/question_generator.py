@@ -28,6 +28,9 @@ from docx.shared import Pt
 from docx.enum.style import WD_STYLE_TYPE
 from typing import List, Dict, Optional
 
+class QuotaExceededError(Exception):
+    """Excepción para cuando se excede el límite de cuota de la API de Gemini."""
+    pass
 
 class QuestionGenerator:
     """
