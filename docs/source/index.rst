@@ -1,7 +1,7 @@
 .. pyexamgenerator documentation master file.
 
 Bienvenido a la Documentación de pyexamgenerator (Versión |release|)
-================================================
+====================================================================
 
 pyexamgenerator es una herramienta de escritorio para generar exámenes desde PDFs usando IA,
 gestionar bancos de preguntas y crear múltiples versiones de exámenes personalizables.
