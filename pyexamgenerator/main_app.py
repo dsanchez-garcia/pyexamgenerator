@@ -54,8 +54,8 @@ class ExamApp:
         root (tk.Tk): The main window of the application.
         notebook (ttk.Notebook): The widget for managing the application's tabs.
         api_key (str): The API key for using the question generator.
-        question_generator (QuestionGenerator): Instance of the question generator.
-        exam_generator (ExamGenerator): Instance of the exam generator.
+        question_generator (~pyexamgenerator.QuestionGenerator): Instance of the question generator.
+        exam_generator (~pyexamgenerator.ExamGenerator): Instance of the exam generator.
         prompt_types (dict): Dictionary of prompt types.
         selected_prompt_type (tk.StringVar): Variable for the selected prompt type.
         custom_prompt_text (tk.StringVar): Variable for the custom prompt text.
@@ -86,7 +86,7 @@ class ExamApp:
         num_questions_var (tk.StringVar): Variable for the number of questions to generate.
         output_filename_var (tk.StringVar): Variable for the output filename.
         api_key_var (tk.StringVar): Variable for the API key.
-        question_bank_manager (QuestionBankManager): Instance of the question bank manager.
+        question_bank_manager (~pyexamgenerator.QuestionBankManager): Instance of the question bank manager.
         existing_bank_path (tk.StringVar): Variable for the path to an existing question bank.
         reviewed_add_path (tk.StringVar): Variable for the path to reviewed questions to be added.
     """
