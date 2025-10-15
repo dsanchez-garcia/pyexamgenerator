@@ -1,7 +1,7 @@
 # pyexamgenerator
 
 [![DOI](https://zenodo.org/badge/1068439434.svg)](https://doi.org/10.5281/zenodo.17337856)
-![alt text](https://readthedocs.org/projects/pyexamgenerator/badge/?version=latest)
+[![alt text](https://readthedocs.org/projects/pyexamgenerator/badge/?version=latest)](https://pyexamgenerator.readthedocs.io/es/latest/)
 
 pyexamgenerator es una suite de aplicaciones de escritorio construida con Python y Tkinter para automatizar y simplificar el ciclo completo de creación de exámenes. Permite generar preguntas a partir de documentos PDF utilizando la IA de Google Gemini, gestionar un banco centralizado de preguntas y producir exámenes en múltiples formatos.
 
