@@ -120,7 +120,7 @@ Este script utiliza la IA para leer uno o más archivos PDF y generar un banco d
 ```python
 # archivo: generar_preguntas.py
 
-from pyexamgenerator.question_generator import QuestionGenerator
+from pyexamgenerator import QuestionGenerator
 import os
 
 # --- Configuración ---
@@ -162,7 +162,7 @@ Este script toma un archivo `.docx` que has revisado manualmente y lo convierte 
 ```python
 # archivo: convertir_docx.py
 
-from pyexamgenerator.question_bank_manager import QuestionBankManager
+from pyexamgenerator import QuestionBankManager
 import os
 
 # --- Configuración ---
@@ -191,7 +191,7 @@ Este script añade las preguntas de un archivo Excel a tu banco principal, aplic
 ```python
 # archivo: fusionar_bancos.py
 
-from pyexamgenerator.question_bank_manager import QuestionBankManager
+from pyexamgenerator import QuestionBankManager
 import os
 
 # --- Configuración ---
@@ -232,7 +232,7 @@ Este script genera rápidamente dos versiones de un examen utilizando todas las 
 ```python
 # archivo: crear_examen_simple.py
 
-from pyexamgenerator.exam_generator import ExamGenerator
+from pyexamgenerator import ExamGenerator
 import os
 
 # --- Configuración ---
@@ -261,7 +261,7 @@ Este ejemplo muestra el poder de la personalización, definiendo la estructura e
 ```python
 # archivo: crear_examen_personalizado.py
 
-from pyexamgenerator.exam_generator import ExamGenerator
+from pyexamgenerator import ExamGenerator
 import os
 
 # --- Configuración ---
