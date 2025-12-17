@@ -5,7 +5,7 @@
 
 # === Dependencias Principales de la Aplicación ===
 # (Las mismas que en setup.py)
-google-generativeai
+google-genai
 PyPDF2
 python-docx
 pandas

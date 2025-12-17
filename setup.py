@@ -25,7 +25,7 @@ setup(
     url='https://github.com/dsanchez-garcia/pyexamgenerator',  # URL del repositorio de tu proyecto
     packages=find_packages(),
     install_requires=[
-        'google-generativeai',
+        'google-genai',
         'PyPDF2',
         'python-docx',
         'pandas',
