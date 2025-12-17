@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types # Opcional, útil para tipado, pero no estricto
 import PyPDF2
 import json
 import re
@@ -32,6 +33,10 @@ class QuotaExceededError(Exception):
     """Excepción para cuando se excede el límite de cuota de la API de Gemini."""
     pass
 
+class ServiceOverloadedError(Exception):
+    """Excepción para cuando los servidores de Google están saturados (Error 503)."""
+    pass
+
 class QuestionGenerator:
     """
     Generates multiple-choice questions from PDF files using the Gemini model.
@@ -43,12 +48,13 @@ class QuestionGenerator:
 
         Args:
             api_key (str): The API key for the Gemini model.
-            model_name (str): The name of the Gemini model to use (e.g., 'models/gemini-1.5-pro').
+            model_name (str): The name of the Gemini model to use (e.g., 'models/gemini-2.5-pro').
                               This is a required argument.
         """
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name)
-        print(f"Modelo de Gemini inicializado: {model_name}")
+        self.client = genai.Client(api_key=api_key)
+        self.model_name = model_name
+
+        print(f"Cliente de Gemini inicializado para modelo: {model_name}")
 
         self.prompt_types = {
             "PRL": """
@@ -610,7 +616,10 @@ class QuestionGenerator:
                         )
 
                         try:
-                            response = self.model.generate_content(prompt)
+                            response = self.client.models.generate_content(
+                                model=self.model_name,
+                                contents=prompt
+                            )
                             if print_raw_gemini_answer:
                                 print(f"    Respuesta cruda de Gemini (Fragmento {i + 1}, Intento {attempts_for_this_chunk}):\n    >>>\n{response.text}\n    <<<\n    ---")
 
@@ -642,7 +651,7 @@ class QuestionGenerator:
                                     "\n\nSugerencias para solucionarlo:\n"
                                     "1. Espera unos minutos: La cuota gratuita se reinicia cada cierto tiempo.\n"
                                     "2. Cambia de modelo: Los modelos 'Pro' son más potentes pero consumen la cuota más rápido. "
-                                    "Prueba a cambiar a un modelo 'Flash' (como 'gemini-1.5-flash'), que es más rápido y económico."
+                                    "Prueba a cambiar a un modelo 'Flash' (como 'gemini-2.5-flash'), que es más rápido y económico."
                                 )
                                 message = (
                                     "Has excedido el límite de solicitudes a la API de Gemini (Error 429).\n"
@@ -650,6 +659,18 @@ class QuestionGenerator:
                                 )
                                 # Lanzamos nuestra excepción personalizada con el mensaje mejorado
                                 raise QuotaExceededError(message) from e_gen
+                            elif "503" in error_str or "overloaded" in error_str:
+                                suggestion = (
+                                    "\n\nSugerencias para solucionarlo:\n"
+                                    "1. Cambia de modelo: El modelo que estás intentando usar está saturado actualmente. "
+                                    "Intenta usar 'gemini-2.5-flash', que suele tener mayor disponibilidad.\n"
+                                    "2. Espera unos minutos e inténtalo de nuevo."
+                                )
+                                message = (
+                                    "Los servidores de Google para este modelo están saturados (Error 503).\n"
+                                    f"{suggestion}"
+                                )
+                                raise ServiceOverloadedError(message) from e_gen
                             else:
                                 # Si es otro error, lo imprimimos para depuración pero no detenemos el proceso
                                 print(f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}")

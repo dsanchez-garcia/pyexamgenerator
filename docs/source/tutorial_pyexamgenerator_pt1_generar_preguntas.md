@@ -11,6 +11,14 @@ Asegúrate de tener ambos archivos en tu carpeta de trabajo: `RD 31-95 LPRL_frag
 Un "Prompt" son las instrucciones que le damos a la inteligencia artificial.
 
 *   **Tipo de Prompt:** Este menú desplegable contiene plantillas de instrucciones. Como ambos documentos son de temática legal sobre prevención, la mejor opción es **PRL**.
+    > **💡 Tip Pro: Prompts Personalizados**
+    >
+    > ¿Necesitas generar preguntas de Historia, Biología o Matemáticas? ¡Puedes crear tus propios prompts!
+    >
+    > *   **Añadir:** Haz clic en el botón "Añadir". Escribe un nombre (ej. "Historia") y las instrucciones para la IA (ej. "Genera preguntas sobre fechas clave...").
+    > *   **Editar:** Selecciona un prompt existente y haz clic en "Editar" para mejorarlo.
+    > *   **Guardar:** Al crear o editar, el programa genera automáticamente un archivo llamado `custom_prompts.json` **en la misma carpeta donde ejecutaste el programa**.
+    > *   **Reutilizar:** La próxima vez que abras `pyexamgenerator` **desde esa misma carpeta**, el programa leerá el archivo `.json` y tus prompts personalizados aparecerán automáticamente en la lista. Si abres el programa en otra carpeta vacía, no aparecerán hasta que copies ese archivo allí.
 *   **Acción para nuestro ejemplo:** Selecciona **PRL** en el menú desplegable.
 
 ### Sección 2: Seleccionar archivos PDF
@@ -45,7 +53,8 @@ Esta es la parte más importante, donde personalizamos la tarea.
     *   **Qué es:** Una potente herramienta para evitar añadir preguntas repetidas a un banco que ya existe.
     *   **Banco Existente a Consultar:** Aquí seleccionarías tu archivo Excel principal de preguntas.
     *   **Activar filtro de similitud:** Si la marcas, la aplicación comparará cada nueva pregunta generada con todas las de tu banco existente.
-    *   **Umbral de similitud:** Un valor entre 0.0 y 1.0 que define qué tan parecida debe ser una pregunta para ser descartada (ej. 0.8 significa 80% similar).
+    *   **Umbral de similitud:** Define la sensibilidad del filtro usando el **Índice de Jaccard** (comparación de palabras compartidas).
+        *   **¿Cómo funciona?** Un valor de **1.0** significa que la pregunta solo se descartará si es *idéntica* palabra por palabra a una existente. Un valor de **0.8** (recomendado) significa que si la nueva pregunta comparte el 80% de las palabras con una existente (es decir, es muy parecida aunque cambie alguna palabra), se considerará duplicada y se descartará.
     *   **Acción para nuestro ejemplo:** Como estamos creando nuestro primer banco, **dejaremos todos estos campos vacíos y las casillas desmarcadas**.
 
 *   **Inclusión de Banco en Prompt:**

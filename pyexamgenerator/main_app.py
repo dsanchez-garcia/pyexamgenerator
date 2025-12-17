@@ -18,7 +18,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import pandas as pd
-from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededError
+from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededError, ServiceOverloadedError
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
@@ -26,7 +26,7 @@ from docx import Document
 import os
 import json
 from ttkwidgets.frames import ScrolledFrame
-import google.generativeai as genai
+from google import genai
 
 # Importamos la versión directamente desde nuestro paquete
 from pyexamgenerator import __version__
@@ -166,11 +166,6 @@ class ExamApp:
         self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else "TU_CLAVE_API")
         self.gen_questions_output_dir_var = tk.StringVar()
 
-        # self.gemini_models = {
-        #     "gemini-1.5-flash": "models/gemini-1.5-flash",
-        #     "gemini-1.5-pro": "models/gemini-1.5-pro",
-        #     "gemini-1.0-pro": "models/gemini-1.0-pro"
-        # }
         self.selected_model_var = tk.StringVar(value='')
 
         self.existing_bank_for_gen_path = tk.StringVar()
@@ -768,6 +763,7 @@ class ExamApp:
     def populate_models_table(self):
         """
         Fetches available Gemini models using the provided API key and populates the Treeview table.
+        Adapted for the new google-genai library.
         """
         api_key = self.api_key_var.get()
         if not api_key or api_key == "TU_CLAVE_API":
@@ -782,39 +778,61 @@ class ExamApp:
             self.models_tree.delete(i)
 
         try:
-            genai.configure(api_key=api_key)
+            # Inicializamos el cliente con la nueva librería
+            client = genai.Client(api_key=api_key)
 
-            # Obtenemos todos los modelos y filtramos por los que pueden generar contenido
-            available_models = [
-                m for m in genai.list_models()
-                if 'generateContent' in m.supported_generation_methods
-            ]
+            # Obtenemos el iterador de modelos
+            # Nota: La nueva librería maneja la paginación automáticamente
+            models_pager = client.models.list()
 
-            if not available_models:
-                messagebox.showwarning("Sin Modelos", "No se encontraron modelos compatibles con la generación de contenido.")
-                self.update_status("No se encontraron modelos compatibles.")
-                return
+            count = 0
+            for model in models_pager:
+                # 1. FILTRO: Solo nos interesan los modelos que se llamen "gemini"
+                # Usamos getattr para mayor seguridad por si el objeto cambia
+                model_name = getattr(model, 'name', '')
+                if 'gemini' not in model_name:
+                    continue
 
-            # Insertamos todas las nuevas columnas de datos
-            for model in available_models:
-                # Convertimos la lista de métodos a una cadena de texto legible
-                methods_str = ', '.join(model.supported_generation_methods)
+                # 2. OBTENCIÓN SEGURA DE DATOS
+                # La nueva API puede no devolver todos los campos que tenía la antigua.
+                # Usamos getattr(objeto, 'atributo', 'valor_por_defecto') para evitar crashes.
 
+                display_name = getattr(model, 'display_name', model_name)
+                version = getattr(model, 'version', '')
+
+                # Los límites de tokens a veces no vienen en el listado general en la nueva API
+                input_tokens = getattr(model, 'input_token_limit', 'N/A')
+                output_tokens = getattr(model, 'output_token_limit', 'N/A')
+
+                # 'supported_generation_methods' ya no existe en el objeto simple.
+                # Asumimos que si es Gemini, soporta generación de contenido.
+                methods_str = "generateContent"
+
+                description = getattr(model, 'description', '') or ""
+                description = description.replace('\n', ' ')
+
+                # 3. INSERTAR EN LA TABLA
                 self.models_tree.insert("", "end", values=(
-                    model.name,
-                    model.display_name,
-                    model.version,
-                    model.input_token_limit,
-                    model.output_token_limit,
+                    model_name,
+                    display_name,
+                    version,
+                    input_tokens,
+                    output_tokens,
                     methods_str,
-                    model.description.replace('\n', ' ')  # Evitar saltos de línea en la descripción
+                    description
                 ))
+                count += 1
 
-            self.update_status(f"Se cargaron {len(available_models)} modelos. Por favor, seleccione uno de la tabla.")
+            if count == 0:
+                messagebox.showwarning("Sin Modelos", "La API respondió, pero no se encontraron modelos 'gemini'.")
+
+            self.update_status(f"Se cargaron {count} modelos. Por favor, seleccione uno de la tabla.")
 
         except Exception as e:
             messagebox.showerror("Error de API", f"No se pudo obtener la lista de modelos. Verifica tu clave API y conexión a internet.\n\nError: {e}")
             self.update_status("Error al cargar modelos.")
+            # Imprimimos el error completo en consola para depuración si es necesario
+            print(f"Error detallado al cargar modelos: {e}")
 
     # Nueva función para manejar la selección en la tabla
     def on_model_select(self, event=None):
@@ -828,7 +846,7 @@ class ExamApp:
             selected_item = selected_items[0]
             # Obtenemos los valores de la fila seleccionada
             item_values = self.models_tree.item(selected_item, 'values')
-            # El primer valor es el nombre técnico (ej. 'models/gemini-1.5-pro')
+            # El primer valor es el nombre técnico (ej. 'models/gemini-2.5-pro')
             technical_name = item_values[0]
 
             self.selected_model_var.set(technical_name)
@@ -1098,6 +1116,12 @@ class ExamApp:
             self.update_status("Error: Límite de cuota de la API excedido.")
             messagebox.showerror(title, message)
             print(f"ERROR: {title}\n{message}")
+
+        except ServiceOverloadedError as e:
+            title = "Servidores de Google Saturados"
+            self.update_status("Error: Modelo de IA saturado.")
+            messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
+            print(f"ERROR: {title}\n{e}")
 
         except Exception as e:
             self.update_status(f"Error durante la generación de preguntas: {e}")
