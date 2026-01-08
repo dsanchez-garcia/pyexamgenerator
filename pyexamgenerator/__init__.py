@@ -1,7 +1,7 @@
 # pyexamgenerator/__init__.py
 
 # Define la versión del paquete (Fuente Única de Verdad)
-__version__ = "0.2.1"  # O la versión actual que tengas
+__version__ = "0.2.2"  # O la versión actual que tengas
 
 # --- API Pública ---
 # "Promueve" las clases y excepciones principales al espacio de nombres del paquete.

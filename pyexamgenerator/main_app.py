@@ -951,17 +951,15 @@ class ExamApp:
 
         This method gets the API key from the GUI variable,
         saves it using the `save_api_key` method, and updates the
-        question generator instance (`self.question_generator`) with the new API key.
+        API key in the instance.
         It also shows informational or error messages to the user via messagebox.
         """
         key_to_save = self.api_key_var.get()
         if key_to_save:
             self.save_api_key(key_to_save)
             self.api_key = key_to_save  # Update the API key in the instance.
-            try:
-                self.question_generator = QuestionGenerator(self.api_key)  # Re-initialize the model with the new key.
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al inicializar el generador de preguntas: {e}")
+            # We don't instantiate QuestionGenerator here anymore because it requires a model_name,
+            # which might not be selected yet. It will be instantiated when generating questions.
             messagebox.showinfo("Info", "La API key ha sido actualizada y guardada.")
         else:
             messagebox.showerror("Error", "Por favor, introduce la API key.")
