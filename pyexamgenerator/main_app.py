@@ -169,6 +169,7 @@ class ExamApp:
         self.selected_model_var = tk.StringVar(value='')
 
         self.existing_bank_for_gen_path = tk.StringVar()
+        self.input_mode_var = tk.StringVar(value="text")
         self.process_by_pages_var = tk.BooleanVar(value=False)
         self.pages_per_chunk_var = tk.StringVar(value="1")
         self.total_chunks_var = tk.StringVar(value="")
@@ -549,17 +550,30 @@ class ExamApp:
         self.update_custom_prompt_display()
         ToolTip(self.prompt_text_display, "Texto del prompt seleccionado. No editable directamente aquí.")
 
-        pdf_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar Archivos PDF")
+        pdf_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar Archivos Fuente")
         pdf_frame.pack(padx=10, pady=10, fill='x')
-        pdf_label = ttk.Label(pdf_frame, text="Archivos PDF:")
+        pdf_label = ttk.Label(pdf_frame, text="Archivos PDF/Imagen:")
         pdf_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(pdf_label, "Seleccione los archivos PDF desde los cuales se generarán las preguntas.")
+        ToolTip(pdf_label, "Seleccione PDFs o imágenes desde los cuales se generarán las preguntas.")
         self.pdf_entry = ttk.Entry(pdf_frame, width=50, textvariable=self.pdf_files_var)
         self.pdf_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(self.pdf_entry, "Rutas de los archivos PDF seleccionados (separados por comas).")
-        select_pdf_button = ttk.Button(pdf_frame, text="Seleccionar PDFs", command=self.select_pdf_files)
+        select_pdf_button = ttk.Button(pdf_frame, text="Seleccionar Archivos", command=self.select_pdf_files)
         select_pdf_button.grid(row=0, column=2, padx=5, pady=5)
-        ToolTip(select_pdf_button, "Abre un diálogo para seleccionar uno o más archivos PDF.")
+        ToolTip(select_pdf_button, "Abre un diálogo para seleccionar uno o más PDFs o imágenes.")
+
+        input_mode_label = ttk.Label(pdf_frame, text="Modo de entrada:")
+        input_mode_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(input_mode_label, "text: extrae texto del PDF; image: analiza contenido visual (imágenes o páginas renderizadas).")
+        input_mode_combo = ttk.Combobox(
+            pdf_frame,
+            textvariable=self.input_mode_var,
+            values=["text", "image"],
+            state='readonly',
+            width=12
+        )
+        input_mode_combo.grid(row=1, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(input_mode_combo, "Selecciona cómo Gemini debe interpretar los archivos fuente.")
         pdf_frame.columnconfigure(1, weight=1)
 
         # --- Generation configuration section ---
@@ -1001,12 +1015,17 @@ class ExamApp:
 
     def select_pdf_files(self) -> None:
         """
-        Opens a dialog for the user to select one or more PDF files.
+        Opens a dialog for the user to select one or more source files.
         The paths of the selected files are inserted into the corresponding entry widget.
         """
         file_paths = filedialog.askopenfilenames(
-            title="Seleccionar archivos PDF",
-            filetypes=(("Archivos PDF", "*.pdf"), ("Todos los archivos", "*.*"))
+            title="Seleccionar archivos fuente",
+            filetypes=(
+                ("Archivos soportados", "*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff"),
+                ("Archivos PDF", "*.pdf"),
+                ("Imágenes", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff"),
+                ("Todos los archivos", "*.*"),
+            )
         )
         self.pdf_entry.insert(tk.END, ",".join(file_paths))
 
@@ -1069,6 +1088,12 @@ class ExamApp:
             messagebox.showerror("Error", "Por favor, selecciona al menos un archivo PDF.")
             return
 
+        if self.input_mode_var.get() == "text":
+            non_pdf_paths = [path for path in pdf_paths if not path.lower().endswith('.pdf')]
+            if non_pdf_paths:
+                messagebox.showerror("Error", "En modo 'text' solo se permiten archivos PDF.")
+                return
+
         try:
             # Re-initialize the generator with the current model and API key.
             # This is important if the user changes the model or API key.
@@ -1083,6 +1108,7 @@ class ExamApp:
         existing_bank_path_for_gen = self.existing_bank_for_gen_path.get()
         bank_prompt_scope_value = self.bank_in_prompt_scope_var.get()
         prompt_example_content_value = self.prompt_example_content_var.get()
+        input_mode_value = self.input_mode_var.get() or "text"
         print_raw_gemini_answer_value = self.print_raw_gemini_answer_var.get()  # Get checkbox value.
 
         similarity_threshold_value = None
@@ -1147,7 +1173,8 @@ class ExamApp:
                 max_generation_attempts_per_chunk=max_attempts_value,
                 total_chunks=total_chunks_value,
                 chunking_mode=chunking_mode_value,
-                include_similar_questions_in_prompt=self.include_similar_questions_in_prompt_var.get()
+                include_similar_questions_in_prompt=self.include_similar_questions_in_prompt_var.get(),
+                input_mode=input_mode_value
             )
             if questions_df is not None and not questions_df.empty:
                 self.update_status(f"Preguntas generadas y guardadas ({len(questions_df)} en total).")

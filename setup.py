@@ -30,6 +30,7 @@ setup(
         'python-docx',
         'pandas',
         'openpyxl',
+        'PyMuPDF',
         'ttkwidgets',
         'importlib-metadata; python_version < "3.8"',
     ],

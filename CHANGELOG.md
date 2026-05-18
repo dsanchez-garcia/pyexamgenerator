@@ -10,6 +10,7 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 ### Cambiado
 - **Generación por fragmentos más flexible:** Se añade soporte para elegir el modo de fragmentación con `chunking_mode` (`pages` o `text_length`) y para definir `total_chunks` además de `pages_per_chunk`.
 - **Flujo GUI de generación de preguntas ampliado:** La pestaña **Generar Preguntas** incluye controles para `total_chunks`, `chunking_mode` y para incluir/excluir preguntas similares del banco dentro del prompt.
+- **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Añadido
 - **Prompts sin API (modo manual):** Nuevo método `build_generation_prompts(...)` en `QuestionGenerator` para preparar prompts listos para usar en Google AI Studio/Gemini sin llamadas a la API.
@@ -18,6 +19,10 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Plantilla DOCX en generación de exámenes:** Se soporta `template_docx_path` y reemplazo de placeholders `{{subject}}`, `{{exam}}`, `{{course}}`, `{{exam_type}}` cuando estén presentes.
 - **Plantillas de configuración en GUI (Generar Exámenes):** Se añaden acciones para guardar/cargar la configuración de la pestaña en JSON con prioridad local (`./exam_generation_template.json`) y fallback central (`%APPDATA%\pyexamgenerator\exam_generation_template.json`).
 - **Nuevas pruebas automáticas:** Nuevo archivo `tests/test_v023_features.py` para validar estado case-insensitive, XML no blanco y placeholders de plantilla DOCX.
+- **Entrada multimodal por imágenes con Gemini:** `QuestionGenerator.generate_multiple_choice_questions(...)` añade `input_mode` con soporte `image` para generar preguntas a partir de imágenes o de páginas PDF renderizadas como imagen.
+- **Soporte de imágenes en prompts manuales:** `QuestionGenerator.build_generation_prompts(...)` añade `input_mode` para preparar prompts orientados a flujo visual (AI Studio/Gemini web).
+- **Dependencia para renderizado visual de PDFs:** Se incorpora `PyMuPDF` en `setup.py` para convertir páginas PDF en imágenes cuando se usa `input_mode='image'`.
+- **Nuevas pruebas unitarias de modo visual:** Nuevo archivo `tests/test_image_mode_unit.py` para validar utilidades de agrupación y flujo básico de prompts en `input_mode='image'`.
 
 ### Arreglado
 - **Estado case-insensitive:** El filtro de preguntas con estado "Aceptable" ahora acepta variantes como "aceptable" en generación de exámenes y en fusión de bancos.
