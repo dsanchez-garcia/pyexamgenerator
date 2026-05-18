@@ -5,6 +5,17 @@ Todas las novedades de este proyecto están documentadas en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Arreglado
+- Generación de exámenes con orden canónico único por tipo, reutilizado en enunciados, hoja de respuestas y exportación XML de Moodle.
+- La tabla de la hoja de respuestas muestra la numeración `01..N` de forma consistente.
+- Los nombres de pregunta en XML (`Pregunta 01`, `Pregunta 02`, ...) usan dos dígitos para mantener homogeneidad visual y trazabilidad con la hoja de respuestas.
+
+### Añadido
+- Prueba unitaria para validar numeración canónica y coherencia de la respuesta correcta tras el barajado de opciones.
+- Prueba de integración usando el fixture real `prueba_error/examen_CSP_Q-PA_25-26.xlsx` para verificar coherencia entre tabla de respuestas en DOCX y preguntas en XML.
+
 ## [0.2.2] - 2026-01-08
 
 ### Arreglado

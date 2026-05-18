@@ -49,6 +49,41 @@ class ExamGenerator:
         # Added self.df attribute to persist the DataFrame between calls.
         self.df = None
 
+    @staticmethod
+    def _format_question_number(question_number: int) -> str:
+        """Formats question numbers using two digits (01, 02, ...)."""
+        return f"{int(question_number):02d}"
+
+    def _build_exam_variant_df(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        """Builds one exam variant with a canonical order reused by all outputs."""
+        exam_df_variant = source_df.sample(frac=1).reset_index(drop=True).copy()
+        exam_df_variant['Número de pregunta'] = range(1, len(exam_df_variant) + 1)
+        exam_df_variant['Texto respuesta correcta'] = exam_df_variant.apply(
+            lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"]
+            if pd.notnull(row['Respuesta correcta']) else None,
+            axis=1
+        )
+
+        def shuffle_row_answers(row):
+            answers = [row['Respuesta A'], row['Respuesta B'], row['Respuesta C'], row['Respuesta D']]
+            original_correct_answer = row['Texto respuesta correcta']
+            random.shuffle(answers)
+            new_correct_answer_letter = None
+            if original_correct_answer == answers[0]:
+                new_correct_answer_letter = 'a'
+            elif original_correct_answer == answers[1]:
+                new_correct_answer_letter = 'b'
+            elif original_correct_answer == answers[2]:
+                new_correct_answer_letter = 'c'
+            elif original_correct_answer == answers[3]:
+                new_correct_answer_letter = 'd'
+            return pd.Series([answers[0], answers[1], answers[2], answers[3], new_correct_answer_letter])
+
+        exam_df_variant[['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'Respuesta correcta']] = \
+            exam_df_variant.apply(shuffle_row_answers, axis=1)
+        exam_df_variant.drop(columns=['Texto respuesta correcta'], inplace=True)
+        return exam_df_variant
+
     def read_questions_from_excel(self, excel_path: str) -> Optional[pd.DataFrame]:
         """
         Reads questions from an Excel file and returns a pandas DataFrame.
@@ -285,13 +320,11 @@ class ExamGenerator:
             category_text += f" {xml_cat_additional_text}"
 
         self.text.text = category_text
-        use_two_digits = num_total_questions > 9
-
         for _, row in df.iterrows():
             correct_answer = row['Respuesta correcta'].lower()
 
             pregunta_num = row['Número de pregunta']
-            formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
+            formatted_pregunta_num = self._format_question_number(pregunta_num)
 
             self.question = SubElement(self.quiz, 'question', type='multichoice')
             self.name = SubElement(self.question, 'name')
@@ -486,7 +519,7 @@ class ExamGenerator:
 
         for i in range(num_exams_to_generate):
             exam_type_name = exam_name_list[i]
-            exam_df_shuffled = self.exam_df.sample(frac=1).reset_index(drop=True).copy()
+            exam_df_shuffled = self._build_exam_variant_df(self.exam_df)
 
             base_filename = f'examen_{subject}_{exam}_{course}_{exam_type_name}'
 
@@ -501,30 +534,6 @@ class ExamGenerator:
                     print(f"Verbose: Head de exam_df_shuffled:\n{exam_df_shuffled.head()}")
                 else:
                     print(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
-
-            exam_df_shuffled['Número de pregunta'] = range(1, len(exam_df_shuffled) + 1)
-
-            exam_df_shuffled['Texto respuesta correcta'] = exam_df_shuffled.apply(
-                lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"] if pd.notnull(
-                    row['Respuesta correcta']) else None, axis=1)
-
-            def shuffle_row_answers(row):
-                answers = [row['Respuesta A'], row['Respuesta B'], row['Respuesta C'], row['Respuesta D']]
-                original_correct_answer = row['Texto respuesta correcta']
-                random.shuffle(answers)
-                new_correct_answer_letter = None
-                if original_correct_answer == answers[0]:
-                    new_correct_answer_letter = 'a'
-                elif original_correct_answer == answers[1]:
-                    new_correct_answer_letter = 'b'
-                elif original_correct_answer == answers[2]:
-                    new_correct_answer_letter = 'c'
-                elif original_correct_answer == answers[3]:
-                    new_correct_answer_letter = 'd'
-                return pd.Series([answers[0], answers[1], answers[2], answers[3], new_correct_answer_letter])
-
-            exam_df_shuffled[['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'Respuesta correcta']] = \
-                exam_df_shuffled.apply(shuffle_row_answers, axis=1)
 
             exam_text, full_exam_text = self.generate_question_text(exam_df_shuffled.copy(), renumber=False,
                                                                     shuffle_answers=False)
@@ -607,9 +616,9 @@ class ExamGenerator:
                 cell.text = header
                 for paragraph in cell.paragraphs:
                     paragraph.runs[0].font.size = Pt(font_size)
-            for j, row in enumerate(exam_df_shuffled.itertuples(), start=1):
+            for j, (_, row) in enumerate(exam_df_shuffled.iterrows(), start=1):
                 cell = table.cell(j, 0)
-                cell.text = str(row._1)
+                cell.text = self._format_question_number(row['Número de pregunta'])
                 for paragraph in cell.paragraphs:
                     paragraph.runs[0].font.size = Pt(font_size)
             for j in range(5):
