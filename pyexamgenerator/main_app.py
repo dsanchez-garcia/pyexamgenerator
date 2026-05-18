@@ -171,12 +171,15 @@ class ExamApp:
         self.existing_bank_for_gen_path = tk.StringVar()
         self.process_by_pages_var = tk.BooleanVar(value=False)
         self.pages_per_chunk_var = tk.StringVar(value="1")
+        self.total_chunks_var = tk.StringVar(value="")
+        self.chunking_mode_var = tk.StringVar(value="pages")
         self.max_attempts_var = tk.StringVar(value="3")
         self.print_raw_gemini_answer_var = tk.BooleanVar(value=False)
         self.use_similarity_filter_var = tk.BooleanVar(value=True)
         self.similarity_threshold_var = tk.StringVar(value="0.8")
         self.bank_in_prompt_scope_var = tk.StringVar(value="mismo_tema")
         self.prompt_example_content_var = tk.StringVar(value="solo_enunciados")
+        self.include_similar_questions_in_prompt_var = tk.BooleanVar(value=True)
 
         self.question_bank_manager = QuestionBankManager()
 
@@ -188,6 +191,8 @@ class ExamApp:
         self.revised_docx_path_var = tk.StringVar()
         self.new_xlsx_filename_var = tk.StringVar()
         self.duplicate_check_var = tk.StringVar(value="pregunta_unica")
+        self.xml_use_answer_text_var = tk.BooleanVar(value=False)
+        self.template_docx_path_var = tk.StringVar(value="")
 
         # Añadimos variables para gestionar el tooltip de la tabla de modelos
         self.tree_tooltip = None
@@ -473,8 +478,12 @@ class ExamApp:
         """
         if self.process_by_pages_var.get():
             self.pages_per_chunk_entry.config(state='normal')
+            self.total_chunks_entry.config(state='normal')
+            self.chunking_mode_combo.config(state='readonly')
         else:
             self.pages_per_chunk_entry.config(state='disabled')
+            self.total_chunks_entry.config(state='disabled')
+            self.chunking_mode_combo.config(state='disabled')
 
     def create_question_tab(self) -> None:
         """
@@ -586,6 +595,24 @@ class ExamApp:
         self.pages_per_chunk_entry.grid(row=0, column=2, padx=5, pady=5, sticky='w')
         ToolTip(self.pages_per_chunk_entry, "Introduzca el número de páginas para cada fragmento.")
 
+        total_chunks_label = ttk.Label(processing_frame, text="Fragmentos totales (opcional):")
+        total_chunks_label.grid(row=0, column=3, padx=5, pady=5, sticky='w')
+        ToolTip(total_chunks_label, "Si se indica, divide cada PDF en ese número total de fragmentos.")
+        self.total_chunks_entry = ttk.Entry(processing_frame, width=6, textvariable=self.total_chunks_var, state='disabled')
+        self.total_chunks_entry.grid(row=0, column=4, padx=5, pady=5, sticky='w')
+
+        chunking_mode_label = ttk.Label(processing_frame, text="Modo:")
+        chunking_mode_label.grid(row=0, column=5, padx=5, pady=5, sticky='w')
+        self.chunking_mode_combo = ttk.Combobox(
+            processing_frame,
+            textvariable=self.chunking_mode_var,
+            values=["pages", "text_length"],
+            state='disabled',
+            width=12
+        )
+        self.chunking_mode_combo.grid(row=0, column=6, padx=5, pady=5, sticky='w')
+        ToolTip(self.chunking_mode_combo, "pages: divide por páginas; text_length: divide por longitud de texto.")
+
         # Row 3: Max attempts per chunk
         max_attempts_label = ttk.Label(config_frame, text="Máx. intentos por fragmento:")
         max_attempts_label.grid(row=3, column=0, padx=5, pady=5, sticky='w')
@@ -660,6 +687,14 @@ class ExamApp:
                                                 value="enunciados_y_respuestas")
         enunciados_resp_radio.pack(anchor='w', padx=10, pady=2)
         ToolTip(enunciados_resp_radio, "En el prompt, las preguntas de ejemplo mostrarán su enunciado y sus opciones de respuesta.")
+
+        include_similar_check = ttk.Checkbutton(
+            prompt_inclusion_frame,
+            text="Incluir preguntas similares a evitar en prompt",
+            variable=self.include_similar_questions_in_prompt_var
+        )
+        include_similar_check.pack(anchor='w', padx=10, pady=(0, 5))
+        ToolTip(include_similar_check, "Desmarcar para no incluir ejemplos del banco existente dentro del prompt.")
 
         # Row 6: Model and API Key - Ahora con una tabla
         model_api_frame = ttk.LabelFrame(config_frame, text="Modelo y Clave API")
@@ -1065,6 +1100,8 @@ class ExamApp:
 
         process_by_pages_value = self.process_by_pages_var.get()
         pages_per_chunk_value = 1  # Default value if not processing by pages.
+        total_chunks_value = None
+        chunking_mode_value = self.chunking_mode_var.get() or "pages"
         if process_by_pages_value:
             try:
                 pages_per_chunk_value = int(self.pages_per_chunk_var.get())
@@ -1076,6 +1113,17 @@ class ExamApp:
                 messagebox.showerror("Error", "Las páginas por fragmento deben ser un número entero.")
                 self.update_status("Error en páginas por fragmento.")
                 return
+
+            total_chunks_raw = self.total_chunks_var.get().strip()
+            if total_chunks_raw:
+                try:
+                    total_chunks_value = int(total_chunks_raw)
+                    if total_chunks_value <= 0:
+                        messagebox.showerror("Error", "El número total de fragmentos debe ser un entero positivo.")
+                        return
+                except ValueError:
+                    messagebox.showerror("Error", "El número total de fragmentos debe ser un número entero.")
+                    return
 
         bank_prompt_scope_to_pass = bank_prompt_scope_value if existing_bank_path_for_gen else None
 
@@ -1096,7 +1144,10 @@ class ExamApp:
                 bank_prompt_scope=bank_prompt_scope_to_pass,
                 prompt_example_content_type=prompt_example_content_value,
                 print_raw_gemini_answer=print_raw_gemini_answer_value,
-                max_generation_attempts_per_chunk=max_attempts_value
+                max_generation_attempts_per_chunk=max_attempts_value,
+                total_chunks=total_chunks_value,
+                chunking_mode=chunking_mode_value,
+                include_similar_questions_in_prompt=self.include_similar_questions_in_prompt_var.get()
             )
             if questions_df is not None and not questions_df.empty:
                 self.update_status(f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
@@ -1335,6 +1386,14 @@ class ExamApp:
         xml_cat_text_entry = ttk.Entry(moodle_frame, width=50, textvariable=self.xml_cat_additional_text)
         xml_cat_text_entry.grid(row=2, column=1, columnspan=2, padx=5, pady=5, sticky='ew')
         ToolTip(xml_cat_text_entry, text="Texto adicional para la categoría Moodle XML (opcional).")
+
+        xml_non_blank_check = ttk.Checkbutton(
+            moodle_frame,
+            text="XML no blanco (usar enunciado y respuestas completas)",
+            variable=self.xml_use_answer_text_var
+        )
+        xml_non_blank_check.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky='w')
+        ToolTip(xml_non_blank_check, text="Si se marca, el XML incluye enunciado y texto de respuestas en lugar de a/b/c/d.")
         row += 1
 
         # 7. Update excel file with usage (spans 3 columns)
@@ -1343,6 +1402,22 @@ class ExamApp:
         update_excel_check = ttk.Checkbutton(update_excel_frame, text="Actualizar Archivo Excel con Uso", variable=self.update_excel)
         update_excel_check.pack(side='left', padx=5)
         ToolTip(update_excel_check, text="Marque para actualizar el archivo Excel indicando qué preguntas se han utilizado en el examen.")
+
+        exam_template_buttons = ttk.Frame(update_excel_frame)
+        exam_template_buttons.pack(side='right', padx=5)
+        ttk.Button(exam_template_buttons, text="Guardar Plantilla", command=self.save_exam_tab_template).pack(side='left', padx=2)
+        ttk.Button(exam_template_buttons, text="Cargar Plantilla", command=self.load_exam_tab_template).pack(side='left', padx=2)
+        ToolTip(exam_template_buttons, text="Guardar o cargar la configuración de la pestaña Generar Exámenes.")
+        row += 1
+
+        template_docx_frame = ttk.LabelFrame(inner_frame_exam, text="Plantilla DOCX (opcional)")
+        template_docx_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
+        template_docx_entry = ttk.Entry(template_docx_frame, textvariable=self.template_docx_path_var)
+        template_docx_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
+        ToolTip(template_docx_entry, "Ruta del archivo DOCX de plantilla. Placeholders soportados: {{subject}}, {{exam}}, {{course}}, {{exam_type}}")
+        template_docx_button = ttk.Button(template_docx_frame, text="Seleccionar Plantilla", command=self.select_template_docx_file)
+        template_docx_button.pack(side='left', padx=5, pady=5)
+        ToolTip(template_docx_button, "Seleccionar una plantilla DOCX base para el examen.")
         row += 1
 
         # Output path
@@ -1630,6 +1705,8 @@ class ExamApp:
         xml_cat_additional_text = self.xml_cat_additional_text.get()
         export_moodle = self.export_moodle.get()
         update_excel = self.update_excel.get()
+        xml_use_answer_text = self.xml_use_answer_text_var.get()
+        template_docx_path = self.template_docx_path_var.get().strip() or None
 
         if not os.path.exists(excel_path):
             messagebox.showerror("Error", f"El archivo Excel '{excel_path}' no se encuentra.")
@@ -1719,8 +1796,10 @@ class ExamApp:
                 font_size=font_size,
                 xml_cat_additional_text=xml_cat_additional_text,
                 penalty=penalty,
+                xml_use_answer_text=xml_use_answer_text,
                 update_excel=update_excel,
-                answer_sheet_instructions=answer_sheet_instructions
+                answer_sheet_instructions=answer_sheet_instructions,
+                template_docx_path=template_docx_path
             )
             self.update_status("Exámenes generados.")
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
@@ -1859,6 +1938,114 @@ class ExamApp:
         directory = filedialog.askdirectory(title="Seleccionar Directorio de Salida para Exámenes")
         if directory:
             self.gen_exams_output_dir_var.set(directory)
+
+    def select_template_docx_file(self) -> None:
+        """Opens a dialog to select a DOCX template for exam generation."""
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar Plantilla DOCX",
+            filetypes=[("Archivos Word", "*.docx")]
+        )
+        if filepath:
+            self.template_docx_path_var.set(filepath)
+
+    @staticmethod
+    def _get_exam_template_config_paths() -> Tuple[str, str]:
+        local_path = os.path.join(os.getcwd(), "exam_generation_template.json")
+        appdata = os.getenv("APPDATA")
+        if appdata:
+            central_dir = os.path.join(appdata, "pyexamgenerator")
+            os.makedirs(central_dir, exist_ok=True)
+            central_path = os.path.join(central_dir, "exam_generation_template.json")
+        else:
+            central_path = local_path
+        return local_path, central_path
+
+    def save_exam_tab_template(self) -> None:
+        """Saves current exam-tab values to a JSON template (local first, then central fallback)."""
+        template_data = {
+            "subject": self.subject.get(),
+            "exam_name": self.exam_name.get(),
+            "course": self.course.get(),
+            "num_exams": self.num_exams.get(),
+            "exam_names": self.exam_names.get(),
+            "questions_per_topic": self.questions_per_topic.get(),
+            "num_questions_same_topic": self.num_questions_same_topic.get(),
+            "selection_method": self.selection_method.get(),
+            "selection_method_var": self.selection_method_var.get(),
+            "top_margin": self.top_margin.get(),
+            "bottom_margin": self.bottom_margin.get(),
+            "left_margin": self.left_margin.get(),
+            "right_margin": self.right_margin.get(),
+            "font_size": self.font_size.get(),
+            "answer_sheet_instructions": self.answer_sheet_instructions.get(),
+            "penalty": self.penalty.get(),
+            "xml_cat_additional_text": self.xml_cat_additional_text.get(),
+            "export_moodle": self.export_moodle.get(),
+            "update_excel": self.update_excel.get(),
+            "xml_use_answer_text": self.xml_use_answer_text_var.get(),
+            "template_docx_path": self.template_docx_path_var.get(),
+        }
+
+        local_path, central_path = self._get_exam_template_config_paths()
+        saved_path = None
+        for path in (local_path, central_path):
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(template_data, f, ensure_ascii=False, indent=2)
+                saved_path = path
+                break
+            except OSError:
+                continue
+
+        if saved_path:
+            messagebox.showinfo("Plantilla", f"Plantilla guardada en:\n{saved_path}")
+        else:
+            messagebox.showerror("Error", "No se pudo guardar la plantilla de exámenes.")
+
+    def load_exam_tab_template(self) -> None:
+        """Loads exam-tab values from local JSON first, then central fallback."""
+        local_path, central_path = self._get_exam_template_config_paths()
+        config = None
+        loaded_path = None
+
+        for path in (local_path, central_path):
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                loaded_path = path
+                break
+            except (OSError, json.JSONDecodeError):
+                continue
+
+        if not config:
+            messagebox.showwarning("Plantilla", "No se encontró plantilla de exámenes en ruta local ni central.")
+            return
+
+        self.subject.set(config.get("subject", self.subject.get()))
+        self.exam_name.set(config.get("exam_name", self.exam_name.get()))
+        self.course.set(config.get("course", self.course.get()))
+        self.num_exams.set(config.get("num_exams", self.num_exams.get()))
+        self.exam_names.set(config.get("exam_names", self.exam_names.get()))
+        self.questions_per_topic.set(config.get("questions_per_topic", self.questions_per_topic.get()))
+        self.num_questions_same_topic.set(config.get("num_questions_same_topic", self.num_questions_same_topic.get()))
+        self.selection_method.set(config.get("selection_method", self.selection_method.get()))
+        self.selection_method_var.set(config.get("selection_method_var", self.selection_method_var.get()))
+        self.top_margin.set(config.get("top_margin", self.top_margin.get()))
+        self.bottom_margin.set(config.get("bottom_margin", self.bottom_margin.get()))
+        self.left_margin.set(config.get("left_margin", self.left_margin.get()))
+        self.right_margin.set(config.get("right_margin", self.right_margin.get()))
+        self.font_size.set(config.get("font_size", self.font_size.get()))
+        self.answer_sheet_instructions.set(config.get("answer_sheet_instructions", self.answer_sheet_instructions.get()))
+        self.penalty.set(config.get("penalty", self.penalty.get()))
+        self.xml_cat_additional_text.set(config.get("xml_cat_additional_text", self.xml_cat_additional_text.get()))
+        self.export_moodle.set(config.get("export_moodle", self.export_moodle.get()))
+        self.update_excel.set(config.get("update_excel", self.update_excel.get()))
+        self.xml_use_answer_text_var.set(config.get("xml_use_answer_text", self.xml_use_answer_text_var.get()))
+        self.template_docx_path_var.set(config.get("template_docx_path", self.template_docx_path_var.get()))
+
+        self.update_status(f"Plantilla cargada desde: {loaded_path}")
 
 def main():
     root = tk.Tk()

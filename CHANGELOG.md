@@ -7,6 +7,22 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Cambiado
+- **Generación por fragmentos más flexible:** Se añade soporte para elegir el modo de fragmentación con `chunking_mode` (`pages` o `text_length`) y para definir `total_chunks` además de `pages_per_chunk`.
+- **Flujo GUI de generación de preguntas ampliado:** La pestaña **Generar Preguntas** incluye controles para `total_chunks`, `chunking_mode` y para incluir/excluir preguntas similares del banco dentro del prompt.
+
+### Añadido
+- **Prompts sin API (modo manual):** Nuevo método `build_generation_prompts(...)` en `QuestionGenerator` para preparar prompts listos para usar en Google AI Studio/Gemini sin llamadas a la API.
+- **Filtrado de duplicados post-generación:** Nuevo método `filter_generated_questions_duplicates(...)` en `QuestionGenerator` para filtrar preguntas externas contra un banco existente.
+- **XML de Moodle configurable:** Se añade opción para exportar XML con enunciado y respuestas completas (`xml_use_answer_text=True`), manteniendo por defecto el modo compatible de letras `a/b/c/d`.
+- **Plantilla DOCX en generación de exámenes:** Se soporta `template_docx_path` y reemplazo de placeholders `{{subject}}`, `{{exam}}`, `{{course}}`, `{{exam_type}}` cuando estén presentes.
+- **Plantillas de configuración en GUI (Generar Exámenes):** Se añaden acciones para guardar/cargar la configuración de la pestaña en JSON con prioridad local (`./exam_generation_template.json`) y fallback central (`%APPDATA%\pyexamgenerator\exam_generation_template.json`).
+- **Nuevas pruebas automáticas:** Nuevo archivo `tests/test_v023_features.py` para validar estado case-insensitive, XML no blanco y placeholders de plantilla DOCX.
+
+### Arreglado
+- **Estado case-insensitive:** El filtro de preguntas con estado "Aceptable" ahora acepta variantes como "aceptable" en generación de exámenes y en fusión de bancos.
+- **Tooltips persistentes en GUI:** Se corrige el comportamiento de tooltips que podían quedar visibles al salir del widget o cerrar la aplicación, reforzando la destrucción y el manejo de eventos de cierre.
+
 ### Arreglado
 - Generación de exámenes con orden canónico único por tipo, reutilizado en enunciados, hoja de respuestas y exportación XML de Moodle.
 - La tabla de la hoja de respuestas muestra la numeración `01..N` de forma consistente.

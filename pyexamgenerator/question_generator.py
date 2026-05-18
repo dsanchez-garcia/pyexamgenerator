@@ -27,7 +27,8 @@ from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 from docx.enum.style import WD_STYLE_TYPE
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+import math
 
 class QuotaExceededError(Exception):
     """Excepción para cuando se excede el límite de cuota de la API de Gemini."""
@@ -138,6 +139,49 @@ class QuestionGenerator:
                 text_chunks.append("\n".join(current_chunk_pages))
                 current_chunk_pages = []
         return text_chunks
+
+    def _group_pages_into_total_chunks(self, total_chunks: int) -> List[str]:
+        """Groups page texts into a fixed number of balanced chunks."""
+        if not hasattr(self, 'page_texts') or not self.page_texts:
+            return []
+        if total_chunks <= 0:
+            return []
+
+        num_pages = len(self.page_texts)
+        total_chunks = min(total_chunks, num_pages)
+        base_size = num_pages // total_chunks
+        remainder = num_pages % total_chunks
+
+        chunks = []
+        start = 0
+        for idx in range(total_chunks):
+            extra = 1 if idx < remainder else 0
+            end = start + base_size + extra
+            chunks.append("\n".join(self.page_texts[start:end]))
+            start = end
+        return chunks
+
+    @staticmethod
+    def _group_text_by_length(text: str, total_chunks: int) -> List[str]:
+        """Splits text into a fixed number of near-balanced chunks by word count."""
+        if not text or total_chunks <= 0:
+            return []
+        words = text.split()
+        if not words:
+            return []
+
+        total_chunks = min(total_chunks, len(words))
+        base_size = len(words) // total_chunks
+        remainder = len(words) % total_chunks
+
+        chunks = []
+        start = 0
+        for idx in range(total_chunks):
+            extra = 1 if idx < remainder else 0
+            end = start + base_size + extra
+            chunks.append(" ".join(words[start:end]))
+            start = end
+        return chunks
 
     def _build_prompt(
             self,
@@ -488,6 +532,110 @@ class QuestionGenerator:
 
         return (False, 0.0, None)
 
+    def filter_generated_questions_duplicates(
+            self,
+            generated_questions_df: pd.DataFrame,
+            existing_bank_path: str,
+            similarity_threshold: float = 0.8
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Filters an external DataFrame of generated questions against an existing bank.
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame]: (accepted_df, rejected_df)
+        """
+        if generated_questions_df is None or generated_questions_df.empty:
+            return pd.DataFrame(), pd.DataFrame()
+
+        if not existing_bank_path or not os.path.exists(existing_bank_path):
+            raise FileNotFoundError(f"No se encontró el banco de preguntas: {existing_bank_path}")
+
+        self.existing_bank_df = pd.read_excel(existing_bank_path)
+        self.similarity_threshold = similarity_threshold if 0 <= similarity_threshold <= 1.0 else 0.8
+
+        accepted_rows = []
+        rejected_rows = []
+        for _, row in generated_questions_df.iterrows():
+            question_text = row.get("Pregunta", "")
+            is_similar, sim_score, matched_text = self._is_similar_question(question_text)
+            if is_similar:
+                row_dict = row.to_dict()
+                row_dict["Similitud"] = sim_score
+                row_dict["Pregunta Coincidente"] = matched_text
+                rejected_rows.append(row_dict)
+            else:
+                accepted_rows.append(row.to_dict())
+
+        return pd.DataFrame(accepted_rows), pd.DataFrame(rejected_rows)
+
+    def build_generation_prompts(
+            self,
+            pdf_paths: List[str],
+            prompt_type: str,
+            num_questions_per_chunk_target: int = 5,
+            custom_prompt: Optional[str] = None,
+            existing_bank_path: Optional[str] = None,
+            process_by_pages: bool = False,
+            pages_per_chunk: int = 1,
+            total_chunks: Optional[int] = None,
+            chunking_mode: str = "pages",
+            bank_prompt_scope: Optional[str] = None,
+            prompt_example_content_type: str = "solo_enunciados",
+            include_similar_questions_in_prompt: bool = True
+    ) -> pd.DataFrame:
+        """Builds prompts for manual use (AI Studio/Gemini web) without calling the API."""
+        prompts_rows: List[Dict] = []
+        self.current_prompt_example_content_type = prompt_example_content_type
+
+        if existing_bank_path and os.path.exists(existing_bank_path):
+            self.existing_bank_df = pd.read_excel(existing_bank_path)
+        else:
+            self.existing_bank_df = None
+
+        for pdf_path in pdf_paths:
+            pdf_full_text_content = self.extract_pdf_text(pdf_path)
+            current_pdf_topic = self.extract_topic_number_from_path(pdf_path)
+            if not pdf_full_text_content:
+                continue
+
+            if process_by_pages and hasattr(self, 'page_texts') and self.page_texts:
+                if chunking_mode == "text_length":
+                    inferred_chunks = total_chunks
+                    if inferred_chunks is None:
+                        inferred_chunks = max(1, math.ceil(len(self.page_texts) / max(1, pages_per_chunk)))
+                    text_chunks_to_process = self._group_text_by_length(pdf_full_text_content, inferred_chunks)
+                else:
+                    if total_chunks is not None:
+                        text_chunks_to_process = self._group_pages_into_total_chunks(total_chunks)
+                    else:
+                        text_chunks_to_process = self._group_pages_into_chunks(pages_per_chunk)
+                context_for_chunks = pdf_full_text_content
+            else:
+                text_chunks_to_process = [pdf_full_text_content]
+                context_for_chunks = None
+
+            for i, chunk_text in enumerate(text_chunks_to_process):
+                prompt = self._build_prompt(
+                    working_chunk_text=chunk_text,
+                    num_questions_to_generate=num_questions_per_chunk_target,
+                    prompt_type=prompt_type,
+                    custom_prompt=custom_prompt,
+                    existing_questions_df=self.existing_bank_df if include_similar_questions_in_prompt else None,
+                    current_topic=current_pdf_topic,
+                    full_document_context_text=context_for_chunks if process_by_pages else None,
+                    bank_prompt_scope=bank_prompt_scope if include_similar_questions_in_prompt else None,
+                    questions_from_current_chunk_attempts=None
+                )
+                prompts_rows.append({
+                    "PDF": pdf_path,
+                    "Tema": current_pdf_topic,
+                    "Fragmento": i + 1,
+                    "Total fragmentos": len(text_chunks_to_process),
+                    "Prompt": prompt.strip()
+                })
+
+        return pd.DataFrame(prompts_rows)
+
     def generate_multiple_choice_questions(
             self,
             pdf_paths: List[str],
@@ -500,11 +648,14 @@ class QuestionGenerator:
             existing_bank_path: Optional[str] = None,
             process_by_pages: bool = False,
             pages_per_chunk: int = 1,
+            total_chunks: Optional[int] = None,
+            chunking_mode: str = "pages",
             similarity_threshold: Optional[float] = 0.8,
             bank_prompt_scope: Optional[str] = None,
             prompt_example_content_type: str = "solo_enunciados",
             print_raw_gemini_answer: bool = False,
-            max_generation_attempts_per_chunk: int = 3
+            max_generation_attempts_per_chunk: int = 3,
+            include_similar_questions_in_prompt: bool = True
     ) -> pd.DataFrame:
         """
         Main function to generate multiple-choice questions from multiple PDFs,
@@ -530,11 +681,14 @@ class QuestionGenerator:
             existing_bank_path (Optional[str]): Path to an existing Excel question bank for similarity filtering.
             process_by_pages (bool): If True, process the PDF in chunks of pages.
             pages_per_chunk (int): The number of pages per chunk if processing by pages.
+            total_chunks (Optional[int]): Total chunks to split each PDF into.
+            chunking_mode (str): Chunking strategy: 'pages' or 'text_length'.
             similarity_threshold (Optional[float]): The threshold for the Jaccard similarity filter.
             bank_prompt_scope (Optional[str]): Scope for selecting guidance questions from the bank.
             prompt_example_content_type (str): Content type for guidance questions ('solo_enunciados' or 'enunciados_y_respuestas').
             print_raw_gemini_answer (bool): If True, prints the raw API response for debugging.
             max_generation_attempts_per_chunk (int): The maximum number of attempts to reach the target per chunk.
+            include_similar_questions_in_prompt (bool): If False, skips adding existing-bank questions to prompt.
 
         Returns:
             pd.DataFrame: A DataFrame containing all the successfully generated and filtered questions.
@@ -583,9 +737,25 @@ class QuestionGenerator:
                 context_for_chunks = None
 
                 if process_by_pages and hasattr(self, 'page_texts') and self.page_texts:
-                    text_chunks_to_process = self._group_pages_into_chunks(pages_per_chunk)
+                    if chunking_mode not in ("pages", "text_length"):
+                        raise ValueError("chunking_mode debe ser 'pages' o 'text_length'.")
+
+                    if chunking_mode == "text_length":
+                        inferred_chunks = total_chunks
+                        if inferred_chunks is None:
+                            inferred_chunks = max(1, math.ceil(len(self.page_texts) / max(1, pages_per_chunk)))
+                        text_chunks_to_process = self._group_text_by_length(pdf_full_text_content, inferred_chunks)
+                    else:
+                        if total_chunks is not None:
+                            text_chunks_to_process = self._group_pages_into_total_chunks(total_chunks)
+                        else:
+                            text_chunks_to_process = self._group_pages_into_chunks(pages_per_chunk)
+
                     context_for_chunks = pdf_full_text_content
-                    print(f"PDF dividido en {len(text_chunks_to_process)} fragmentos de ~{pages_per_chunk} página(s).")
+                    if chunking_mode == "pages" and total_chunks is None:
+                        print(f"PDF dividido en {len(text_chunks_to_process)} fragmentos de ~{pages_per_chunk} página(s).")
+                    else:
+                        print(f"PDF dividido en {len(text_chunks_to_process)} fragmentos (modo: {chunking_mode}).")
                 else:
                     text_chunks_to_process = [pdf_full_text_content]
                     print("Procesando el PDF completo como un solo fragmento.")
@@ -608,10 +778,10 @@ class QuestionGenerator:
                             num_questions_to_generate=num_still_needed,
                             prompt_type=prompt_type,
                             custom_prompt=custom_prompt,
-                            existing_questions_df=self.existing_bank_df,
+                            existing_questions_df=self.existing_bank_df if include_similar_questions_in_prompt else None,
                             current_topic=current_pdf_topic,
                             full_document_context_text=context_for_chunks if process_by_pages else None,
-                            bank_prompt_scope=bank_prompt_scope,
+                            bank_prompt_scope=bank_prompt_scope if include_similar_questions_in_prompt else None,
                             questions_from_current_chunk_attempts=questions_accepted_for_this_chunk
                         )
 

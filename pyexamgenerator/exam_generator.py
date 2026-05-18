@@ -25,7 +25,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import os
-from typing import Optional, Tuple  # Importing Optional and Tuple for type hinting
+from typing import Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -291,7 +291,8 @@ class ExamGenerator:
 
     def generate_moodle_xml(self, df: pd.DataFrame, file_name: str, num_total_questions: int,
                             exam: Optional[str] = None, exam_type: Optional[str] = None,
-                            xml_cat_additional_text: Optional[str] = None, penalty: int = -25):
+                            xml_cat_additional_text: Optional[str] = None, penalty: int = -25,
+                            xml_use_answer_text: bool = False):
         """
         Generates a Moodle XML file from a DataFrame, including category information and correctly
         handling shuffled answers.
@@ -331,33 +332,37 @@ class ExamGenerator:
             self.text = SubElement(self.name, 'text')
             self.text.text = f"Pregunta {formatted_pregunta_num}"
 
+            questiontext = SubElement(self.question, 'questiontext', format='html')
+            questiontext_text = SubElement(questiontext, 'text')
+            questiontext_text.text = row.get('Pregunta', '') if xml_use_answer_text else f"Pregunta {formatted_pregunta_num}"
+
             if correct_answer == 'a':
                 self.answer_a = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_a = SubElement(self.question, 'answer', fraction=str(penalty))
             self.text = SubElement(self.answer_a, 'text')
-            self.text.text = 'a'
+            self.text.text = row.get('Respuesta A', '') if xml_use_answer_text else 'a'
 
             if correct_answer == 'b':
                 self.answer_b = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_b = SubElement(self.question, 'answer', fraction=str(penalty))
             self.text = SubElement(self.answer_b, 'text')
-            self.text.text = 'b'
+            self.text.text = row.get('Respuesta B', '') if xml_use_answer_text else 'b'
 
             if correct_answer == 'c':
                 self.answer_c = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_c = SubElement(self.question, 'answer', fraction=str(penalty))
             self.text = SubElement(self.answer_c, 'text')
-            self.text.text = 'c'
+            self.text.text = row.get('Respuesta C', '') if xml_use_answer_text else 'c'
 
             if correct_answer == 'd':
                 self.answer_d = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_d = SubElement(self.question, 'answer', fraction=str(penalty))
             self.text = SubElement(self.answer_d, 'text')
-            self.text.text = 'd'
+            self.text.text = row.get('Respuesta D', '') if xml_use_answer_text else 'd'
 
         self.xml_str = minidom.parseString(tostring(self.quiz)).toprettyxml(indent="  ")
         with open(file_name, 'w', encoding='utf-8') as f:
@@ -382,9 +387,11 @@ class ExamGenerator:
             font_size: int = 9,
             xml_cat_additional_text: Optional[str] = None,
             penalty: int = -25,
+            xml_use_answer_text: bool = False,
             check: bool = False,
             update_excel: bool = False,
             answer_sheet_instructions: Optional[str] = None,
+            template_docx_path: Optional[str] = None,
             verbose: bool = False
     ):
         """
@@ -410,9 +417,11 @@ class ExamGenerator:
             font_size (int): Font size for the text in the document.
             xml_cat_additional_text (Optional[str]): Additional text for the Moodle XML category.
             penalty (int): Penalty for incorrect answers in the Moodle XML export.
+            xml_use_answer_text (bool): If True, XML stores full question and answer text instead of a/b/c/d.
             check (bool): If True, generates a preview and waits for user confirmation before creating all exams.
             update_excel (bool): If True, updates the source Excel file with usage statistics.
             answer_sheet_instructions (Optional[str]): Text with instructions for the answer sheet.
+            template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
             verbose (bool): If True, prints detailed progress messages to the console.
         """
         if self.df is None:
@@ -425,7 +434,7 @@ class ExamGenerator:
         for col in exam_columns:
             self.df[col] = self.df[col].fillna(0)
 
-        self.acceptable_df = self.df[(self.df['Estado'] == 'Aceptable')]
+        self.acceptable_df = self.df[self.df['Estado'].astype(str).str.strip().str.lower() == 'aceptable']
 
         # Comprobación temprana: si no hay NINGUNA pregunta aceptable, paramos aquí.
         if self.acceptable_df.empty:
@@ -521,6 +530,13 @@ class ExamGenerator:
             exam_type_name = exam_name_list[i]
             exam_df_shuffled = self._build_exam_variant_df(self.exam_df)
 
+            placeholder_map: Dict[str, str] = {
+                "subject": subject or "",
+                "exam": exam or "",
+                "course": course or "",
+                "exam_type": exam_type_name or "",
+            }
+
             base_filename = f'examen_{subject}_{exam}_{course}_{exam_type_name}'
 
             docx_path = os.path.join(output_dir, f'{base_filename}.docx')
@@ -538,7 +554,8 @@ class ExamGenerator:
             exam_text, full_exam_text = self.generate_question_text(exam_df_shuffled.copy(), renumber=False,
                                                                     shuffle_answers=False)
 
-            document = Document()
+            document = Document(template_docx_path) if template_docx_path and os.path.exists(template_docx_path) else Document()
+            self._replace_placeholders_in_document(document, placeholder_map)
             title_paragraph = document.add_paragraph(subject, style='Heading 1')
             title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             subtitle_paragraph = document.add_paragraph(
@@ -639,7 +656,8 @@ class ExamGenerator:
             self._remove_empty_last_section(document)
             document.save(docx_path)
 
-            full_document = Document()
+            full_document = Document(template_docx_path) if template_docx_path and os.path.exists(template_docx_path) else Document()
+            self._replace_placeholders_in_document(full_document, placeholder_map)
             title_paragraph = full_document.add_paragraph(subject, style='Heading 1')
             title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             subtitle_paragraph = full_document.add_paragraph(
@@ -698,7 +716,8 @@ class ExamGenerator:
                     exam=exam,
                     exam_type=exam_type_name,
                     xml_cat_additional_text=xml_cat_additional_text,
-                    penalty=penalty
+                    penalty=penalty,
+                    xml_use_answer_text=xml_use_answer_text
                 )
 
         if update_excel:
@@ -746,6 +765,24 @@ class ExamGenerator:
                     f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'.")
             except Exception as e:
                 print(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
+
+    @staticmethod
+    def _replace_placeholders_in_document(document: Document, values: Dict[str, str]) -> None:
+        """Replaces placeholders in the format {{field}}. Missing placeholders are ignored."""
+
+        def replace_in_paragraphs(paragraphs):
+            for paragraph in paragraphs:
+                for key, value in values.items():
+                    token = f"{{{{{key}}}}}"
+                    if token in paragraph.text:
+                        for run in paragraph.runs:
+                            run.text = run.text.replace(token, str(value))
+
+        replace_in_paragraphs(document.paragraphs)
+        for table in document.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    replace_in_paragraphs(cell.paragraphs)
 
 ## Example of use
 

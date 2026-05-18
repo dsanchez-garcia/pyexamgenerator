@@ -145,7 +145,9 @@ class QuestionBankManager:
             print("Filtrando para añadir solo preguntas con estado 'Aceptable'.")
             if 'Estado' in df_reviewed.columns:
                 original_count = len(df_reviewed)
-                df_reviewed = df_reviewed[df_reviewed['Estado'] == 'Aceptable'].copy()
+                df_reviewed = df_reviewed[
+                    df_reviewed['Estado'].astype(str).str.strip().str.lower() == 'aceptable'
+                ].copy()
                 print(f"Se encontraron {len(df_reviewed)} preguntas 'Aceptable' de un total de {original_count}.")
                 if df_reviewed.empty:
                     print("No se encontraron preguntas con estado 'Aceptable' para añadir.")
