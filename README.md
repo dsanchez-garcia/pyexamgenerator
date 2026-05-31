@@ -11,6 +11,7 @@ pyexamgenerator es una suite de aplicaciones de escritorio construida con Python
 -   **Gestión de Bancos de Preguntas**: Importa, fusiona y gestiona preguntas en formato Excel, evitando duplicados.
 -   **Creación de Exámenes Personalizados**: Genera múltiples versiones de un examen (ej. Tipo A, Tipo B) con preguntas y respuestas barajadas.
 -   **Exportación Múltiple**: Guarda los exámenes en formato `.docx` profesional y en formato XML para auto-corrección en Moodle.
+-   **Corrección de Exámenes** (subpaquete `grading`): Cierra el ciclo *generar → corregir*. OCR de hojas de respuestas manuscritas, integración de notas, asistencias + justificaciones + cuestionarios y punto extra PIR. El OCR es un extra opcional: `pip install pyexamgenerator[grading]`.
 -   **Interfaz Gráfica Intuitiva**: Todas las funcionalidades son accesibles a través de una interfaz de usuario fácil de usar.
 
 ## Instalación

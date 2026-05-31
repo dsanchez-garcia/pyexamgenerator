@@ -13,6 +13,15 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Añadido
+- **Subpaquete de corrección `pyexamgenerator.grading`:** Integra el flujo completo de corrección de exámenes (antes proyecto `examgrader`), cerrando el ciclo *generar → corregir*. Incluye:
+  - OCR de hojas de respuestas manuscritas (`ImageExamGrader`, `AnswerSheetExtractor`) con identificación de marcas y detección del tipo de examen, usando como plantilla el **Moodle XML** que produce el propio generador.
+  - Corrección desde Excel/Moodle e integración de notas OCR (`ExamGrader`, `MoodleGradeIntegrator`, `OcrGradeIntegrator`).
+  - Cruce de asistencias + justificaciones de faltas + cuestionarios en modo `extremo` (`AbsenceJustificationManager`) y cálculo del **punto extra PIR** (`TheoryBonusApplier`, `TheoryTopicReporter`).
+  - Fachada `ExamCorrectionAPI` y clases con estado (guardan inputs/outputs como atributos) para inspección/reuso.
+- **Pestaña "Corregir Exámenes" en la GUI:** Nueva pestaña en `main_app.py` que ejecuta el pipeline en segundo plano y genera 3 tablas (incidencias de identificación, cuestionarios + punto extra y calificaciones de teoría).
+- **OCR como extra opcional `[grading]`:** `pip install pyexamgenerator[grading]`. Doble backend según la versión de Python: `rapidocr` (≥3.13, incl. 3.14) o `rapidocr-onnxruntime` (<3.13). Sin el extra, todo lo que no es OCR sigue funcionando y `pyexamgenerator.grading.HAS_OCR` vale `False`.
+- **Soporte de Python 3.13 y 3.14:** Clasificadores y backend OCR nuevo para esas versiones.
+- **Pruebas del subpaquete de corrección:** `tests/test_grading_unit.py` (fusión de matriculados, punto extra y reporte por tema; OCR tras `importorskip`).
 - **Prompts sin API (modo manual):** Nuevo método `build_generation_prompts(...)` en `QuestionGenerator` para preparar prompts listos para usar en Google AI Studio/Gemini sin llamadas a la API.
 - **Filtrado de duplicados post-generación:** Nuevo método `filter_generated_questions_duplicates(...)` en `QuestionGenerator` para filtrar preguntas externas contra un banco existente.
 - **XML de Moodle configurable:** Se añade opción para exportar XML con enunciado y respuestas completas (`xml_use_answer_text=True`), manteniendo por defecto el modo compatible de letras `a/b/c/d`.

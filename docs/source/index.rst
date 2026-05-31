@@ -14,6 +14,7 @@ gestionar bancos de preguntas y crear múltiples versiones de exámenes personal
    tutorial_pyexamgenerator_pt1_generar_preguntas
    tutorial_pyexamgenerator_pt2_gestionar_banco_de_preguntas
    tutorial_pyexamgenerator_pt3_generar_examenes
+   tutorial_pyexamgenerator_pt4_corregir_examenes
 
 .. toctree::
    :maxdepth: 2

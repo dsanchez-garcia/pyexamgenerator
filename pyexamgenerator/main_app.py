@@ -25,6 +25,8 @@ from pyexamgenerator.tooltip import ToolTip
 from docx import Document
 import os
 import json
+import shutil
+import threading
 from ttkwidgets.frames import ScrolledFrame
 from google import genai
 
@@ -202,6 +204,7 @@ class ExamApp:
         self.create_question_tab()
         self.create_manage_bank_tab()
         self.create_exam_tab()
+        self.create_grading_tab()
 
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
@@ -472,6 +475,213 @@ class ExamApp:
             message (str): The text to display in the status bar.
         """
         self.status_text.set(message)
+
+    def create_grading_tab(self) -> None:
+        """Crea la pestaña 'Corregir Exámenes': OCR de manuscritos + integración + punto extra PIR."""
+        grading_tab = ttk.Frame(self.notebook)
+        self.notebook.add(grading_tab, text='Corregir Exámenes')
+
+        canvas = tk.Canvas(grading_tab)
+        scrollbar = ttk.Scrollbar(grading_tab, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        inner = ttk.Frame(canvas)
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        inner.columnconfigure(1, weight=1)
+
+        intro = ttk.Label(
+            inner,
+            text=("Corrige exámenes de teoría: OCR de hojas manuscritas, integración de notas,\n"
+                  "asistencias + justificaciones + cuestionarios (modo extremo) y punto extra PIR.\n"
+                  "El OCR requiere el extra:  pip install pyexamgenerator[grading]"),
+        )
+        intro.grid(row=0, column=0, columnspan=3, padx=10, pady=8, sticky='w')
+
+        self.grad_enrollment_var = tk.StringVar()
+        self.grad_xmls_var = tk.StringVar()
+        self.grad_images_var = tk.StringVar()
+        self.grad_theory_var = tk.StringVar()
+        self.grad_attendance_var = tk.StringVar()
+        self.grad_schedule_var = tk.StringVar()
+        self.grad_justif_var = tk.StringVar()
+        self.grad_quizzes_var = tk.StringVar()
+        self.grad_out_var = tk.StringVar()
+        self.grad_sched_sheet_var = tk.StringVar(value="0")
+        self.grad_forced_var = tk.StringVar()
+
+        def add_file_row(r, label, var, tip, multiple=False, directory=False):
+            lbl = ttk.Label(inner, text=label)
+            lbl.grid(row=r, column=0, padx=5, pady=4, sticky='w')
+            ToolTip(lbl, text=tip)
+            ent = ttk.Entry(inner, width=55, textvariable=var)
+            ent.grid(row=r, column=1, padx=5, pady=4, sticky='ew')
+            btn = ttk.Button(inner, text="Seleccionar…", command=lambda: self._grad_pick(var, multiple, directory))
+            btn.grid(row=r, column=2, padx=5, pady=4)
+
+        add_file_row(1, "Matriculados (1+):", self.grad_enrollment_var,
+                     "Listados de matrícula (GIM, GITI-GIE-GIEI…). Puedes elegir varios.", multiple=True)
+        add_file_row(2, "Plantillas Moodle XML (1+):", self.grad_xmls_var,
+                     "XML de Moodle con las respuestas correctas (tipos 1A, 1B…).", multiple=True)
+        add_file_row(3, "Imágenes manuscritas (1+):", self.grad_images_var,
+                     "Fotos/escaneos de las hojas de respuestas.", multiple=True)
+        add_file_row(4, "Notas de teoría (Moodle):", self.grad_theory_var,
+                     "Excel de calificaciones de teoría exportado de Moodle.")
+        add_file_row(5, "Asistencias:", self.grad_attendance_var, "Excel de asistencias de Moodle.")
+        add_file_row(6, "Horario:", self.grad_schedule_var, "Excel de horario para cruzar fechas/temas.")
+        add_file_row(7, "Justificaciones de faltas:", self.grad_justif_var,
+                     "Excel con las justificaciones (columna REMITENTE).")
+        add_file_row(8, "Cuestionarios de clase:", self.grad_quizzes_var,
+                     "Excel de calificaciones de cuestionarios de clase.")
+        add_file_row(9, "Carpeta de salida:", self.grad_out_var,
+                     "Carpeta donde se guardarán las 3 tablas.", directory=True)
+
+        sheet_lbl = ttk.Label(inner, text="Hoja del horario (nombre o índice):")
+        sheet_lbl.grid(row=10, column=0, padx=5, pady=4, sticky='w')
+        ToolTip(sheet_lbl, text="Nombre de la hoja del Excel de horario, o un índice (0 = primera).")
+        ttk.Entry(inner, width=55, textvariable=self.grad_sched_sheet_var).grid(
+            row=10, column=1, padx=5, pady=4, sticky='ew')
+
+        forced_lbl = ttk.Label(inner, text="Tipos forzados (opcional):")
+        forced_lbl.grid(row=11, column=0, padx=5, pady=4, sticky='w')
+        ToolTip(forced_lbl, text="Forzar el tipo por imagen si el OCR no lo detecta. Formato: imagen.jpg=1A, otra.jpg=1B")
+        ttk.Entry(inner, width=55, textvariable=self.grad_forced_var).grid(
+            row=11, column=1, padx=5, pady=4, sticky='ew')
+
+        run_btn = ttk.Button(inner, text="Corregir", command=self.run_grading)
+        run_btn.grid(row=12, column=0, columnspan=3, padx=10, pady=12)
+
+    def _grad_pick(self, var: tk.StringVar, multiple: bool = False, directory: bool = False) -> None:
+        """Abre el diálogo adecuado y guarda la(s) ruta(s) en `var` (varias separadas por ';')."""
+        if directory:
+            path = filedialog.askdirectory()
+            if path:
+                var.set(path)
+        elif multiple:
+            paths = filedialog.askopenfilenames()
+            if paths:
+                var.set(";".join(paths))
+        else:
+            path = filedialog.askopenfilename()
+            if path:
+                var.set(path)
+
+    def run_grading(self) -> None:
+        """Lanza el pipeline de corrección en un hilo aparte para no congelar la interfaz.
+
+        Genera SOLO 3 tablas en la carpeta de salida (incidencias, cuestionarios+punto extra y
+        calificaciones de teoría); los ficheros intermedios van a `_intermedios/` y se borran.
+        """
+        from pyexamgenerator.grading import (
+            HAS_OCR, EnrollmentMerger, ImageExamGrader, OcrGradeIntegrator,
+            AbsenceJustificationManager, TheoryBonusApplier, TheoryTopicReporter,
+        )
+
+        enrollment = [p for p in self.grad_enrollment_var.get().split(";") if p]
+        xmls = [p for p in self.grad_xmls_var.get().split(";") if p]
+        images = [p for p in self.grad_images_var.get().split(";") if p]
+        theory = self.grad_theory_var.get().strip()
+        attendance = self.grad_attendance_var.get().strip()
+        schedule = self.grad_schedule_var.get().strip()
+        justif = self.grad_justif_var.get().strip()
+        quizzes = self.grad_quizzes_var.get().strip()
+        out_dir = self.grad_out_var.get().strip()
+
+        required = {
+            "Matriculados": enrollment, "Plantillas XML": xmls, "Imágenes": images,
+            "Notas de teoría": theory, "Asistencias": attendance, "Horario": schedule,
+            "Justificaciones": justif, "Cuestionarios": quizzes, "Carpeta de salida": out_dir,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            messagebox.showerror("Faltan datos", "Selecciona: " + ", ".join(missing))
+            return
+        if not HAS_OCR:
+            messagebox.showerror(
+                "OCR no disponible",
+                "El OCR de manuscritos requiere el extra:\n\npip install pyexamgenerator[grading]",
+            )
+            return
+
+        sheet_raw = self.grad_sched_sheet_var.get().strip()
+        schedule_sheet = int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0)
+
+        forced = {}
+        for item in self.grad_forced_var.get().split(","):
+            item = item.strip()
+            if "=" in item:
+                name, value = item.split("=", 1)
+                forced[name.strip()] = value.strip().upper()
+
+        def worker():
+            try:
+                self.root.after(0, lambda: self.update_status("Corrigiendo… fusionando matriculados."))
+                work = os.path.join(out_dir, "_intermedios")
+                os.makedirs(work, exist_ok=True)
+                matric = os.path.join(work, "matriculados.xlsx")
+                EnrollmentMerger(enrollment).export(matric)
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… OCR de hojas (puede tardar)."))
+                grader = ImageExamGrader(
+                    xml_paths=xmls, enrollment_path=matric,
+                    aggressive_recovery=True, aggressive_min_ratio=0.10,
+                    aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
+                )
+                grader.grade_from_images(
+                    image_paths=images, output_answers="respuestas.xlsx",
+                    output_grades="calificaciones_manuscritos.xlsx", output_dir=work,
+                    output_incidents="incidencias.xlsx", forced_type_by_image=forced,
+                    prompt_missing_type=False, interactive_review=False,
+                )
+                incidencias = pd.read_excel(os.path.join(work, "incidencias.xlsx"))
+                incidencias.to_excel(
+                    os.path.join(out_dir, "incidencias_identificacion_respuestas.xlsx"), index=False)
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… integrando notas OCR en teoría."))
+                integrated = OcrGradeIntegrator(
+                    general_xlsx_path=theory,
+                    ocr_xlsx_path=os.path.join(work, "calificaciones_manuscritos.xlsx"),
+                    enrollment_paths=enrollment,
+                ).integrate(os.path.join(work, "teoria_integrada.xlsx"))
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… asistencias y cuestionarios."))
+                justif_result = AbsenceJustificationManager(
+                    attendance_xlsx_path=attendance, justifications_xlsx_path=justif,
+                    enrollment_xlsx_path=matric, schedule_xlsx_path=schedule,
+                    schedule_sheet=schedule_sheet, quizzes_xlsx_path=quizzes,
+                    attendance_header_row=3, sender_col="REMITENTE",
+                    justification_mode="extremo",
+                ).analyze()
+                attendance_quiz = justif_result.attendance_quiz_df
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… aplicando punto extra."))
+                TheoryBonusApplier(integrated, attendance_quiz, cap_to_10=True).apply(
+                    os.path.join(out_dir, "calificaciones_examen_teoria.xlsx"))
+
+                _, quiz_report = TheoryTopicReporter(attendance_quiz).build()
+                quiz_report.to_excel(
+                    os.path.join(out_dir, "cuestionarios_clase_y_punto_extra.xlsx"), index=False)
+
+                shutil.rmtree(work, ignore_errors=True)
+                msg = ("Corrección completada. Tablas generadas en:\n" + out_dir +
+                       "\n\n- incidencias_identificacion_respuestas.xlsx"
+                       "\n- cuestionarios_clase_y_punto_extra.xlsx"
+                       "\n- calificaciones_examen_teoria.xlsx")
+                self.root.after(0, lambda: self.update_status("Corrección completada."))
+                self.root.after(0, lambda: messagebox.showinfo("Corrección", msg))
+                try:
+                    os.startfile(out_dir)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            except Exception as exc:
+                err = str(exc)
+                self.root.after(0, lambda: self.update_status("Error en la corrección."))
+                self.root.after(0, lambda: messagebox.showerror("Error", err))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def toggle_pages_per_chunk_entry(self):
         """

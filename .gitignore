@@ -35,3 +35,9 @@ Thumbs.db
 
 # Backup de onedrive
 onedrive_backup
+
+# Corrección de exámenes (grading): datos de alumnos y salidas (no subir nunca)
+outputs/
+_intermedios/
+*.jpg
+*.jpeg

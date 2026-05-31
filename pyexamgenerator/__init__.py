@@ -1,7 +1,7 @@
 # pyexamgenerator/__init__.py
 
 # Define la versión del paquete (Fuente Única de Verdad)
-__version__ = "0.2.3"  # O la versión actual que tengas
+__version__ = "0.3.0"  # 0.3.0: integración del subpaquete de corrección `grading`
 
 # --- API Pública ---
 # "Promueve" las clases y excepciones principales al espacio de nombres del paquete.
@@ -10,6 +10,10 @@ __version__ = "0.2.3"  # O la versión actual que tengas
 from .exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from .question_generator import QuestionGenerator, QuotaExceededError, ServiceOverloadedError
 from .question_bank_manager import QuestionBankManager
+
+# Subpaquete de corrección de exámenes (complementa la generación). El OCR es opcional:
+# `pip install pyexamgenerator[grading]`. Se accede como `pyexamgenerator.grading.<...>`.
+from . import grading
 
 # (Opcional pero muy recomendado) Define explícitamente la API pública.
 # Esto controla lo que se importa cuando un usuario hace `from pyexamgenerator import *`.
@@ -20,5 +24,6 @@ __all__ = [
     'QuotaExceededError',
     'ServiceOverloadedError',
     'QuestionBankManager',
+    'grading',
     '__version__',
 ]

@@ -34,6 +34,22 @@ setup(
         'ttkwidgets',
         'importlib-metadata; python_version < "3.8"',
     ],
+    extras_require={
+        # Corrección con OCR de hojas manuscritas (subpaquete `grading`).
+        # Doble backend según la versión de Python:
+        #   - Python >= 3.13 (p. ej. 3.14): paquete nuevo `rapidocr` + numpy>=2 + opencv reciente.
+        #   - Python <  3.13 (p. ej. 3.9):  `rapidocr-onnxruntime` + numpy<2 + opencv<=4.10
+        #     (shapely de rapidocr-onnxruntime exige numpy<2).
+        'grading': [
+            "rapidocr>=2; python_version >= '3.13'",
+            "onnxruntime>=1.17; python_version >= '3.13'",
+            "numpy>=2; python_version >= '3.13'",
+            "opencv-python>=4.8; python_version >= '3.13'",
+            "rapidocr-onnxruntime>=1.3; python_version < '3.13'",
+            "numpy<2; python_version < '3.13'",
+            "opencv-python<=4.10.0.84; python_version < '3.13'",
+        ],
+    },
     entry_points={
         'console_scripts': [
             'pyexamgenerator=pyexamgenerator.main_app:main',
@@ -62,6 +78,8 @@ setup(
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
 
         # Sistema operativo
         'Operating System :: OS Independent',
