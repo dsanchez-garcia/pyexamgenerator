@@ -10,6 +10,7 @@ import pytest
 from pyexamgenerator import grading
 from pyexamgenerator.grading import (
     EnrollmentMerger,
+    OcrGradeIntegrator,
     TheoryBonusApplier,
     TheoryTopicReporter,
 )
@@ -104,6 +105,48 @@ def test_theory_topic_reporter_exposes_extra_point():
     # Reporte por tema con las columnas de cuestionario esperadas.
     assert "T02_Nota_Cuestionario" in quiz_report.columns
     assert reporter.quiz_report_df is quiz_report
+
+
+def test_ocr_integrator_quiz_totals_uses_group_hint(tmp_path):
+    """En formato quiz-totals, cuando un tipo de examen existe en >1 grupo (GIM vs GITI...),
+    la nota manuscrita debe aterrizar en la columna del grupo indicado por la fila OCR
+    (Grupo_Principal), no quedarse sin volcar."""
+    general = pd.DataFrame(
+        [{
+            "Nombre de usuario": "uy8862138",
+            "Apellido(s)": "CHEBBI",
+            "Nombre": "LOUAY",
+            "Dirección de correo": "louay.chebbi@x.es",
+            "Cuestionario:GIM_Tipo 1A (Real)": "-",
+            "Cuestionario:GITI-GIE-GIEI_Tipo 1A (Real)": "-",
+        }]
+    )
+    ocr = pd.DataFrame(
+        [{
+            "Imagen": "img.jpg",
+            "Tipo_Examen": "1A",
+            "Nombre": "LOUAY",
+            "Apellido(s)": "CHEBBI",
+            "Número de ID": "190708",
+            "Grupo_Principal": "GITI-GIE-GIEI",
+            "Calificacion/10,00": "9,13",
+        }]
+    )
+    general_path = tmp_path / "teoria.xlsx"
+    ocr_path = tmp_path / "ocr.xlsx"
+    out_path = tmp_path / "integrada.xlsx"
+    general.to_excel(general_path, index=False)
+    ocr.to_excel(ocr_path, index=False)
+
+    result = OcrGradeIntegrator(
+        general_xlsx_path=str(general_path),
+        ocr_xlsx_path=str(ocr_path),
+    ).integrate(str(out_path))
+
+    row = result[result["Apellido(s)"] == "CHEBBI"].iloc[0]
+    assert float(row["Calificación/10,00"]) == pytest.approx(9.13)
+    assert row["Tipo_Grupo"] == "GITI-GIE-GIEI"
+    assert row["Tipo_Examen"] == "1A"
 
 
 def test_image_grader_available_only_with_ocr_extra():

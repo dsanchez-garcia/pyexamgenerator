@@ -41,6 +41,7 @@ class ImageGradingConfig:
     interactive_review: bool = False
     open_image_on_review: bool = True
     forced_type_by_image: Dict[str, str] = field(default_factory=dict)
+    forced_student_by_image: Dict[str, str] = field(default_factory=dict)
     prompt_missing_type: bool = True
     debug_dir: Optional[str] = None
     min_mark_ratio: float = 0.17
@@ -294,6 +295,7 @@ class ExamCorrectionAPI:
             first_name_col=cfg.first_name_col,
             id_col=cfg.id_col,
             email_col=cfg.email_col,
+            forced_student_by_image=cfg.forced_student_by_image,
             shared_store=self.shared_store,
         )
         answers_df, grades_df, audit_df = grader.grade_from_images(

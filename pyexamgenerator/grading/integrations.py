@@ -513,6 +513,7 @@ class OcrGradeIntegrator:
         quizzes_by_group_type: Dict[Tuple[str, str], str],
         group_by_id: Dict[str, str],
         general_id_col: Optional[str],
+        ocr_group_hint: str = "",
     ) -> Optional[str]:
         if not exam_type:
             return None
@@ -523,6 +524,13 @@ class OcrGradeIntegrator:
             return None
         if len(available_groups) == 1:
             return quizzes_by_group_type.get((available_groups[0], target_exam))
+
+        # El grupo que viene en la propia fila OCR (p. ej. Grupo_Principal de la matrícula) es la
+        # señal más fiable para desambiguar entre grupos que comparten tipo de examen (GIM vs GITI...).
+        if ocr_group_hint:
+            for candidate in available_groups:
+                if self._normalize(candidate) == self._normalize(ocr_group_hint):
+                    return quizzes_by_group_type.get((candidate, target_exam))
 
         if general_id_col:
             row_id = self._normalize_id(general_row.get(general_id_col, ""))
@@ -558,6 +566,7 @@ class OcrGradeIntegrator:
         ocr_id_col = self._find_column(ocr_cols, ["numerodeid", "nmerodeid", "idoficial", "id"])
         exam_type_col = self._find_exam_type_col(ocr_cols)
         total_grade_col = self._find_total_grade_col(ocr_cols)
+        ocr_group_col = self._find_column(ocr_cols, ["grupoprincipal", "tipogrupo", "grupo"])
         if exam_type_col is None or total_grade_col is None:
             raise ValueError(
                 "OCR file must include exam type and total grade columns (e.g. Tipo_Examen and Calificacion/10,00)."
@@ -604,12 +613,14 @@ class OcrGradeIntegrator:
                 continue
 
             exam_type = str(ocr_row.get(exam_type_col, "")).strip().upper()
+            ocr_group_hint = str(ocr_row.get(ocr_group_col, "")).strip() if ocr_group_col else ""
             target_col = self._resolve_target_quiz_column(
                 general_row=out_df.loc[target_idx],
                 exam_type=exam_type,
                 quizzes_by_group_type=quizzes_by_group_type,
                 group_by_id=group_by_id,
                 general_id_col=general_id_col,
+                ocr_group_hint=ocr_group_hint,
             )
             if not target_col:
                 continue

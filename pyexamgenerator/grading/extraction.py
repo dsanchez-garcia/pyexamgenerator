@@ -74,6 +74,8 @@ class AnswerSheetExtractor:
         aggressive_min_ratio: float = 0.11,
         aggressive_min_gap_ratio: float = 0.25,
         aggressive_min_top_vs_second: float = 1.10,
+        id_col: str = "Número de ID",
+        forced_student_by_image: Optional[Dict[str, str]] = None,
     ) -> None:
         self.ocr = RapidOCR()
         self._ocr_backend = _RAPIDOCR_BACKEND
@@ -86,6 +88,12 @@ class AnswerSheetExtractor:
         self.aggressive_min_ratio = float(aggressive_min_ratio)
         self.aggressive_min_gap_ratio = float(aggressive_min_gap_ratio)
         self.aggressive_min_top_vs_second = float(aggressive_min_top_vs_second)
+        self.id_col = id_col
+        # Identificación manual del alumno por imagen: {nombre_de_imagen: "Número de ID" o nombre oficial}.
+        # Se usa para hojas cuyo nombre manuscrito el OCR no puede leer (incidencia MISSING_ID).
+        self.forced_student_by_image: Dict[str, str] = {
+            str(k): str(v) for k, v in (forced_student_by_image or {}).items()
+        }
         if enrollment_df is not None:
             self._set_enrollment_df(enrollment_df)
         if enrollment_xlsx_path:
@@ -295,6 +303,51 @@ class AnswerSheetExtractor:
         official_name = f"{row['Nombre']} {row['Apellido(s)']}".strip()
         official_id = str(row.get("Número de ID", "")).strip() or None
         return official_name, official_id
+
+    def _resolve_forced_student(self, identifier: str) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve a manually supplied student identifier against the enrollment.
+
+        ``identifier`` may be the official ``id_col`` value ("Número de ID") or the student's
+        full name as it appears in the enrollment. Returns ``(official_name, official_id)``.
+        Raises ``ValueError`` if no enrollment is loaded or the identifier matches no student.
+        """
+        if self.enrollment_df is None:
+            raise ValueError("forced_student_by_image requiere una matrícula cargada (enrollment_df).")
+
+        ident = str(identifier).strip()
+        if not ident:
+            raise ValueError("forced_student_by_image: identificador de alumno vacío.")
+
+        def _row_to_pair(row: pd.Series) -> Tuple[Optional[str], Optional[str]]:
+            official_name = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}".strip()
+            official_id = str(row.get(self.id_col, "")).strip() or None
+            return official_name or None, official_id
+
+        # 1) Coincidencia exacta por "Número de ID" (lo más inequívoco).
+        if self.id_col in self.enrollment_df.columns:
+            id_series = self.enrollment_df[self.id_col].astype(str).str.strip()
+            matches = self.enrollment_df[id_series == ident]
+            if not matches.empty:
+                return _row_to_pair(matches.iloc[0])
+
+        # 2) Coincidencia exacta por nombre completo normalizado ("Nombre Apellido(s)").
+        ident_norm = self._normalize(ident)
+        for _, row in self.enrollment_df.iterrows():
+            full = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}"
+            full_rev = f"{row.get('Apellido(s)', '')} {row.get('Nombre', '')}"
+            if self._normalize(full) == ident_norm or self._normalize(full_rev) == ident_norm:
+                return _row_to_pair(row)
+
+        # 3) Coincidencia aproximada por nombre.
+        fuzzy = difflib.get_close_matches(ident.lower(), self.lookup_names, n=1, cutoff=0.6)
+        if fuzzy:
+            row = self.enrollment_df[self.enrollment_df["Lookup_Name"] == fuzzy[0]].iloc[0]
+            return _row_to_pair(row)
+
+        raise ValueError(
+            f"forced_student_by_image: no se encontró ningún alumno para '{identifier}' "
+            f"en la matrícula (ni por '{self.id_col}' ni por nombre)."
+        )
 
     @staticmethod
     def _infer_question_spacing(question_tokens: Sequence[OcrToken]) -> float:
@@ -613,6 +666,14 @@ class AnswerSheetExtractor:
         student_name_official, student_id_official = self._match_official_student(
             student_name_ocr, first_name_raw, last_name_raw
         )
+
+        # Identificación manual del alumno: prevalece sobre el resultado del OCR.
+        forced_key = Path(image_path).name
+        if forced_key in self.forced_student_by_image:
+            student_name_official, student_id_official = self._resolve_forced_student(
+                self.forced_student_by_image[forced_key]
+            )
+
         answers, debug_cells, decision_by_question = self._extract_answers(tokens, image_oriented)
         self._save_debug_image(image_path, image_oriented, debug_cells)
         audit_rows = self._build_audit_rows(image_path, answers, debug_cells, decision_by_question)
@@ -770,6 +831,7 @@ class ImageExamGrader:
         first_name_col: str = "Nombre",
         id_col: str = "Número de ID",
         email_col: str = "Dirección de correo",
+        forced_student_by_image: Optional[Dict[str, str]] = None,
         shared_store: Optional[SharedExamDataStore] = None,
         **legacy_kwargs,
     ) -> None:
@@ -806,6 +868,8 @@ class ImageExamGrader:
             aggressive_min_ratio=aggressive_min_ratio,
             aggressive_min_gap_ratio=aggressive_min_gap_ratio,
             aggressive_min_top_vs_second=aggressive_min_top_vs_second,
+            id_col=id_col,
+            forced_student_by_image=forced_student_by_image,
         )
 
         self.questions_by_exam_type = self._load_xmls_by_exam_type(self.xml_paths)

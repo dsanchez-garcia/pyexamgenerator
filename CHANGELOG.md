@@ -13,6 +13,7 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Añadido
+- **Identificación manual del alumno por imagen (OCR):** Nuevo parámetro `forced_student_by_image={imagen: "Número de ID" | nombre}` en `ImageExamGrader`/`AnswerSheetExtractor` (y en `ImageGradingConfig`/`ExamCorrectionAPI.grade_from_images`). Permite asignar a mano el alumno de una hoja cuyo nombre manuscrito el OCR no puede leer (incidencia `MISSING_ID`); resuelve el identificador contra la matrícula por `Número de ID`, por nombre completo normalizado o por coincidencia aproximada, y la asignación manual prevalece sobre el OCR.
 - **Subpaquete de corrección `pyexamgenerator.grading`:** Integra el flujo completo de corrección de exámenes (antes proyecto `examgrader`), cerrando el ciclo *generar → corregir*. Incluye:
   - OCR de hojas de respuestas manuscritas (`ImageExamGrader`, `AnswerSheetExtractor`) con identificación de marcas y detección del tipo de examen, usando como plantilla el **Moodle XML** que produce el propio generador.
   - Corrección desde Excel/Moodle e integración de notas OCR (`ExamGrader`, `MoodleGradeIntegrator`, `OcrGradeIntegrator`).
@@ -34,6 +35,7 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Nuevas pruebas unitarias de modo visual:** Nuevo archivo `tests/test_image_mode_unit.py` para validar utilidades de agrupación y flujo básico de prompts en `input_mode='image'`.
 
 ### Arreglado
+- **Integración de notas OCR en formato *quiz-totals*:** `OcrGradeIntegrator` no conseguía volcar las notas manuscritas cuando un mismo tipo de examen existía en varios grupos (p. ej. `GIM` y `GITI-GIE-GIEI`), porque el mapa `Número de ID → grupo` no casaba con el índice del fichero de Moodle (`Nombre de usuario`). Ahora desambigua usando el `Grupo_Principal` que viene en la propia fila OCR, de modo que las notas aterrizan en la columna de cuestionario correcta.
 - **Estado case-insensitive:** El filtro de preguntas con estado "Aceptable" ahora acepta variantes como "aceptable" en generación de exámenes y en fusión de bancos.
 - **Tooltips persistentes en GUI:** Se corrige el comportamiento de tooltips que podían quedar visibles al salir del widget o cerrar la aplicación, reforzando la destrucción y el manejo de eventos de cierre.
 
