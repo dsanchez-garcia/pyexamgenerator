@@ -17,6 +17,7 @@
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.enum.section import WD_SECTION
 from docx.oxml import OxmlElement, ns
 
 import pandas as pd
@@ -83,6 +84,91 @@ class ExamGenerator:
             exam_df_variant.apply(shuffle_row_answers, axis=1)
         exam_df_variant.drop(columns=['Texto respuesta correcta'], inplace=True)
         return exam_df_variant
+
+    def _select_questions_by_topic(
+            self,
+            questions_per_topic: dict,
+            selection_method: str = "azar",
+            verbose: bool = False
+    ) -> pd.DataFrame:
+        """Selects questions from `self.acceptable_df` according to a per-topic quantity dictionary.
+
+        Args:
+            questions_per_topic (dict): Mapping of topic -> number of questions to take from that topic.
+            selection_method (str): How to pick questions inside each topic ('azar', 'primeras',
+                'menos usadas').
+            verbose (bool): If True, prints progress messages.
+
+        Returns:
+            pd.DataFrame: The concatenated selection (empty DataFrame with the same columns if nothing
+            was selected).
+
+        Raises:
+            ValueError: If a topic does not have enough 'Aceptable' questions for the requested quantity.
+        """
+        selected_questions = []
+        for topic, quantity in questions_per_topic.items():
+            if verbose:
+                print(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
+            topic_questions = self.acceptable_df[self.acceptable_df['Tema'] == topic]
+            # Per-topic check: raise a clear error if there are not enough questions for a topic.
+            if len(topic_questions) < quantity:
+                raise ValueError(
+                    f"No hay suficientes preguntas 'Aceptables' para el tema '{topic}'. "
+                    f"Se solicitaron {quantity}, pero solo hay {len(topic_questions)} disponibles."
+                )
+            if selection_method == "primeras":
+                topic_questions = topic_questions.head(quantity).copy()
+            elif selection_method == "menos usadas":
+                topic_questions = topic_questions.sort_values(by='Veces usada en examen').head(quantity).copy()
+            else:  # 'azar' (default).
+                topic_questions = topic_questions.sample(n=quantity).copy()
+            selected_questions.append(topic_questions)
+        if selected_questions:
+            return pd.concat(selected_questions).copy()
+        # Empty DataFrame with the same columns.
+        return pd.DataFrame(columns=self.acceptable_df.columns)
+
+    @staticmethod
+    def _distribute_questions_equitably(acceptable_df: pd.DataFrame, total_questions: int) -> Dict[str, int]:
+        """Spreads `total_questions` across the available topics as evenly as possible.
+
+        Each topic receives the same number of questions; when the total is not divisible by the number
+        of topics (e.g. an odd total), the first topics receive one extra question. If a topic does not
+        have enough 'Aceptable' questions, its surplus is redistributed among the remaining topics
+        (the "as far as possible" part).
+
+        Args:
+            acceptable_df (pd.DataFrame): The pool of acceptable questions (must contain a 'Tema' column).
+            total_questions (int): The total number of questions to distribute.
+
+        Returns:
+            Dict[str, int]: Mapping of topic -> number of questions assigned (topics with 0 are omitted).
+
+        Raises:
+            ValueError: If `total_questions` exceeds the number of available questions.
+        """
+        topic_counts = acceptable_df['Tema'].value_counts().to_dict()
+        topics = sorted(topic_counts.keys(), key=lambda topic: str(topic))
+        total_available = int(sum(topic_counts.values()))
+        if total_questions > total_available:
+            raise ValueError(
+                f"Se solicitaron {total_questions} preguntas en total, "
+                f"pero solo hay {total_available} preguntas 'Aceptables' disponibles."
+            )
+        allocation = {topic: 0 for topic in topics}
+        remaining = total_questions
+        # Round-robin: hand out one question at a time to each topic that still has capacity.
+        while remaining > 0:
+            topics_with_capacity = [topic for topic in topics if allocation[topic] < topic_counts[topic]]
+            if not topics_with_capacity:
+                break
+            for topic in topics_with_capacity:
+                if remaining == 0:
+                    break
+                allocation[topic] += 1
+                remaining -= 1
+        return {topic: count for topic, count in allocation.items() if count > 0}
 
     def read_questions_from_excel(self, excel_path: str) -> Optional[pd.DataFrame]:
         """
@@ -375,6 +461,8 @@ class ExamGenerator:
             exam_names: Optional[list] = None,
             questions_per_topic: Optional[dict] = None,
             selection_method: str = "azar",
+            total_questions: Optional[int] = None,
+            total_distribution: str = "equitativo",
             subject: Optional[str] = None,
             exam: Optional[str] = None,
             course: Optional[str] = None,
@@ -404,7 +492,15 @@ class ExamGenerator:
                 If None, uses the same directory as the bank_excel_path.
             exam_names (Optional[list]): A list of names for the exam versions (e.g., ['1A', '1B']).
             questions_per_topic (Optional[dict]): A dictionary specifying how many questions to select from each topic.
-            selection_method (str): Method for selecting questions: 'azar' (random), 'primeras' (first N), 'menos usadas' (least used).
+            selection_method (str): Method for selecting questions within each topic: 'azar' (random),
+                'primeras' (first N), 'menos usadas' (least used).
+            total_questions (Optional[int]): If provided (and > 0), selects this exact total number of
+                questions and overrides `questions_per_topic`. The way the total is spread is controlled
+                by `total_distribution`.
+            total_distribution (str): How to spread `total_questions`: 'equitativo' (same number of
+                questions per topic as far as possible; the first topics get one extra when the total is
+                not divisible) or 'azar' (pick the total at random from the whole acceptable pool,
+                ignoring topics).
             subject (Optional[str]): The subject name for the exam header.
             exam (Optional[str]): The exam name (e.g., 'Parcial 1').
             course (Optional[str]): The course name or year (e.g., '24-25').
@@ -440,34 +536,33 @@ class ExamGenerator:
         if self.acceptable_df.empty:
             raise NoAcceptableQuestionsError("No se encontraron preguntas con estado 'Aceptable' en el banco de preguntas.")
 
-        if questions_per_topic:
-            self.selected_questions = []
-            # Iterate directly over the questions_per_topic dictionary.
-            for topic, quantity in questions_per_topic.items():
-                if verbose:
-                    print(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
-                topic_questions = self.acceptable_df[self.acceptable_df['Tema'] == topic]
-                # Comprobación por tema: si no hay suficientes preguntas para un tema, lanzamos un error claro.
-                if len(topic_questions) < quantity:
-                    raise ValueError(
-                        f"No hay suficientes preguntas 'Aceptables' para el tema '{topic}'. "
-                        f"Se solicitaron {quantity}, pero solo hay {len(topic_questions)} disponibles."
-                    )
-                if selection_method == "azar":
-                    try:
-                        topic_questions = topic_questions.sample(n=quantity).copy()
-                    except ValueError as e:
-                        print(f"Error al seleccionar {quantity} preguntas del tema '{topic}': {e}")
-                        continue  # Skip to the next topic if there is an error.
-                elif selection_method == "primeras":
-                    topic_questions = topic_questions.head(quantity).copy()
-                elif selection_method == "menos usadas":
-                    topic_questions = topic_questions.sort_values(by='Veces usada en examen').head(quantity).copy()
-                self.selected_questions.append(topic_questions)
-            if self.selected_questions:
-                self.exam_df = pd.concat(self.selected_questions).copy()
+        # Normalize the optional total-questions request.
+        total_questions_int = None
+        if total_questions is not None and str(total_questions).strip() != "":
+            try:
+                total_questions_int = int(total_questions)
+            except (TypeError, ValueError):
+                total_questions_int = None
+
+        if total_questions_int and total_questions_int > 0:
+            # A fixed total overrides any per-topic dictionary.
+            available = len(self.acceptable_df)
+            if total_questions_int > available:
+                raise ValueError(
+                    f"Se solicitaron {total_questions_int} preguntas en total, "
+                    f"pero solo hay {available} preguntas 'Aceptables' disponibles."
+                )
+            if total_distribution == "azar":
+                # Pick the total at random from the whole acceptable pool, ignoring topics.
+                self.exam_df = self.acceptable_df.sample(n=total_questions_int).copy()
             else:
-                self.exam_df = pd.DataFrame(columns=self.acceptable_df.columns) # Create an empty DataFrame with the same columns.
+                # Spread the total across topics as evenly as possible.
+                computed_per_topic = self._distribute_questions_equitably(self.acceptable_df, total_questions_int)
+                if verbose:
+                    print(f"Verbose: Reparto equitativo del total {total_questions_int}: {computed_per_topic}")
+                self.exam_df = self._select_questions_by_topic(computed_per_topic, selection_method, verbose)
+        elif questions_per_topic:
+            self.exam_df = self._select_questions_by_topic(questions_per_topic, selection_method, verbose)
         else:
             self.exam_df = self.acceptable_df.copy()
 
@@ -593,9 +688,13 @@ class ExamGenerator:
                 paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
                 paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
                 paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"d) {row['Respuesta D']}\n").font.size = Pt(font_size)
+                # No trailing line break on the last option: the paragraph style already provides
+                # enough spacing to separate it from the next question.
+                paragraph.add_run(f"d) {row['Respuesta D']}").font.size = Pt(font_size)
 
-            document.add_page_break()
+            # Start the answer sheet on an odd page so it prints as a single, self-contained sheet
+            # (front of a physical page) while staying in the same document as the questions.
+            document.add_section(WD_SECTION.ODD_PAGE)
             document.add_heading('Datos del alumno', level=1)
             document.paragraphs[-1].runs[0].font.size = Pt(font_size)
             student_table = document.add_table(rows=4, cols=2)
@@ -699,7 +798,8 @@ class ExamGenerator:
                 # Add the correct answer and relevant text (not bold).
                 paragraph.add_run(f"Respuesta correcta: {row['Respuesta correcta'].lower()}\n").font.size = Pt(font_size)
                 paragraph.add_run(f"Texto relevante: {row['Texto relevante']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"Tema: {row['Tema']}\n").font.size = Pt(font_size)
+                # No trailing line break: the paragraph style already separates one question from the next.
+                paragraph.add_run(f"Tema: {row['Tema']}").font.size = Pt(font_size)
 
 
             full_document = self.add_page_number(full_document)

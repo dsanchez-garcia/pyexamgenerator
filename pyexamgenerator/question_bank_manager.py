@@ -17,6 +17,7 @@
 import pandas as pd
 from docx import Document
 import os
+import re
 from typing import Optional, List, Tuple
 
 class QuestionBankManager:
@@ -185,6 +186,91 @@ class QuestionBankManager:
                 added_count += 1
 
         return added_count, df_existing
+
+    def update_bank_with_exam(
+            self,
+            bank_path: str,
+            exam_path: str,
+            exam_label: Optional[str] = None,
+            match_columns: Optional[List[str]] = None
+    ) -> Tuple[int, Optional[pd.DataFrame]]:
+        """Marks, in an existing question bank, the questions used in an already generated exam.
+
+        This complements the on-the-fly usage tracking done during exam generation: given a bank XLSX
+        and an exam file (typically the ``*_completo.xlsx`` produced by the generator), it matches the
+        exam questions back to the bank by question statement, adds/updates a per-exam usage column
+        (``<label>_uso``) and recomputes the aggregated ``Veces usada en examen`` column.
+
+        Matching is done by the question statement ('Pregunta') by default because exams shuffle the
+        answer order, which makes answer-based matching unreliable.
+
+        Args:
+            bank_path (str): Path to the existing question bank XLSX file.
+            exam_path (str): Path to the generated exam XLSX file with the questions used.
+            exam_label (Optional[str]): Label used to name the usage column. If None, the exam file name
+                (without extension) is used.
+            match_columns (Optional[List[str]]): Columns used to match exam questions to bank questions.
+                Defaults to ['Pregunta'].
+
+        Returns:
+            Tuple[int, Optional[pd.DataFrame]]: The number of exam questions matched in the bank and the
+            updated bank DataFrame. Returns (-1, None) on read errors or missing match columns.
+        """
+        if match_columns is None:
+            match_columns = ['Pregunta']
+
+        try:
+            df_bank = pd.read_excel(bank_path)
+            df_exam = pd.read_excel(exam_path)
+        except FileNotFoundError:
+            print("Error: Uno o ambos archivos no se encontraron.")
+            return -1, None
+        except Exception as e:
+            print(f"Error al leer los archivos Excel: {e}")
+            return -1, None
+
+        missing = [col for col in match_columns if col not in df_bank.columns or col not in df_exam.columns]
+        if missing:
+            print(f"Error: faltan columnas para emparejar en el banco o el examen: {missing}")
+            return -1, None
+
+        # Build the usage column name from the provided label (or the exam file name).
+        label = (exam_label or '').strip() or os.path.splitext(os.path.basename(exam_path))[0]
+        safe_label = re.sub(r'[^a-zA-Z0-9_]', '_', label)
+        usage_column_name = f'{safe_label}_uso'
+        if usage_column_name not in df_bank.columns:
+            df_bank[usage_column_name] = 0
+
+        def _normalize(series: pd.Series) -> pd.Series:
+            return series.astype(str).str.strip()
+
+        matched_count = 0
+        for _, exam_row in df_exam.iterrows():
+            mask = pd.Series(True, index=df_bank.index)
+            for col in match_columns:
+                mask &= _normalize(df_bank[col]) == str(exam_row[col]).strip()
+            matching_index = df_bank.index[mask]
+            if len(matching_index) > 0:
+                df_bank.loc[matching_index, usage_column_name] = 1
+                matched_count += 1
+
+        # Recompute the aggregated usage column from every per-exam '_uso' column.
+        usage_columns = [col for col in df_bank.columns if col.endswith('_uso')]
+        if usage_columns:
+            df_bank['Veces usada en examen'] = df_bank[usage_columns].sum(axis=1)
+
+        # Keep 'Veces usada en examen' right after 'Texto relevante' for readability, mirroring the
+        # column layout used by the exam generator.
+        if 'Veces usada en examen' in df_bank.columns and 'Texto relevante' in df_bank.columns:
+            usage_aggregate = df_bank.pop('Veces usada en examen')
+            try:
+                texto_relevante_idx = df_bank.columns.get_loc('Texto relevante')
+                df_bank.insert(texto_relevante_idx + 1, 'Veces usada en examen', usage_aggregate)
+            except KeyError:
+                df_bank['Veces usada en examen'] = usage_aggregate
+
+        df_bank = df_bank.loc[:, ~df_bank.columns.str.contains('unnamed', case=False)]
+        return matched_count, df_bank
 
     def save_dataframe_to_excel(
             self,

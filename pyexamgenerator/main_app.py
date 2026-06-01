@@ -159,6 +159,8 @@ class ExamApp:
         self.update_excel = tk.BooleanVar(value=False)
         self.num_columns_var = tk.StringVar(value="3")
         self.selection_method_var = tk.StringVar(value="diccionario")
+        self.total_questions_var = tk.StringVar(value="20")
+        self.total_distribution_var = tk.StringVar(value="equitativo")
         self.gen_exams_output_dir_var = tk.StringVar()
 
         # --- Variables for the "Generate Questions" tab ---
@@ -190,6 +192,9 @@ class ExamApp:
         self.existing_bank_path = tk.StringVar()
         self.reviewed_add_path = tk.StringVar()
         self.add_questions_filter_var = tk.StringVar(value="todas")
+        self.update_bank_path_var = tk.StringVar()
+        self.update_exam_path_var = tk.StringVar()
+        self.update_exam_label_var = tk.StringVar()
         self.revised_xlsx_output_dir_var = tk.StringVar()
         self.revised_docx_path_var = tk.StringVar()
         self.new_xlsx_filename_var = tk.StringVar()
@@ -1546,6 +1551,20 @@ class ExamApp:
         questions_per_topic_entry = ttk.Entry(questions_frame, textvariable=self.questions_per_topic)
         questions_per_topic_entry.grid(row=row_interno_questions + 1, column=1, padx=5, sticky='ew')
         ToolTip(questions_per_topic_entry, text="Diccionario con el formato Tema:Cantidad.")
+
+        total_radio = ttk.Radiobutton(questions_frame, text="Número total de preguntas:", variable=self.selection_method_var, value="total")
+        total_radio.grid(row=row_interno_questions + 2, column=0, sticky='w')
+        ToolTip(total_radio, text="Selecciona un número total de preguntas del banco y reparte ese total según el modo elegido.")
+        total_questions_entry = ttk.Entry(questions_frame, width=6, textvariable=self.total_questions_var)
+        total_questions_entry.grid(row=row_interno_questions + 2, column=1, padx=5, sticky='w')
+        ToolTip(total_questions_entry, text="Número total de preguntas que tendrá el examen.")
+
+        total_distribution_label = ttk.Label(questions_frame, text="Reparto del total:")
+        total_distribution_label.grid(row=row_interno_questions + 3, column=0, sticky='e', padx=5)
+        ToolTip(total_distribution_label, text="Cómo se reparte el número total de preguntas entre los temas.")
+        total_distribution_combo = ttk.Combobox(questions_frame, textvariable=self.total_distribution_var, values=["equitativo", "azar"], state='readonly', width=12)
+        total_distribution_combo.grid(row=row_interno_questions + 3, column=1, padx=5, sticky='w')
+        ToolTip(total_distribution_combo, text="equitativo: mismo número de preguntas por tema en la medida de lo posible (los primeros temas reciben una más si el total no es divisible). azar: se eligen del banco completo sin tener en cuenta el tema.")
         row += 1  # Increment the row for the next LabelFrame
 
         # 4. Selection method (spans 3 columns)
@@ -1793,6 +1812,49 @@ class ExamApp:
 
         add_from_bank_frame.columnconfigure(1, weight=1)
 
+        # --- Section to update the bank usage statistics from an already generated exam ---
+        update_with_exam_frame = ttk.LabelFrame(inner_frame_manage, text="Actualizar Banco con Examen Existente")
+        update_with_exam_frame.pack(padx=5, pady=10, fill='x')
+        ToolTip(update_with_exam_frame, text="Marca como usadas en el banco las preguntas que aparecen en un examen ya generado y recalcula 'Veces usada en examen'.")
+
+        update_bank_label = ttk.Label(update_with_exam_frame, text="Banco a Actualizar:")
+        update_bank_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(update_bank_label, text="Seleccione el archivo XLSX del banco de preguntas cuyas estadísticas de uso se actualizarán.")
+
+        update_bank_entry = ttk.Entry(update_with_exam_frame, width=40, textvariable=self.update_bank_path_var)
+        update_bank_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(update_bank_entry, text="Ruta del archivo XLSX del banco de preguntas.")
+
+        select_update_bank_button = ttk.Button(update_with_exam_frame, text="Seleccionar", command=self.select_update_bank_file)
+        select_update_bank_button.grid(row=0, column=2, padx=5, pady=5)
+        ToolTip(select_update_bank_button, text="Abre un diálogo para seleccionar el archivo XLSX del banco de preguntas.")
+
+        update_exam_label = ttk.Label(update_with_exam_frame, text="Examen Generado (XLSX):")
+        update_exam_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(update_exam_label, text="Seleccione el archivo XLSX del examen ya generado (normalmente el archivo '..._completo.xlsx').")
+
+        update_exam_entry = ttk.Entry(update_with_exam_frame, width=40, textvariable=self.update_exam_path_var)
+        update_exam_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(update_exam_entry, text="Ruta del archivo XLSX del examen generado.")
+
+        select_update_exam_button = ttk.Button(update_with_exam_frame, text="Seleccionar", command=self.select_update_exam_file)
+        select_update_exam_button.grid(row=1, column=2, padx=5, pady=5)
+        ToolTip(select_update_exam_button, text="Abre un diálogo para seleccionar el archivo XLSX del examen generado.")
+
+        update_label_label = ttk.Label(update_with_exam_frame, text="Etiqueta del Examen (opcional):")
+        update_label_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(update_label_label, text="Nombre para la columna de uso (ej. 'Parcial1_25-26'). Si se deja vacío, se usa el nombre del archivo del examen.")
+
+        update_label_entry = ttk.Entry(update_with_exam_frame, width=40, textvariable=self.update_exam_label_var)
+        update_label_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(update_label_entry, text="Etiqueta para la columna de uso en el banco.")
+
+        update_bank_button = ttk.Button(update_with_exam_frame, text="Actualizar Banco con Examen", command=self.update_bank_with_exam)
+        update_bank_button.grid(row=3, column=0, columnspan=3, pady=10)
+        ToolTip(update_bank_button, text="Empareja por enunciado las preguntas del examen con el banco, marca su uso y recalcula 'Veces usada en examen'.")
+
+        update_with_exam_frame.columnconfigure(1, weight=1)
+
     def select_revised_docx_file(self) -> None:
         """
         Opens a dialog to select a revised DOCX file.
@@ -1964,8 +2026,20 @@ class ExamApp:
         exam_name_list = [name.strip() for name in exam_names_str.split(',')] if exam_names_str else None
 
         questions_per_topic = {}
+        total_questions = None
+        total_distribution = self.total_distribution_var.get()
 
-        if selection_method_var == "diccionario":
+        if selection_method_var == "total":
+            total_questions_str = self.total_questions_var.get().strip()
+            try:
+                total_questions = int(total_questions_str)
+            except ValueError:
+                messagebox.showerror("Error", "Por favor, introduce un número entero válido para el 'Número total de preguntas'.")
+                return
+            if total_questions <= 0:
+                messagebox.showerror("Error", "El 'Número total de preguntas' debe ser mayor que 0.")
+                return
+        elif selection_method_var == "diccionario":
             if self.questions_per_topic.get():
                 try:
                     for item in self.questions_per_topic.get().split(','):
@@ -2021,6 +2095,8 @@ class ExamApp:
                 exam_names=exam_name_list,
                 questions_per_topic=questions_per_topic,
                 selection_method=selection_method,
+                total_questions=total_questions,
+                total_distribution=total_distribution,
                 subject=subject,
                 exam=exam_name,
                 course=course,
@@ -2143,6 +2219,77 @@ class ExamApp:
         else:
             messagebox.showinfo("Información", "No se encontraron preguntas nuevas para añadir.")
 
+    def select_update_bank_file(self) -> None:
+        """Opens a dialog to select the question bank XLSX whose usage will be updated."""
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar Banco de Preguntas a Actualizar",
+            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+        )
+        if filepath:
+            self.update_bank_path_var.set(filepath)
+
+    def select_update_exam_file(self) -> None:
+        """Opens a dialog to select the generated exam XLSX used to update the bank."""
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar Examen Generado (XLSX)",
+            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+        )
+        if filepath:
+            self.update_exam_path_var.set(filepath)
+
+    def update_bank_with_exam(self) -> None:
+        """
+        Updates the usage statistics of an existing question bank from an already generated exam.
+        Matches the exam questions back to the bank by statement, marks them as used and recomputes
+        the aggregated 'Veces usada en examen' column.
+        """
+        bank_path = self.update_bank_path_var.get()
+        exam_path = self.update_exam_path_var.get()
+        exam_label = self.update_exam_label_var.get().strip() or None
+
+        if not bank_path or not exam_path:
+            messagebox.showerror("Error", "Por favor, seleccione el banco de preguntas y el examen generado.")
+            return
+
+        matched_count, df_updated = self.question_bank_manager.update_bank_with_exam(
+            bank_path,
+            exam_path,
+            exam_label=exam_label
+        )
+
+        if matched_count == -1:
+            messagebox.showerror("Error", "Error al procesar los archivos. Revise la consola para más detalles.")
+            return
+
+        if matched_count == 0:
+            messagebox.showinfo("Información", "No se encontró ninguna pregunta del examen en el banco. No se realizaron cambios.")
+            return
+
+        response = messagebox.askyesnocancel(
+            "Guardar Cambios",
+            f"Se emparejaron {matched_count} preguntas del examen con el banco. ¿Desea guardar los cambios en el banco existente?",
+            default='yes'
+        )
+        if response is True:
+            filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, bank_path, overwrite=True)
+            if filepath:
+                messagebox.showinfo("Éxito", f"Banco actualizado con {matched_count} preguntas usadas: {filepath}")
+            else:
+                messagebox.showerror("Error al guardar", "Error al guardar el banco existente.")
+        elif response is False:
+            new_filepath = filedialog.asksaveasfilename(
+                title="Guardar Banco Actualizado Como...",
+                defaultextension=".xlsx",
+                initialdir=os.path.dirname(bank_path),
+                initialfile=f"{os.path.splitext(os.path.basename(bank_path))[0]}_actualizado.xlsx"
+            )
+            if new_filepath:
+                filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, new_filepath, overwrite=True)
+                if filepath:
+                    messagebox.showinfo("Éxito", f"Banco actualizado guardado en: {filepath}")
+                else:
+                    messagebox.showerror("Error al guardar", "Error al guardar el nuevo archivo.")
+
     def show_about_dialog(self):
         """Displays an 'About' dialog with program and license information."""
         about_text = (
@@ -2209,6 +2356,8 @@ class ExamApp:
             "num_questions_same_topic": self.num_questions_same_topic.get(),
             "selection_method": self.selection_method.get(),
             "selection_method_var": self.selection_method_var.get(),
+            "total_questions": self.total_questions_var.get(),
+            "total_distribution": self.total_distribution_var.get(),
             "top_margin": self.top_margin.get(),
             "bottom_margin": self.bottom_margin.get(),
             "left_margin": self.left_margin.get(),
@@ -2269,6 +2418,8 @@ class ExamApp:
         self.num_questions_same_topic.set(config.get("num_questions_same_topic", self.num_questions_same_topic.get()))
         self.selection_method.set(config.get("selection_method", self.selection_method.get()))
         self.selection_method_var.set(config.get("selection_method_var", self.selection_method_var.get()))
+        self.total_questions_var.set(config.get("total_questions", self.total_questions_var.get()))
+        self.total_distribution_var.set(config.get("total_distribution", self.total_distribution_var.get()))
         self.top_margin.set(config.get("top_margin", self.top_margin.get()))
         self.bottom_margin.set(config.get("bottom_margin", self.bottom_margin.get()))
         self.left_margin.set(config.get("left_margin", self.left_margin.get()))

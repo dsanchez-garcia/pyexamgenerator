@@ -33,6 +33,9 @@ Aquí es donde decides exactamente qué preguntas incluir en tu examen. Tienes u
 *   **Seleccionar cantidad por tema:** Esta opción te muestra una lista de todos los temas disponibles en tu banco de preguntas y te permite elegir cuántas preguntas quieres de cada uno. Es muy visual e intuitiva.
 *   **Mismo número de preguntas por tema:** Una opción rápida si quieres, por ejemplo, 2 preguntas de cada tema sin tener que especificarlo uno por uno.
 *   **Diccionario de preguntas por tema:** La opción más potente para scripting, pero también útil aquí. Escribes directamente tu selección en formato `NombreDelTema:Cantidad`.
+*   **Número total de preguntas:** Indicas un número total de preguntas para todo el examen y eliges cómo repartirlo en el desplegable **"Reparto del total"**:
+    *   **equitativo:** reparte ese total entre los temas de la forma más igualada posible (mismo número de preguntas por tema; si el total no es divisible, los primeros temas reciben una pregunta más, y si un tema no tiene suficientes preguntas el excedente se reparte entre el resto).
+    *   **azar:** elige el total directamente del banco completo, sin tener en cuenta el tema.
 *   **Acción para nuestro ejemplo:**
     1.  Haz clic en la opción **"Seleccionar cantidad por tema"**.
     2.  Al seleccionar tu archivo Excel, la aplicación cargará automáticamente los temas. Verás dos filas en el área de selección: **`PRL - LPRL`** y **`PRL - RSP`**.
@@ -84,7 +87,7 @@ Aquí personalizas el aspecto visual de tu examen en el archivo de Word.
 
 Ve a tu carpeta de trabajo. Verás que, además de los documentos de Word y Excel, ahora se han creado archivos especiales para Moodle. Esto es lo que encontrarás:
 
-*   **`examen_Prevención de Riesgos Laborales_Examen Temas LPRL y RSP_24-25_Tipo A.docx`**: El examen para el alumno, listo para imprimir.
+*   **`examen_Prevención de Riesgos Laborales_Examen Temas LPRL y RSP_24-25_Tipo A.docx`**: El examen para el alumno, listo para imprimir. La **hoja de respuestas** (datos del alumno + tabla) empieza siempre en una **página impar**, de modo que al imprimir a doble cara queda como una hoja física independiente que el alumno puede separar, sin necesidad de sacarla a un PDF aparte.
 *   **`examen_..._Tipo B.docx`**: La segunda versión del examen, con preguntas y respuestas barajadas.
 *   **`examen_..._Tipo A_completo.docx`**: La versión para el profesor, con las respuestas correctas y el tema de cada pregunta.
 *   **`examen_..._Tipo B_completo.docx`**: La versión del profesor para el Tipo B.

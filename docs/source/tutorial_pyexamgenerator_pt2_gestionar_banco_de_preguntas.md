@@ -88,3 +88,21 @@ Luego, te preguntará cómo quieres guardar el resultado. Tienes tres opciones:
 ¡Y ya está! Ve a tu carpeta de trabajo y abre tu archivo `banco_principal.xlsx`. Verás que ahora contiene las 6 preguntas de los temas **`PRL - LPRL`** y **`PRL - RSP`** que generamos, revisamos y añadimos. Tu banco de preguntas ha crecido, ¡y todo de forma organizada y sin duplicados
 
 ![](/_static/gifs/parte5_tarea2_v01.gif)
+
+### Tarea 3: Actualizar el banco con un examen ya generado
+
+Si marcaste **"Actualizar Archivo Excel con Uso"** al generar un examen, el banco ya queda al día. Pero si generaste un examen sin esa opción (o lo hiciste desde otro equipo o en otra sesión), puedes registrar su uso *a posteriori* con la sección **"Actualizar Banco con Examen Existente"**.
+
+*   **Banco a Actualizar:**
+    *   **Acción:** Haz clic en **"Seleccionar"** y elige tu archivo maestro, **`banco_principal.xlsx`**.
+
+*   **Examen Generado (XLSX):**
+    *   **Acción:** Haz clic en **"Seleccionar"** y elige el archivo **`..._completo.xlsx`** que produjo la pestaña *Generar Exámenes* (contiene las preguntas que se usaron en ese examen).
+
+*   **Etiqueta del Examen (opcional):**
+    *   **Acción:** Escribe un nombre para la columna de uso, por ejemplo **`Parcial1_24-25`**. Si lo dejas en blanco, se usará el nombre del archivo del examen.
+
+*   **Botón "Actualizar Banco con Examen":**
+    *   **Acción:** Haz clic en él. La aplicación empareja por enunciado las preguntas del examen con las del banco (el orden de las respuestas se baraja en el examen, por eso el cruce se hace por el texto de la pregunta), marca cada pregunta usada en la columna `<etiqueta>_uso` y recalcula la columna `Veces usada en examen`. Después te preguntará si quieres sobrescribir el banco o guardar una copia, igual que en la Tarea 2.
+
+Esto alimenta la opción **"menos usadas"** de la pestaña *Generar Exámenes*, manteniendo el reparto de preguntas equilibrado a lo largo del curso.

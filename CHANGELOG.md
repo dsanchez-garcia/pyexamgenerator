@@ -7,12 +7,10 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-### Cambiado
-- **Generación por fragmentos más flexible:** Se añade soporte para elegir el modo de fragmentación con `chunking_mode` (`pages` o `text_length`) y para definir `total_chunks` además de `pages_per_chunk`.
-- **Flujo GUI de generación de preguntas ampliado:** La pestaña **Generar Preguntas** incluye controles para `total_chunks`, `chunking_mode` y para incluir/excluir preguntas similares del banco dentro del prompt.
-- **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
-
 ### Añadido
+- **Selección por número total de preguntas:** `ExamGenerator.generate_exam_from_excel(...)` admite `total_questions` y `total_distribution` (`equitativo` o `azar`). En modo `equitativo` reparte el total entre los temas de la forma más igualada posible (los primeros temas reciben una pregunta más cuando el total no es divisible y se redistribuye el excedente si un tema no tiene suficientes preguntas); en modo `azar` elige el total del banco completo sin tener en cuenta el tema. La pestaña **Generar Exámenes** incorpora la opción "Número total de preguntas" con su selector de reparto, incluida en las plantillas de configuración.
+- **Actualizar banco con examen existente:** Nuevo método `QuestionBankManager.update_bank_with_exam(...)` y su sección en la pestaña **Gestionar Banco de Preguntas**. Empareja por enunciado las preguntas de un examen ya generado (el `*_completo.xlsx`) con el banco, marca su uso en una columna `<etiqueta>_uso` y recalcula `Veces usada en examen`, cerrando el ciclo de uso fuera del momento de generación.
+- **Nuevas pruebas automáticas:** `tests/test_v030_features.py` valida el reparto equitativo (par/impar y con temas cortos), la selección por total (`equitativo`/`azar`), el arranque de la hoja de respuestas en página impar, la ausencia de línea en blanco entre preguntas y la actualización del banco desde un examen.
 - **Identificación manual del alumno por imagen (OCR):** Nuevo parámetro `forced_student_by_image={imagen: "Número de ID" | nombre}` en `ImageExamGrader`/`AnswerSheetExtractor` (y en `ImageGradingConfig`/`ExamCorrectionAPI.grade_from_images`). Permite asignar a mano el alumno de una hoja cuyo nombre manuscrito el OCR no puede leer (incidencia `MISSING_ID`); resuelve el identificador contra la matrícula por `Número de ID`, por nombre completo normalizado o por coincidencia aproximada, y la asignación manual prevalece sobre el OCR.
 - **Subpaquete de corrección `pyexamgenerator.grading`:** Integra el flujo completo de corrección de exámenes (antes proyecto `examgrader`), cerrando el ciclo *generar → corregir*. Incluye:
   - OCR de hojas de respuestas manuscritas (`ImageExamGrader`, `AnswerSheetExtractor`) con identificación de marcas y detección del tipo de examen, usando como plantilla el **Moodle XML** que produce el propio generador.
@@ -33,20 +31,23 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Soporte de imágenes en prompts manuales:** `QuestionGenerator.build_generation_prompts(...)` añade `input_mode` para preparar prompts orientados a flujo visual (AI Studio/Gemini web).
 - **Dependencia para renderizado visual de PDFs:** Se incorpora `PyMuPDF` en `setup.py` para convertir páginas PDF en imágenes cuando se usa `input_mode='image'`.
 - **Nuevas pruebas unitarias de modo visual:** Nuevo archivo `tests/test_image_mode_unit.py` para validar utilidades de agrupación y flujo básico de prompts en `input_mode='image'`.
+- **Prueba unitaria para validar numeración canónica** y coherencia de la respuesta correcta tras el barajado de opciones.
+- **Prueba de integración** usando el fixture real `prueba_error/examen_CSP_Q-PA_25-26.xlsx` para verificar coherencia entre tabla de respuestas en DOCX y preguntas en XML.
+
+### Cambiado
+- **Hoja de respuestas en página impar:** En el DOCX del alumno, la hoja de respuestas (datos del alumno + tabla) ahora comienza en una **página impar** mediante un salto de sección `oddPage`, de modo que al imprimir a doble cara queda como una hoja física independiente sin salir del mismo documento que el examen.
+- **Sin línea en blanco entre preguntas:** Se elimina el salto de línea final de cada pregunta en los DOCX (alumno y profesor); el espaciado del estilo de párrafo ya separa cada pregunta de la siguiente.
+- **Generación por fragmentos más flexible:** Se añade soporte para elegir el modo de fragmentación con `chunking_mode` (`pages` o `text_length`) y para definir `total_chunks` además de `pages_per_chunk`.
+- **Flujo GUI de generación de preguntas ampliado:** La pestaña **Generar Preguntas** incluye controles para `total_chunks`, `chunking_mode` y para incluir/excluir preguntas similares del banco dentro del prompt.
+- **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Arreglado
 - **Integración de notas OCR en formato *quiz-totals*:** `OcrGradeIntegrator` no conseguía volcar las notas manuscritas cuando un mismo tipo de examen existía en varios grupos (p. ej. `GIM` y `GITI-GIE-GIEI`), porque el mapa `Número de ID → grupo` no casaba con el índice del fichero de Moodle (`Nombre de usuario`). Ahora desambigua usando el `Grupo_Principal` que viene en la propia fila OCR, de modo que las notas aterrizan en la columna de cuestionario correcta.
 - **Estado case-insensitive:** El filtro de preguntas con estado "Aceptable" ahora acepta variantes como "aceptable" en generación de exámenes y en fusión de bancos.
 - **Tooltips persistentes en GUI:** Se corrige el comportamiento de tooltips que podían quedar visibles al salir del widget o cerrar la aplicación, reforzando la destrucción y el manejo de eventos de cierre.
-
-### Arreglado
-- Generación de exámenes con orden canónico único por tipo, reutilizado en enunciados, hoja de respuestas y exportación XML de Moodle.
+- **Orden canónico único por tipo:** Generación de exámenes con un orden canónico por tipo, reutilizado en enunciados, hoja de respuestas y exportación XML de Moodle.
 - La tabla de la hoja de respuestas muestra la numeración `01..N` de forma consistente.
 - Los nombres de pregunta en XML (`Pregunta 01`, `Pregunta 02`, ...) usan dos dígitos para mantener homogeneidad visual y trazabilidad con la hoja de respuestas.
-
-### Añadido
-- Prueba unitaria para validar numeración canónica y coherencia de la respuesta correcta tras el barajado de opciones.
-- Prueba de integración usando el fixture real `prueba_error/examen_CSP_Q-PA_25-26.xlsx` para verificar coherencia entre tabla de respuestas en DOCX y preguntas en XML.
 
 ## [0.2.2] - 2026-01-08
 
