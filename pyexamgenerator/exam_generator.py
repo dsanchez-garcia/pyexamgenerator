@@ -49,6 +49,55 @@ class ExamGenerator:
         """
         # Added self.df attribute to persist the DataFrame between calls.
         self.df = None
+        # Records (one per generated exam type) with the paths of every output file, so a grading
+        # session can later be resumed directly from the generated exams.
+        self.generated_exams = []
+
+    @staticmethod
+    def suggest_moodle_config(
+        exam: Optional[str] = None,
+        exam_type: Optional[str] = None,
+        group: Optional[str] = None,
+        topic: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Suggests Moodle quiz names / category so the exported grade columns are identifiable.
+
+        The grading subpackage parses two column conventions (the prefix ``Cuestionario:`` is added by
+        Moodle itself when exporting grades):
+          - per exam type: ``Cuestionario:<nombre>_Tipo <1A> (Real)``
+          - per class quiz (topic + group): ``Cuestionario:Cuestionario <tema> - <GIM|GITI-GIE-GIEI> (Real)``
+
+        Args:
+            exam: Exam name (e.g. 'Parcial 1').
+            exam_type: Exam type/version in the form ``<n><LETTER>`` (e.g. '1A').
+            group: Macro-group (e.g. 'GIM', 'GITI-GIE-GIEI').
+            topic: Topic name for a class quiz (e.g. 'Tema 03').
+
+        Returns:
+            Dict[str, str]: Suggested names and the grade columns they will produce in Moodle.
+        """
+        suggestions: Dict[str, str] = {}
+
+        if exam_type:
+            base_parts = [p for p in [group, exam or "Examen"] if p]
+            base = " ".join(str(p).strip() for p in base_parts).strip()
+            quiz_name = f"{base}_Tipo {str(exam_type).strip().upper()} (Real)"
+            suggestions["exam_quiz_name"] = quiz_name
+            suggestions["exam_grade_column"] = f"Cuestionario:{quiz_name}"
+
+        if topic and group:
+            class_quiz_name = f"Cuestionario {str(topic).strip()} - {str(group).strip()} (Real)"
+            suggestions["class_quiz_name"] = class_quiz_name
+            suggestions["class_grade_column"] = f"Cuestionario:{class_quiz_name}"
+
+        category = "$course$/top/Examen"
+        if exam:
+            category += f" {exam} -"
+        if exam_type:
+            category += f" {exam_type} -"
+        suggestions["category_name"] = category.rstrip(" -")
+
+        return suggestions
 
     @staticmethod
     def _format_question_number(question_number: int) -> str:
@@ -480,6 +529,7 @@ class ExamGenerator:
             update_excel: bool = False,
             answer_sheet_instructions: Optional[str] = None,
             template_docx_path: Optional[str] = None,
+            session_output_path: Optional[str] = None,
             verbose: bool = False
     ):
         """
@@ -518,8 +568,13 @@ class ExamGenerator:
             update_excel (bool): If True, updates the source Excel file with usage statistics.
             answer_sheet_instructions (Optional[str]): Text with instructions for the answer sheet.
             template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
+            session_output_path (Optional[str]): If set, writes a resumable grading session (``.pkl`` +
+                ``.json``) recording the paths of every generated exam, so correction can be resumed later.
             verbose (bool): If True, prints detailed progress messages to the console.
         """
+        # Start a fresh list of generated-exam records for this run.
+        self.generated_exams = []
+
         if self.df is None:
             self.df = self.read_questions_from_excel(bank_excel_path)
 
@@ -820,6 +875,21 @@ class ExamGenerator:
                     xml_use_answer_text=xml_use_answer_text
                 )
 
+            # Record this exam type's output paths for the optional resumable session.
+            self.generated_exams.append({
+                "subject": subject,
+                "exam": exam,
+                "course": course,
+                "exam_type": exam_type_name,
+                "docx": docx_path,
+                "full_docx": full_docx_path,
+                "xlsx": excel_path_out,
+                "xml": xml_path if export_moodle_xml else None,
+            })
+
+        if session_output_path:
+            self._save_grading_session(session_output_path, subject=subject, exam=exam, course=course)
+
         if update_excel:
             new_column_name_base = f'{exam}_{course}'
             safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', exam)
@@ -865,6 +935,22 @@ class ExamGenerator:
                     f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'.")
             except Exception as e:
                 print(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
+
+    def _save_grading_session(self, session_output_path: str, subject: Optional[str] = None,
+                              exam: Optional[str] = None, course: Optional[str] = None):
+        """Builds and saves a resumable grading session from the exams generated in this run."""
+        try:
+            from pyexamgenerator.grading.session import GradingSession
+        except Exception as exc:  # pragma: no cover - grading is part of the package
+            print(f"No se pudo crear la sesión: {exc}")
+            return None
+        name_parts = [str(p) for p in (subject, exam, course) if p]
+        session = GradingSession(name=" - ".join(name_parts) or "sesion_pyexamgenerator")
+        for record in self.generated_exams:
+            session.add_generated_exam(**record)
+        pkl_path, json_path = session.save(session_output_path)
+        print(f"Sesión guardada en:\n  {pkl_path}\n  {json_path}")
+        return pkl_path, json_path
 
     @staticmethod
     def _replace_placeholders_in_document(document: Document, values: Dict[str, str]) -> None:

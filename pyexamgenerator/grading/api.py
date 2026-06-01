@@ -9,6 +9,7 @@ import pandas as pd
 
 from pyexamgenerator.grading.data import SharedExamDataStore
 from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
+from pyexamgenerator.grading.session import GradingSession
 
 
 @dataclass
@@ -123,6 +124,12 @@ class AbsenceJustificationConfig:
     output_dir: Optional[str] = None
     attendance_header_row: int = 3
     sender_col: str = "REMITENTE"
+    subject_col: str = "ASUNTO"
+    message_col: str = "MENSAJE"
+    first_name_col: Optional[str] = None
+    last_name_col: Optional[str] = None
+    id_col: Optional[str] = None
+    email_col: Optional[str] = None
     justification_mode: str = "extremo"
 
 
@@ -142,6 +149,27 @@ class TheoryTopicReportConfig:
     output_dir: str = "reporte_teoria_por_tema"
 
 
+@dataclass
+class FinalGradeConfig:
+    """Weighted final grade configuration.
+
+    ``mode='by_file'`` weights one grade column per file (``sources`` items:
+    ``{path, label?, weight?, grade_col?, id_col?}``). ``mode='by_column'`` weights several columns
+    inside a single ``source_path`` (``weights``: ``{column_name: weight}``).
+    """
+
+    mode: str = "by_file"
+    sources: Sequence[Dict[str, object]] = field(default_factory=tuple)
+    source_path: Optional[str] = None
+    weights: Dict[str, float] = field(default_factory=dict)
+    output_path: str = "calificaciones_finales_ponderadas.xlsx"
+    output_dir: Optional[str] = None
+    cap_to_10: bool = True
+    id_col: Optional[str] = None
+    first_name_col: Optional[str] = None
+    last_name_col: Optional[str] = None
+
+
 class ExamCorrectionAPI:
     """High-level facade to run exam correction workflows as a reusable library."""
 
@@ -154,6 +182,17 @@ class ExamCorrectionAPI:
         self.default_output_dir = str(default_output_dir).strip() if default_output_dir else None
         # Every workflow records its outputs here so they can be inspected or reused later.
         self.results: Dict[str, object] = {}
+        # Resumable session: accumulates inputs, configs and a summary of each workflow run.
+        self.session = GradingSession()
+
+    def save_session(self, path: str) -> Tuple[str, str]:
+        """Writes the accumulated session to ``<base>.pkl`` and ``<base>.json``."""
+        return self.session.save(path)
+
+    def load_session(self, path: str) -> GradingSession:
+        """Loads a session (``.pkl`` or ``.json``) and adopts it as the current session."""
+        self.session = GradingSession.load(path)
+        return self.session
 
     def _resolve_output_dir(self, explicit_output_dir: Optional[str]) -> Optional[str]:
         out_dir = explicit_output_dir or self.default_output_dir
@@ -268,6 +307,10 @@ class ExamCorrectionAPI:
         result_df = grader.grade_and_export(output_path)
         self._export_step_dataframe(export_state, "graded_output", result_df)
         self._finalize_step_export(export_state, {"output_path": output_path})
+        self.session.record_workflow(
+            "grade_from_excel", config=cfg, outputs={"output_path": output_path},
+            summary={"rows": int(len(result_df))},
+        )
         return result_df
 
     def grade_from_images(
@@ -378,6 +421,10 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "moodle_integrated", result_df)
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
         self._finalize_step_export(export_state, {"output_path": output_path})
+        self.session.record_workflow(
+            "integrate_moodle_grades", config=cfg, outputs={"output_path": output_path},
+            summary={"rows": int(len(result_df))},
+        )
         return result_df
 
     def integrate_ocr_grades(self, cfg: OCRIntegrationConfig, export_steps_dir: Optional[str] = None) -> pd.DataFrame:
@@ -398,6 +445,10 @@ class ExamCorrectionAPI:
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
         self._finalize_step_export(export_state, {"output_path": output_path})
         self.results["integrated_theory"] = result_df
+        self.session.record_workflow(
+            "integrate_ocr_grades", config=cfg, outputs={"output_path": output_path},
+            summary={"rows": int(len(result_df))},
+        )
         return result_df
 
     def run_moodle_plus_ocr_pipeline(
@@ -471,6 +522,12 @@ class ExamCorrectionAPI:
             quizzes_xlsx_path=cfg.quizzes_xlsx_path,
             attendance_header_row=cfg.attendance_header_row,
             sender_col=cfg.sender_col,
+            subject_col=cfg.subject_col,
+            message_col=cfg.message_col,
+            first_name_col=cfg.first_name_col,
+            last_name_col=cfg.last_name_col,
+            id_col=cfg.id_col,
+            email_col=cfg.email_col,
             justification_mode=cfg.justification_mode,
         )
 
@@ -507,6 +564,14 @@ class ExamCorrectionAPI:
         self.results["justifications_summary"] = result.summary_df
         self.results["justifications_detail"] = result.detailed_df
         self.results["attendance_with_quizzes"] = result.attendance_quiz_df
+        self.session.record_workflow(
+            "process_absence_justifications", config=cfg,
+            outputs={
+                "summary_output": self._resolve_output_path(cfg.summary_output_path, cfg.output_dir),
+                "detailed_output": self._resolve_output_path(cfg.detailed_output_path, cfg.output_dir),
+            },
+            summary={"summary_rows": int(len(result.summary_df))},
+        )
         return result.summary_df, result.detailed_df
 
     def apply_theory_bonus(
@@ -532,6 +597,10 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "theory_with_bonus", result_df)
         self._finalize_step_export(export_state, {"output_path": output_path})
         self.results["theory_with_bonus"] = result_df
+        self.session.record_workflow(
+            "apply_theory_bonus", config=cfg, outputs={"output_path": output_path},
+            summary={"rows": int(len(result_df))},
+        )
         return result_df
 
     def export_theory_topic_reports(
@@ -562,6 +631,39 @@ class ExamCorrectionAPI:
         self.results["topic_attendance_report"] = attendance_report_df
         self.results["topic_quiz_report"] = quiz_report_df
         return attendance_report_df, quiz_report_df
+
+    def compute_final_grade(self, cfg: FinalGradeConfig, export_steps_dir: Optional[str] = None) -> pd.DataFrame:
+        """Computes a weighted final grade by file or by column (see :class:`FinalGradeConfig`)."""
+        from pyexamgenerator.grading.final_grade import FinalGradeCalculator
+
+        export_state = self._start_step_export(export_steps_dir, "compute_final_grade")
+        calculator = FinalGradeCalculator(
+            cap_to_10=cfg.cap_to_10,
+            id_col=cfg.id_col,
+            first_name_col=cfg.first_name_col,
+            last_name_col=cfg.last_name_col,
+        )
+
+        if cfg.mode == "by_column":
+            if not cfg.source_path:
+                raise ValueError("En modo 'by_column' se requiere 'source_path'.")
+            result_df = calculator.compute_by_columns(cfg.source_path, dict(cfg.weights))
+        else:
+            result_df = calculator.compute_by_files(list(cfg.sources))
+
+        output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
+        calculator.export(output_path)
+
+        self._export_step_dataframe(export_state, "final_grades", result_df)
+        self._finalize_step_export(export_state, {"output_path": output_path})
+        self.results["final_grades"] = result_df
+        self.session.record_workflow(
+            "compute_final_grade",
+            config=cfg,
+            outputs={"output_path": output_path},
+            summary={"rows": int(len(result_df))},
+        )
+        return result_df
 
     @staticmethod
     def build_paths_by_group_types(xlsx_files: Iterable[str], group_types: Iterable[str]) -> List[str]:

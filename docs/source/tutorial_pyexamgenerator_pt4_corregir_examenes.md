@@ -61,10 +61,85 @@ Cada clase guarda sus *inputs* y *outputs* como atributos (p. ej. `merger.merged
 
 ## Uso desde la interfaz gráfica
 
-La aplicación incluye la pestaña **Corregir Exámenes**: selecciona los archivos de entrada
-(matriculados, plantillas XML, imágenes, notas de teoría, asistencias, horario, justificaciones,
-cuestionarios) y una carpeta de salida, y pulsa **Corregir**. El proceso se ejecuta en segundo
-plano y genera las 3 tablas en la carpeta indicada.
+La pestaña **Corregir Exámenes** está dividida en **secciones independientes**, cada una con su
+propio botón, para que ejecutes solo el paso que necesites:
+
+1. **Datos comunes** y **Mapeo de columnas:** matriculados, plantillas XML, carpeta de salida y los
+   nombres de columna de tus xlsx (Nº de ID, Nombre, Apellidos, Correo, Nota total, y Remitente /
+   Asunto / Mensaje de las justificaciones). Si tus ficheros usan otros nombres, indícalos aquí.
+2. **Corregir examen(es):** desde **imágenes** (OCR) o desde un xlsx de **respuestas** ya
+   digitalizadas.
+3. **Asistencia + justificaciones (opcional):** paso aparte; útil cuando la asistencia **no es
+   obligatoria** en la asignatura. Solo se usa para cruzar/descartar y no condiciona la corrección.
+4. **Integrar notas** (Moodle + OCR).
+5. **Punto extra / teoría.**
+6. **Nota final ponderada** (ver más abajo).
+7. **Sesión:** guardar/cargar para retomar el trabajo.
+
+Se mantiene además un botón **"Pipeline completo"** que ejecuta todos los pasos de una pasada (como
+antes). Cada acción corre en segundo plano y deja sus resultados en la carpeta de salida.
+
+## Sesión reanudable (retomar más tarde)
+
+`GradingSession` guarda una sesión en **dos ficheros equivalentes**: `.pkl` (recarga exacta) y
+`.json` (legible). Sirve, por ejemplo, para conocer las rutas de los exámenes generados y corregirlos
+después sin volver a indicarlas. Al generar exámenes puedes escribir la sesión (campo *"Sesión de
+corrección"* de la pestaña Generar Exámenes, o el parámetro `session_output_path`); en la pestaña
+Corregir Exámenes, **Cargar sesión** rellena rutas y columnas (incluidos los XML de los exámenes
+generados).
+
+```python
+from pyexamgenerator.grading import GradingSession
+
+session = GradingSession.load("sesion_correccion.json")
+print(session.generated_xml_paths())        # rutas de los XML generados
+print(session.grading_inputs)               # entradas y mapeo de columnas
+```
+
+## Nota final ponderada (varios exámenes)
+
+`FinalGradeCalculator` (o `ExamCorrectionAPI.compute_final_grade`) combina varios exámenes con los
+pesos que definas. Dos modos: **por fichero** (un peso por examen, emparejando alumnos por ID o
+nombre) y **por columnas** (ponderar columnas de un único xlsx). Los pesos se normalizan y la nota
+final puede topar en 10.
+
+```python
+from pyexamgenerator.grading import ExamCorrectionAPI, FinalGradeConfig
+
+api = ExamCorrectionAPI(default_output_dir="salida")
+api.compute_final_grade(FinalGradeConfig(
+    mode="by_file",
+    sources=[
+        {"path": "teoria.xlsx", "label": "Teoría", "weight": 0.6},
+        {"path": "practicas.xlsx", "label": "Prácticas", "weight": 0.4},
+    ],
+    output_path="calificaciones_finales_ponderadas.xlsx",
+    cap_to_10=True,
+))
+```
+
+## Patrón del correo de justificación
+
+Si las justificaciones siguen esta plantilla, el corrector extrae los campos y los vuelca en columnas
+(`Justif_Fecha`, `Justif_Tema_Practica`, `Justif_Grupo`, `Justif_Subgrupo_Practicas`, `Justif_Motivo`),
+tomándolos como **autoritativos** sobre la heurística de texto:
+
+```
+Día de la falta (formato mm/dd/aaaa):
+Nº Tema/Práctica a la que se ha faltado:
+Grupo (GIM o GITI-GIE-GIEI):
+Grupo de prácticas (MC1, etc):
+Motivo de la ausencia:
+```
+
+La fecha se interpreta como `mm/dd/aaaa` (se tolera `dd/mm/aaaa` cuando el primer número es > 12).
+
+## Nombres recomendados para Moodle
+
+Para que las columnas del xlsx exportado de Moodle sean reconocibles por el corrector, usa el botón
+**"Sugerir nombres Moodle"** (pestaña Generar Exámenes) o `ExamGenerator.suggest_moodle_config(...)`,
+que propone el nombre del cuestionario, la categoría y la columna esperada (p. ej.
+`Cuestionario:GIM Parcial 1_Tipo 1A (Real)`).
 
 ## Identificación manual del resto
 

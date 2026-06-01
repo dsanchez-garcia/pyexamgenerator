@@ -37,6 +37,12 @@ class AbsenceJustificationManager:
         justifications_sheet: int = 0,
         enrollment_sheet: int = 0,
         sender_col: str = "REMITENTE",
+        subject_col: str = "ASUNTO",
+        message_col: str = "MENSAJE",
+        first_name_col: Optional[str] = None,
+        last_name_col: Optional[str] = None,
+        id_col: Optional[str] = None,
+        email_col: Optional[str] = None,
         justification_mode: str = "extremo",
     ) -> None:
         self.attendance_xlsx_path = attendance_xlsx_path
@@ -50,6 +56,13 @@ class AbsenceJustificationManager:
         self.justifications_sheet = int(justifications_sheet)
         self.enrollment_sheet = int(enrollment_sheet)
         self.sender_col = sender_col
+        self.subject_col = subject_col
+        self.message_col = message_col
+        # Optional explicit column names; when set they take precedence over the fuzzy candidates.
+        self.first_name_col = first_name_col
+        self.last_name_col = last_name_col
+        self.id_col = id_col
+        self.email_col = email_col
         self.justification_mode = str(justification_mode or "extremo").strip().lower()
 
     @staticmethod
@@ -66,6 +79,88 @@ class AbsenceJustificationManager:
             if key in norm_map:
                 return norm_map[key]
         return None
+
+    @staticmethod
+    def _candidates(override: Optional[str], defaults: Sequence[str]) -> List[str]:
+        """Builds the candidate list for :meth:`_find_column`, giving priority to a user override."""
+        if override:
+            return [override, *defaults]
+        return list(defaults)
+
+    @staticmethod
+    def _normalize_justification_date(value: object) -> str:
+        """Normalizes a justification date to ISO ``YYYY-MM-DD``.
+
+        The template asks for ``mm/dd/aaaa``; if the first field is > 12 it is treated as ``dd/mm/aaaa``.
+        Any unparseable value is returned stripped, unchanged.
+        """
+        text = "" if pd.isna(value) else str(value).strip()
+        match = re.match(r"^(\d{1,2})\D(\d{1,2})\D(\d{2,4})$", text)
+        if not match:
+            return text
+        a, b, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        if year < 100:
+            year += 2000
+        month, day = a, b
+        if a > 12 and b <= 12:  # Clearly dd/mm.
+            month, day = b, a
+        try:
+            return pd.Timestamp(year=year, month=month, day=day).strftime("%Y-%m-%d")
+        except ValueError:
+            return text
+
+    @classmethod
+    def _parse_structured_justification(cls, subject: object, message: object) -> Optional[Dict[str, str]]:
+        """Parses the structured justification template, if present, into its fields.
+
+        Recognized lines (accent/space-insensitive labels)::
+
+            Día de la falta (formato mm/dd/aaaa): ...
+            Nº Tema/Práctica a la que se ha faltado: ...
+            Grupo (GIM o GITI-GIE-GIEI): ...
+            Grupo de prácticas (MC1, etc): ...
+            Motivo de la ausencia: ...
+
+        Returns a dict with the keys ``fecha`` (+ ``fecha_normalizada``), ``tema_practica``, ``grupo``,
+        ``subgrupo_practicas`` and ``motivo`` for the fields found, or ``None`` if none are present.
+        """
+        text = ""
+        for part in (subject, message):
+            if part is not None and not (isinstance(part, float) and pd.isna(part)):
+                text += str(part) + "\n"
+        if not text.strip():
+            return None
+
+        fields: Dict[str, str] = {}
+        for raw_line in re.split(r"[\r\n]+", text):
+            if ":" not in raw_line:
+                continue
+            label, _, value = raw_line.partition(":")
+            value = value.strip()
+            if not value:
+                continue
+            norm = cls._normalize(label)
+            if norm.startswith("diadelafalta"):
+                fields["fecha"] = value
+            elif "temapractica" in norm or ("tema" in norm and "practica" in norm) or norm.startswith("notema"):
+                fields["tema_practica"] = value
+            elif norm.startswith("grupodepracticas"):
+                fields["subgrupo_practicas"] = value
+            elif norm.startswith("grupo"):
+                fields["grupo"] = value
+            elif norm.startswith("motivo"):
+                fields["motivo"] = value
+
+        if not fields:
+            return None
+
+        if "fecha" in fields:
+            fields["fecha_normalizada"] = cls._normalize_justification_date(fields["fecha"])
+        if "grupo" in fields:
+            normalized_group = cls._group_from_text(fields["grupo"])
+            if normalized_group:
+                fields["grupo"] = normalized_group
+        return fields
 
     @staticmethod
     def _parse_sender_name(sender: str) -> str:
@@ -275,10 +370,10 @@ class AbsenceJustificationManager:
 
     def _load_enrollment(self) -> pd.DataFrame:
         df = pd.read_excel(self.enrollment_xlsx_path, sheet_name=self.enrollment_sheet)
-        first_name_col = self._find_column(df.columns, ["Nombre"])
-        last_name_col = self._find_column(df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
-        email_col = self._find_column(df.columns, ["Dirección de correo", "Direccin de correo", "Correo", "Email"])
-        id_col = self._find_column(df.columns, ["Número de ID", "Nmero de ID", "ID"])
+        first_name_col = self._find_column(df.columns, self._candidates(self.first_name_col, ["Nombre"]))
+        last_name_col = self._find_column(df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"]))
+        email_col = self._find_column(df.columns, self._candidates(self.email_col, ["Dirección de correo", "Direccin de correo", "Correo", "Email"]))
+        id_col = self._find_column(df.columns, self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID"]))
 
         if first_name_col is None or last_name_col is None:
             raise ValueError("Enrollment file must contain first and last name columns.")
@@ -323,9 +418,9 @@ class AbsenceJustificationManager:
 
     def _build_attendance_lookup(self) -> Tuple[pd.DataFrame, List[str], str, str, str]:
         attendance_df = pd.read_excel(self.attendance_xlsx_path, sheet_name=self.attendance_sheet, header=self.attendance_header_row)
-        first_name_col = self._find_column(attendance_df.columns, ["Nombre"])
-        last_name_col = self._find_column(attendance_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
-        id_col = self._find_column(attendance_df.columns, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"])
+        first_name_col = self._find_column(attendance_df.columns, self._candidates(self.first_name_col, ["Nombre"]))
+        last_name_col = self._find_column(attendance_df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"]))
+        id_col = self._find_column(attendance_df.columns, self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"]))
 
         if first_name_col is None or last_name_col is None:
             raise ValueError("Attendance file must contain first and last name columns.")
@@ -762,10 +857,25 @@ class AbsenceJustificationManager:
             sender_raw = str(mail_row.get(self.sender_col, ""))
             sender_name = self._parse_sender_name(sender_raw)
             sender_email = self._parse_sender_email(sender_raw)
+            mail_subject = mail_row.get(self.subject_col, "")
+            mail_message = mail_row.get(self.message_col, "")
             message_class, message_score, message_reasons = self._classify_justification_text(
-                mail_row.get("ASUNTO", ""),
-                mail_row.get("MENSAJE", ""),
+                mail_subject,
+                mail_message,
             )
+            # The structured template, when present, is authoritative: it confirms the student is
+            # justifying an absence and provides explicit date/topic/group/subgroup/reason fields.
+            structured = self._parse_structured_justification(mail_subject, mail_message)
+            if structured:
+                message_class = "justifica_falta"
+                message_reasons = ("plantilla_estructurada | " + message_reasons).strip(" |")
+            structured_cols = {
+                "Justif_Fecha": (structured.get("fecha_normalizada") or structured.get("fecha", "")) if structured else "",
+                "Justif_Tema_Practica": structured.get("tema_practica", "") if structured else "",
+                "Justif_Grupo": structured.get("grupo", "") if structured else "",
+                "Justif_Subgrupo_Practicas": structured.get("subgrupo_practicas", "") if structured else "",
+                "Justif_Motivo": structured.get("motivo", "") if structured else "",
+            }
             enrollment_match, match_type, match_score = self._match_sender_to_enrollment(sender_name, sender_email, enrollment_df)
 
             student_name = ""
@@ -806,6 +916,7 @@ class AbsenceJustificationManager:
                     detailed_rows.append(
                         {
                             "Fecha_Correo": mail_row.get("FECHA", ""),
+                            **structured_cols,
                             "Remitente_Raw": sender_raw,
                             "Remitente_Nombre": sender_name,
                             "Remitente_Email": sender_email,
@@ -830,6 +941,7 @@ class AbsenceJustificationManager:
                 detailed_rows.append(
                     {
                         "Fecha_Correo": mail_row.get("FECHA", ""),
+                        **structured_cols,
                         "Remitente_Raw": sender_raw,
                         "Remitente_Nombre": sender_name,
                         "Remitente_Email": sender_email,
@@ -854,6 +966,7 @@ class AbsenceJustificationManager:
             summary_rows.append(
                 {
                     "Fecha_Correo": mail_row.get("FECHA", ""),
+                    **structured_cols,
                     "Remitente_Raw": sender_raw,
                     "Remitente_Nombre": sender_name,
                     "Remitente_Email": sender_email,

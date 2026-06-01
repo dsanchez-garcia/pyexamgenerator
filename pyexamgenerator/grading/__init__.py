@@ -19,10 +19,13 @@ from pyexamgenerator.grading.api import (
     TheoryTopicReportConfig,
     EnrollmentMergeConfig,
     AbsenceJustificationConfig,
+    FinalGradeConfig,
 )
 from pyexamgenerator.grading.data import SharedExamDataStore, EnrollmentMerger
 from pyexamgenerator.grading.graders import ExamGrader
 from pyexamgenerator.grading.integrations import MoodleGradeIntegrator, OcrGradeIntegrator
+from pyexamgenerator.grading.session import GradingSession
+from pyexamgenerator.grading.final_grade import FinalGradeCalculator
 from pyexamgenerator.grading.attendance import (
     AbsenceJustificationManager,
     PIRBonusCalculator,
@@ -54,6 +57,8 @@ __all__ = [
     "TheoryTopicReporter",
     "AnswerSheetExtractor",
     "ImageExamGrader",
+    "GradingSession",
+    "FinalGradeCalculator",
     "HAS_OCR",
     # Configs
     "ExcelGradingConfig",
@@ -65,4 +70,5 @@ __all__ = [
     "TheoryTopicReportConfig",
     "EnrollmentMergeConfig",
     "AbsenceJustificationConfig",
+    "FinalGradeConfig",
 ]
