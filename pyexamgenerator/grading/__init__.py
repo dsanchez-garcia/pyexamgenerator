@@ -20,12 +20,14 @@ from pyexamgenerator.grading.api import (
     EnrollmentMergeConfig,
     AbsenceJustificationConfig,
     FinalGradeConfig,
+    ComparisonConfig,
 )
 from pyexamgenerator.grading.data import SharedExamDataStore, EnrollmentMerger
 from pyexamgenerator.grading.graders import ExamGrader
 from pyexamgenerator.grading.integrations import MoodleGradeIntegrator, OcrGradeIntegrator
 from pyexamgenerator.grading.session import GradingSession
 from pyexamgenerator.grading.final_grade import FinalGradeCalculator
+from pyexamgenerator.grading.comparison import ResultComparator, ComparisonResult
 from pyexamgenerator.grading.attendance import (
     AbsenceJustificationManager,
     PIRBonusCalculator,
@@ -59,6 +61,8 @@ __all__ = [
     "ImageExamGrader",
     "GradingSession",
     "FinalGradeCalculator",
+    "ResultComparator",
+    "ComparisonResult",
     "HAS_OCR",
     # Configs
     "ExcelGradingConfig",
@@ -71,4 +75,5 @@ __all__ = [
     "EnrollmentMergeConfig",
     "AbsenceJustificationConfig",
     "FinalGradeConfig",
+    "ComparisonConfig",
 ]

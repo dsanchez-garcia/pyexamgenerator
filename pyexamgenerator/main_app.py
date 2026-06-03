@@ -545,6 +545,12 @@ class ExamApp:
         self.grad_final_source_var = tk.StringVar()
         self.grad_final_weights_var = tk.StringVar()
         self.grad_final_cap_var = tk.BooleanVar(value=True)
+        # Compare / overwrite results.
+        self.grad_cmp_existing_var = tk.StringVar()
+        self.grad_cmp_new_var = tk.StringVar()
+        self.grad_cmp_value_cols_var = tk.StringVar()
+        self.grad_cmp_addnew_var = tk.BooleanVar(value=True)
+        self.grad_cmp_inplace_var = tk.BooleanVar(value=False)
         # Session.
         self.grad_session_path_var = tk.StringVar()
 
@@ -658,6 +664,23 @@ class ExamApp:
         ToolTip(lbl_w, text="Modo por columnas. Separa con ';' y usa '|'. Ej: Teoria|0.6 ; Practicas|0.4")
         ttk.Entry(wrow, textvariable=self.grad_final_weights_var).pack(side='left', fill='x', expand=True, padx=4)
         ttk.Button(final_sec, text="Calcular nota final", command=self.run_final_grade).pack(pady=4)
+
+        # --- Section: compare / overwrite results ---
+        cmp_sec = ttk.LabelFrame(inner, text="6. Comparar / sobrescribir resultados")
+        cmp_sec.pack(fill='x', padx=8, pady=6)
+        ToolTip(cmp_sec, text="Compara unas calificaciones o asistencias con una versión previa y, opcionalmente, combina sobrescribiendo con los valores nuevos.")
+        file_row(cmp_sec, "Fichero existente (xlsx):", self.grad_cmp_existing_var,
+                 "Resultados previos (calificaciones o asistencias) con los que comparar.")
+        file_row(cmp_sec, "Fichero nuevo (xlsx):", self.grad_cmp_new_var,
+                 "Resultados recién calculados que se comparan con los previos.")
+        text_row(cmp_sec, "Columnas a comparar:", self.grad_cmp_value_cols_var,
+                 "Opcional: columnas separadas por coma. Vacío = todas las columnas comunes (no identificativas).", width=36)
+        cmp_opts = ttk.Frame(cmp_sec); cmp_opts.pack(fill='x', padx=4, pady=2)
+        ttk.Checkbutton(cmp_opts, text="Añadir alumnos nuevos al combinar", variable=self.grad_cmp_addnew_var).pack(side='left', padx=4)
+        ttk.Checkbutton(cmp_opts, text="Reemplazar el fichero existente", variable=self.grad_cmp_inplace_var).pack(side='left', padx=12)
+        cmp_btns = ttk.Frame(cmp_sec); cmp_btns.pack(fill='x', pady=4)
+        ttk.Button(cmp_btns, text="Comparar (solo informe)", command=lambda: self.run_compare_results(False)).pack(side='left', padx=4)
+        ttk.Button(cmp_btns, text="Comparar y combinar (sobrescribir)", command=lambda: self.run_compare_results(True)).pack(side='left', padx=4)
 
         # --- Section: session ---
         sess_sec = ttk.LabelFrame(inner, text="Sesión (retomar más tarde)")
@@ -947,6 +970,45 @@ class ExamApp:
 
         self._grad_run_async("Calculando nota final ponderada…", work)
 
+    def run_compare_results(self, overwrite: bool) -> None:
+        """Section 6: compare results against a previous version, optionally writing a merged file."""
+        from pyexamgenerator.grading import ComparisonConfig
+        existing = self.grad_cmp_existing_var.get().strip()
+        new = self.grad_cmp_new_var.get().strip()
+        out = self.grad_out_var.get().strip()
+        if not (existing and new and out):
+            messagebox.showerror("Faltan datos", "Necesitas el fichero existente, el fichero nuevo y la carpeta de salida.")
+            return
+        value_cols = [c.strip() for c in self.grad_cmp_value_cols_var.get().split(",") if c.strip()]
+        cols = self._grad_columns()
+        in_place = bool(self.grad_cmp_inplace_var.get()) and overwrite
+        add_new = bool(self.grad_cmp_addnew_var.get())
+
+        if in_place and not messagebox.askyesno(
+            "Confirmar sobrescritura",
+            f"Se sobrescribirá el fichero existente con los valores nuevos:\n{existing}\n\n¿Continuar?",
+        ):
+            return
+
+        def work():
+            cfg = ComparisonConfig(
+                existing_path=existing, new_path=new, value_cols=value_cols,
+                overwrite=overwrite, add_new_rows=add_new, merged_in_place=in_place,
+                report_output_path="comparacion_resultados.xlsx",
+                merged_output_path="resultados_combinados.xlsx", output_dir=out,
+                id_col=cols["id_col"], first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
+            )
+            result = self._grad_api().compare_results(cfg)
+            s = result.summary
+            message = (f"Comparación: {s['changed_cells']} celdas cambiadas en {s['changed_students']} alumno(s), "
+                       f"{s['added']} nuevo(s), {s['removed']} ausente(s).\nInforme en: {out}")
+            if overwrite:
+                target = existing if in_place else os.path.join(out, "resultados_combinados.xlsx")
+                message += f"\nFichero combinado: {target}"
+            return message
+
+        self._grad_run_async("Comparando resultados…", work)
+
     def _grad_session_inputs(self) -> dict:
         return {
             "enrollment": self.grad_enrollment_var.get(),
@@ -961,6 +1023,8 @@ class ExamApp:
             "output_dir": self.grad_out_var.get(),
             "schedule_sheet": self.grad_sched_sheet_var.get(),
             "attendance_header_row": self.grad_att_header_var.get(),
+            "compare_existing": self.grad_cmp_existing_var.get(),
+            "compare_new": self.grad_cmp_new_var.get(),
             "columns": self._grad_columns(),
         }
 
@@ -1006,6 +1070,7 @@ class ExamApp:
             "schedule": self.grad_schedule_var, "justifications": self.grad_justif_var,
             "quizzes": self.grad_quizzes_var, "output_dir": self.grad_out_var,
             "schedule_sheet": self.grad_sched_sheet_var, "attendance_header_row": self.grad_att_header_var,
+            "compare_existing": self.grad_cmp_existing_var, "compare_new": self.grad_cmp_new_var,
         }
         for key, var in setters.items():
             if gi.get(key):

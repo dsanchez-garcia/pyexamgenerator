@@ -6,6 +6,8 @@ from pyexamgenerator.grading.final_grade import FinalGradeCalculator
 from pyexamgenerator.grading.attendance import AbsenceJustificationManager
 from pyexamgenerator.grading.integrations import MoodleGradeIntegrator
 from pyexamgenerator.grading.graders import ExamGrader
+from pyexamgenerator.grading.comparison import ResultComparator
+from pyexamgenerator.grading.api import ExamCorrectionAPI, ComparisonConfig
 
 
 # --- Session persistence -----------------------------------------------------------------------
@@ -195,3 +197,72 @@ def test_exam_grader_respects_custom_column_names(tmp_path):
     assert row["Apellido(s)"] == "Gil"
     assert str(row["Número de ID"]) == "111"
     assert row["Calificación/10,00"] == "10,00"
+
+
+# --- Compare / overwrite results ---------------------------------------------------------------
+
+def _build_old_new(tmp_path):
+    old = tmp_path / "old.xlsx"
+    new = tmp_path / "new.xlsx"
+    _write(old, [
+        {"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "8,00"},
+        {"Número de ID": "2", "Nombre": "Leo", "Apellido(s)": "Paz", "Calificación/10,00": "5,00"},
+        {"Número de ID": "3", "Nombre": "Mia", "Apellido(s)": "Sol", "Calificación/10,00": "7,00"},
+    ])
+    _write(new, [
+        {"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "9,00"},  # changed
+        {"Número de ID": "2", "Nombre": "Leo", "Apellido(s)": "Paz", "Calificación/10,00": "5,00"},  # same
+        {"Número de ID": "4", "Nombre": "Zoe", "Apellido(s)": "Mar", "Calificación/10,00": "6,00"},  # new
+    ])
+    return old, new
+
+
+def test_result_comparator_detects_changes_added_removed(tmp_path):
+    old, new = _build_old_new(tmp_path)
+    result = ResultComparator().compare(str(old), str(new))
+    assert result.summary == {
+        "changed_cells": 1, "changed_students": 1, "added": 1,
+        "removed": 1, "common": 2, "value_columns": 1,
+    }
+    change = result.changes_df.iloc[0]
+    assert change["Nombre"] == "Ana"
+    assert change["Valor_Anterior"] == "8,00"
+    assert change["Valor_Nuevo"] == "9,00"
+    assert list(result.only_in_existing_df["Nombre"]) == ["Mia"]
+    assert list(result.only_in_new_df["Nombre"]) == ["Zoe"]
+
+
+def test_result_comparator_overwrite_merges_new_values_and_rows(tmp_path):
+    old, new = _build_old_new(tmp_path)
+    result = ResultComparator().compare(str(old), str(new), overwrite=True, add_new_rows=True)
+    merged = result.merged_df
+    assert merged is not None
+    by_name = {r["Nombre"]: r for _, r in merged.iterrows()}
+    assert by_name["Ana"]["Calificación/10,00"] == "9,00"  # overwritten with the new value
+    assert "Mia" in by_name  # kept (only in old)
+    assert "Zoe" in by_name   # appended (only in new)
+    assert len(merged) == 4
+
+
+def test_compare_results_api_in_place_overwrites_existing_file(tmp_path):
+    old, new = _build_old_new(tmp_path)
+    api = ExamCorrectionAPI(default_output_dir=str(tmp_path))
+    api.compare_results(ComparisonConfig(
+        existing_path=str(old), new_path=str(new), overwrite=True, merged_in_place=True,
+    ))
+    after = pd.read_excel(old)
+    ana = after[after["Nombre"] == "Ana"]["Calificación/10,00"].iloc[0]
+    assert str(ana) == "9,0" or str(ana) == "9.0" or str(ana) == "9,00"
+    assert "Zoe" in set(after["Nombre"])  # new student added in place
+    assert (tmp_path / "comparacion_resultados.xlsx").exists()
+
+
+def test_result_comparator_value_cols_restricts_comparison(tmp_path):
+    old = tmp_path / "old.xlsx"
+    new = tmp_path / "new.xlsx"
+    _write(old, [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Nota": "8,00", "Otra": "x"}])
+    _write(new, [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Nota": "8,00", "Otra": "y"}])
+    # Only compare "Nota": the change in "Otra" must be ignored.
+    result = ResultComparator().compare(str(old), str(new), value_cols=["Nota"])
+    assert result.summary["changed_cells"] == 0
+    assert result.summary["value_columns"] == 1

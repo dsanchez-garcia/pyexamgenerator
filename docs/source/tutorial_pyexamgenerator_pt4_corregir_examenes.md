@@ -16,6 +16,70 @@ Según la versión de Python se instala el backend adecuado automáticamente: `r
 Python ≥ 3.13 (incl. 3.14) o `rapidocr-onnxruntime` en versiones anteriores. Sin el extra, todo lo
 que **no** es OCR sigue funcionando y `pyexamgenerator.grading.HAS_OCR` vale `False`.
 
+## Cómo funciona el módulo, en pocas palabras
+
+El módulo `grading` parte de una idea sencilla: **un examen es una tabla de alumnos con valores**
+(sus respuestas, sus notas, sus asistencias). Todo lo demás consiste en construir esa tabla, cruzarla
+con otras y dejarla en la forma que Moodle espera.
+
+El **hilo conductor** es la matrícula. Primero se fusionan los listados de los distintos grupos
+(`EnrollmentMerger`) en un único *roster* que actúa de "fuente de la verdad": de él salen el nombre
+oficial, el número de ID y el correo de cada alumno, y a él se reconducen todas las notas. Cuando una
+hoja manuscrita o un correo no traen el ID, el sistema empareja por **nombre normalizado** (sin
+tildes, en minúsculas) o por coincidencia aproximada; por eso es importante que la matrícula esté
+completa.
+
+A partir de ahí, **las notas pueden entrar por dos caminos**. Si tienes las hojas en papel, el OCR
+(`ImageExamGrader`) lee las marcas, detecta el **tipo de examen** (1A, 1B…) usando como plantilla de
+respuestas correctas el **mismo Moodle XML** que generó el propio programa, y produce una nota sobre
+10 más una **tabla de incidencias** con lo que no pudo resolver solo. Si las respuestas ya están
+digitalizadas (por ejemplo en un cuestionario de Moodle), se corrige directamente desde ese xlsx
+(`ExamGrader`). En ambos casos el resultado es la misma columna de calificación.
+
+Esas notas se **integran** sobre el libro de calificaciones de teoría (`OcrGradeIntegrator`):
+cada alumno se localiza por ID o por nombre y su nota aterriza en la columna del cuestionario que le
+corresponde según su grupo y tipo de examen. El objetivo es que, al final, el profesor tenga un único
+xlsx con las columnas en el sitio donde Moodle las espera.
+
+La **asistencia y el punto extra** son una capa **aparte y opcional** (ver siguiente apartado). Y
+como todas las piezas trabajan sobre tablas de alumnos, cualquier resultado se puede **comparar con
+una versión anterior y sobrescribir** (apartado *Comparar y sobrescribir resultados*).
+
+Cada clase guarda sus *inputs* y *outputs* como atributos, y la fachada `ExamCorrectionAPI` orquesta
+los pasos y puede dejar constancia de todo en una **sesión reanudable** (`GradingSession`).
+
+### Corregir sin contar la asistencia
+
+La corrección del examen y el cómputo de la asistencia son **independientes**. La nota del examen sale
+de las respuestas (OCR o xlsx) y de la plantilla XML; **no necesita** ni asistencias, ni horario, ni
+justificaciones. Esos ficheros solo intervienen en el **punto extra** (`AbsenceJustificationManager` +
+`TheoryBonusApplier`), que es una bonificación opcional.
+
+Por tanto, si en tu asignatura la asistencia **no es obligatoria** (o simplemente no quieres contarla),
+basta con ejecutar los pasos de **corregir** e **integrar** y omitir el de asistencia:
+
+- **En la interfaz:** usa solo las secciones *"1. Corregir examen(es)"* y *"3. Integrar notas"*. Deja
+  la sección *"2. Asistencia + justificaciones"* sin tocar. La nota final no depende de ella.
+- **En scripting:** llama únicamente a `grade_from_images` (o `grade_from_excel`) y, si lo necesitas,
+  a `integrate_ocr_grades`; no llames a `process_absence_justifications` ni a `apply_theory_bonus`.
+
+```python
+from pyexamgenerator.grading import ExamCorrectionAPI, ImageGradingConfig
+
+api = ExamCorrectionAPI(default_output_dir="salida")
+# Solo corrección: ni asistencia, ni horario, ni justificaciones.
+api.grade_from_images(ImageGradingConfig(
+    xml_paths=["examen_1A.xml", "examen_1B.xml"],
+    image_paths=["hoja1.jpg", "hoja2.jpg"],
+    enrollment_path="matriculados.xlsx",
+    output_grades="calificaciones.xlsx",
+))
+```
+
+Si más adelante decides **sí** contar la asistencia, ejecuta ese paso por separado y cruza el
+resultado con las notas; al estar desacoplado, puedes incorporarlo o descartarlo sin rehacer la
+corrección.
+
 ## Flujo de corrección
 
 1. **Matriculados** (`EnrollmentMerger`): fusiona los listados de matrícula.
@@ -74,7 +138,8 @@ propio botón, para que ejecutes solo el paso que necesites:
 4. **Integrar notas** (Moodle + OCR).
 5. **Punto extra / teoría.**
 6. **Nota final ponderada** (ver más abajo).
-7. **Sesión:** guardar/cargar para retomar el trabajo.
+7. **Comparar / sobrescribir resultados** (ver más abajo).
+8. **Sesión:** guardar/cargar para retomar el trabajo.
 
 Se mantiene además un botón **"Pipeline completo"** que ejecuta todos los pasos de una pasada (como
 antes). Cada acción corre en segundo plano y deja sus resultados en la carpeta de salida.
@@ -116,6 +181,42 @@ api.compute_final_grade(FinalGradeConfig(
     output_path="calificaciones_finales_ponderadas.xlsx",
     cap_to_10=True,
 ))
+```
+
+## Comparar y sobrescribir resultados
+
+Cuando ya tienes unas calificaciones (o unas asistencias) y vuelves a generarlas —por una corrección
+posterior, una incidencia resuelta, una nota revisada—, conviene saber **qué ha cambiado** respecto a
+la versión anterior antes de pisarla. `ResultComparator` (o `ExamCorrectionAPI.compare_results`) hace
+justo eso: empareja a los alumnos por **ID** (o por nombre si no hay ID) y produce un informe con las
+**celdas que cambian**, los alumnos que **solo están en la versión nueva** y los que **solo están en la
+anterior**. Como ambos —calificaciones y asistencias— son tablas de alumnos, sirve para los dos.
+
+Opcionalmente combina las dos versiones **sobrescribiendo** con los valores nuevos: actualiza las
+celdas de los alumnos coincidentes, conserva los que solo estaban antes y (si quieres) añade los
+nuevos. Puedes escribir el resultado en un fichero aparte o **reemplazar el fichero existente** en su
+sitio.
+
+- **En la interfaz:** sección *"6. Comparar / sobrescribir resultados"*: elige el fichero existente y
+  el nuevo, opcionalmente las columnas a comparar (vacío = todas las comunes), y pulsa
+  **"Comparar (solo informe)"** o **"Comparar y combinar (sobrescribir)"**. La casilla *"Reemplazar el
+  fichero existente"* escribe el resultado combinado sobre el fichero anterior (pide confirmación).
+- **En scripting:**
+
+```python
+from pyexamgenerator.grading import ExamCorrectionAPI, ComparisonConfig
+
+api = ExamCorrectionAPI(default_output_dir="salida")
+result = api.compare_results(ComparisonConfig(
+    existing_path="calificaciones_anteriores.xlsx",
+    new_path="calificaciones_nuevas.xlsx",
+    value_cols=[],          # vacío = todas las columnas comunes (no identificativas)
+    overwrite=True,         # genera la tabla combinada (nuevo sobre anterior)
+    add_new_rows=True,      # añade alumnos que solo aparecen en la nueva
+    merged_in_place=False,  # True = reemplaza el fichero existente
+))
+print(result.summary)       # {'changed_cells': ..., 'added': ..., 'removed': ..., ...}
+print(result.changes_df)    # detalle: Columna, Valor_Anterior, Valor_Nuevo por alumno
 ```
 
 ## Patrón del correo de justificación

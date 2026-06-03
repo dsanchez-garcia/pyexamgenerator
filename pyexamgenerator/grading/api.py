@@ -170,6 +170,29 @@ class FinalGradeConfig:
     last_name_col: Optional[str] = None
 
 
+@dataclass
+class ComparisonConfig:
+    """Compare a results table (grades or attendance) against a previous version, optionally overwriting.
+
+    Matches students by ID (falling back to name). ``value_cols`` empty = compare every column common to
+    both files that is not an identity column. With ``overwrite=True`` a merged table is written where the
+    new values replace the previous ones; ``merged_in_place=True`` writes it over ``existing_path`` itself.
+    """
+
+    existing_path: str
+    new_path: str
+    value_cols: Sequence[str] = field(default_factory=tuple)
+    overwrite: bool = False
+    add_new_rows: bool = True
+    merged_in_place: bool = False
+    report_output_path: str = "comparacion_resultados.xlsx"
+    merged_output_path: str = "resultados_combinados.xlsx"
+    output_dir: Optional[str] = None
+    id_col: Optional[str] = None
+    first_name_col: Optional[str] = None
+    last_name_col: Optional[str] = None
+
+
 class ExamCorrectionAPI:
     """High-level facade to run exam correction workflows as a reusable library."""
 
@@ -664,6 +687,38 @@ class ExamCorrectionAPI:
             summary={"rows": int(len(result_df))},
         )
         return result_df
+
+    def compare_results(self, cfg: ComparisonConfig, export_steps_dir: Optional[str] = None):
+        """Compares a results table against a previous version and optionally writes a merged file.
+
+        Returns the :class:`~pyexamgenerator.grading.comparison.ComparisonResult`.
+        """
+        from pyexamgenerator.grading.comparison import ResultComparator
+
+        export_state = self._start_step_export(export_steps_dir, "compare_results")
+        comparator = ResultComparator(
+            id_col=cfg.id_col, first_name_col=cfg.first_name_col, last_name_col=cfg.last_name_col,
+        )
+        result = comparator.compare(
+            existing_path=cfg.existing_path, new_path=cfg.new_path,
+            value_cols=list(cfg.value_cols) or None,
+            overwrite=cfg.overwrite, add_new_rows=cfg.add_new_rows,
+        )
+
+        report_path = self._resolve_output_path(cfg.report_output_path, cfg.output_dir)
+        comparator.export_report(result, report_path)
+        outputs: Dict[str, object] = {"report_output": report_path}
+
+        if cfg.overwrite and result.merged_df is not None:
+            merged_path = cfg.existing_path if cfg.merged_in_place else self._resolve_output_path(cfg.merged_output_path, cfg.output_dir)
+            comparator.export_merged(result, merged_path)
+            outputs["merged_output"] = merged_path
+
+        self._export_step_dataframe(export_state, "comparison_changes", result.changes_df)
+        self._finalize_step_export(export_state, outputs)
+        self.results["comparison"] = result
+        self.session.record_workflow("compare_results", config=cfg, outputs=outputs, summary=result.summary)
+        return result
 
     @staticmethod
     def build_paths_by_group_types(xlsx_files: Iterable[str], group_types: Iterable[str]) -> List[str]:
