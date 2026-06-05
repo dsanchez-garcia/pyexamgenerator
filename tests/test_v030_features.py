@@ -212,3 +212,105 @@ def test_update_bank_with_exam_missing_file_returns_error(tmp_path):
     )
     assert matched == -1
     assert df_updated is None
+
+
+# --- Unify several question banks into one, with a selectable duplicate criterion --------------
+
+def _q(statement, a, b, c, d, topic="Tema 01", estado="aceptable"):
+    return {
+        "Tema": topic,
+        "Estado": estado,
+        "Pregunta": statement,
+        "Respuesta A": a,
+        "Respuesta B": b,
+        "Respuesta C": c,
+        "Respuesta D": d,
+        "Respuesta correcta": "a",
+        "Texto relevante": "",
+    }
+
+
+def test_unify_banks_statement_only_dedups_by_statement(tmp_path):
+    bank1 = pd.DataFrame([_q("¿Capital de Francia?", "París", "Londres", "Roma", "Berlín")])
+    bank2 = pd.DataFrame([
+        _q("¿Capital de Francia?", "Paris", "London", "Rome", "Madrid"),  # same statement, other answers
+        _q("¿Capital de Italia?", "Roma", "París", "Madrid", "Berlín"),
+    ])
+    p1, p2, out = tmp_path / "b1.xlsx", tmp_path / "b2.xlsx", tmp_path / "unif.xlsx"
+    bank1.to_excel(p1, index=False)
+    bank2.to_excel(p2, index=False)
+
+    manager = QuestionBankManager()
+    df, stats = manager.unify_question_banks(
+        [str(p1), str(p2)], str(out), duplicate_criterion="enunciado"
+    )
+
+    assert len(df) == 2
+    assert stats["duplicates_removed"] == 1
+    assert stats["total_read"] == 3
+    assert set(df["Pregunta"]) == {"¿Capital de Francia?", "¿Capital de Italia?"}
+    # The first bank wins: the kept "Francia" row keeps the first bank's answers.
+    francia = df[df["Pregunta"] == "¿Capital de Francia?"].iloc[0]
+    assert francia["Respuesta B"] == "Londres"
+    assert out.exists()
+
+
+def test_unify_banks_statement_and_answers_keeps_distinct_answers(tmp_path):
+    bank1 = pd.DataFrame([_q("¿Capital de Francia?", "París", "Londres", "Roma", "Berlín")])
+    bank2 = pd.DataFrame([_q("¿Capital de Francia?", "Paris", "London", "Rome", "Madrid")])
+    p1, p2 = tmp_path / "b1.xlsx", tmp_path / "b2.xlsx"
+    bank1.to_excel(p1, index=False)
+    bank2.to_excel(p2, index=False)
+
+    manager = QuestionBankManager()
+    df, stats = manager.unify_question_banks(
+        [str(p1), str(p2)], duplicate_criterion="enunciado_y_respuestas", save=False
+    )
+    # Same statement but different answers -> both kept.
+    assert len(df) == 2
+    assert stats["duplicates_removed"] == 0
+
+
+def test_unify_banks_answer_set_is_order_independent(tmp_path):
+    bank1 = pd.DataFrame([_q("Pregunta X", "A", "B", "C", "D")])
+    bank2 = pd.DataFrame([_q("Pregunta X", "B", "A", "D", "C")])  # same options, reordered
+    p1, p2 = tmp_path / "b1.xlsx", tmp_path / "b2.xlsx"
+    bank1.to_excel(p1, index=False)
+    bank2.to_excel(p2, index=False)
+
+    manager = QuestionBankManager()
+    df, stats = manager.unify_question_banks(
+        [str(p1), str(p2)], duplicate_criterion="pregunta_respuestas", save=False
+    )
+    # Reordered identical options are treated as the same question.
+    assert len(df) == 1
+    assert stats["duplicates_removed"] == 1
+
+
+def test_unify_three_banks_with_gui_alias_and_normalization(tmp_path):
+    bank1 = pd.DataFrame([_q("Misma pregunta", "a", "b", "c", "d")])
+    bank2 = pd.DataFrame([_q("  MISMA PREGUNTA ", "a", "b", "c", "d")])  # case/space variant
+    bank3 = pd.DataFrame([_q("Otra pregunta", "a", "b", "c", "d")])
+    paths = []
+    for i, b in enumerate((bank1, bank2, bank3)):
+        p = tmp_path / f"b{i}.xlsx"
+        b.to_excel(p, index=False)
+        paths.append(str(p))
+
+    manager = QuestionBankManager()
+    df, stats = manager.unify_question_banks(
+        paths, duplicate_criterion="pregunta_unica", save=False
+    )
+    # The case/whitespace variant of "Misma pregunta" is a duplicate -> 2 unique remain.
+    assert len(df) == 2
+    assert stats["duplicates_removed"] == 1
+    assert len(stats["banks"]) == 3
+
+
+def test_unify_banks_requires_paths():
+    manager = QuestionBankManager()
+    try:
+        manager.unify_question_banks([])
+        assert False, "Debe lanzar ValueError con lista vacía"
+    except ValueError:
+        pass

@@ -272,6 +272,144 @@ class QuestionBankManager:
         df_bank = df_bank.loc[:, ~df_bank.columns.str.contains('unnamed', case=False)]
         return matched_count, df_bank
 
+    @staticmethod
+    def _normalize_text(value: object) -> str:
+        """Normalizes a cell for duplicate comparison: NaN -> '', trim, lowercase, collapse spaces."""
+        if pd.isna(value):
+            return ""
+        return re.sub(r"\s+", " ", str(value).strip().lower())
+
+    @classmethod
+    def _question_dedup_key(
+            cls,
+            row: pd.Series,
+            statement_only: bool,
+            statement_column: str,
+            answer_columns: List[str],
+    ):
+        """Builds the duplicate key for a question row.
+
+        With ``statement_only`` the key is just the normalized statement. Otherwise the key also
+        includes the *set* of normalized answers, so the same statement with different answer
+        options is treated as a distinct question, while a mere reordering of identical answers is
+        treated as the same question.
+        """
+        statement = cls._normalize_text(row.get(statement_column, ""))
+        if statement_only:
+            return statement
+        answers = frozenset(
+            cls._normalize_text(row.get(col, "")) for col in answer_columns
+            if cls._normalize_text(row.get(col, "")) != ""
+        )
+        return statement, answers
+
+    def unify_question_banks(
+            self,
+            bank_paths: List[str],
+            output_path: Optional[str] = None,
+            duplicate_criterion: str = "enunciado_y_respuestas",
+            statement_column: str = "Pregunta",
+            answer_columns: Optional[List[str]] = None,
+            save: bool = True,
+    ) -> Tuple[Optional[pd.DataFrame], dict]:
+        """Unifies several question banks into one, removing duplicates by the chosen criterion.
+
+        Reads every bank in ``bank_paths`` (in order), concatenates them and removes duplicate
+        questions keeping the **first** occurrence (so order the paths by priority: the first bank
+        wins when a question appears in several).
+
+        Args:
+            bank_paths (List[str]): Paths of the bank XLSX files to unify (at least one).
+            output_path (Optional[str]): Where to save the unified bank. If None or ``save`` is
+                False, nothing is written and only the DataFrame/stats are returned.
+            duplicate_criterion (str): Criterion to detect duplicates. Accepts two vocabularies:
+                - ``"enunciado"`` / ``"pregunta_unica"``: same statement -> duplicate (answers ignored).
+                - ``"enunciado_y_respuestas"`` / ``"pregunta_respuestas"``: duplicate only if the
+                  statement **and** the set of answers match; same statement with different answers
+                  is kept as a distinct question. (Default.)
+            statement_column (str): Column holding the question statement. Defaults to 'Pregunta'.
+            answer_columns (Optional[List[str]]): Answer columns compared as a set. Defaults to
+                ['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D'].
+            save (bool): If True and ``output_path`` is given, writes the unified bank to disk.
+
+        Returns:
+            Tuple[Optional[pd.DataFrame], dict]: The unified DataFrame (None if nothing could be read)
+            and a stats dict with per-bank counts, totals, duplicates removed and any read errors.
+        """
+        if not bank_paths:
+            raise ValueError("Se requiere al menos un banco de preguntas para unificar.")
+
+        statement_only_aliases = {"enunciado", "pregunta_unica"}
+        full_aliases = {"enunciado_y_respuestas", "pregunta_respuestas"}
+        criterion = str(duplicate_criterion).strip().lower()
+        if criterion in statement_only_aliases:
+            statement_only = True
+        elif criterion in full_aliases:
+            statement_only = False
+        else:
+            raise ValueError(
+                f"Criterio de duplicado desconocido: '{duplicate_criterion}'. Use 'enunciado' "
+                f"(solo enunciado) o 'enunciado_y_respuestas' (enunciado + respuestas)."
+            )
+
+        if answer_columns is None:
+            answer_columns = ['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D']
+
+        frames: List[pd.DataFrame] = []
+        stats: dict = {
+            "criterion": "enunciado" if statement_only else "enunciado_y_respuestas",
+            "banks": [],
+            "total_read": 0,
+            "unified": 0,
+            "duplicates_removed": 0,
+            "errors": [],
+        }
+
+        for path in bank_paths:
+            try:
+                df_bank = pd.read_excel(path)
+            except Exception as e:  # noqa: BLE001 - report and continue with the rest of the banks.
+                print(f"Advertencia: no se pudo leer '{path}': {e}")
+                stats["errors"].append({"path": path, "error": str(e)})
+                continue
+            stats["banks"].append({"path": path, "rows": int(len(df_bank))})
+            stats["total_read"] += int(len(df_bank))
+            frames.append(df_bank)
+
+        if not frames:
+            print("No se pudo leer ningún banco de preguntas.")
+            return None, stats
+
+        combined = pd.concat(frames, ignore_index=True)
+
+        seen = set()
+        keep_indices: List[int] = []
+        duplicates_removed = 0
+        for idx, row in combined.iterrows():
+            key = self._question_dedup_key(row, statement_only, statement_column, answer_columns)
+            if key in seen:
+                duplicates_removed += 1
+                continue
+            seen.add(key)
+            keep_indices.append(idx)
+
+        unified_df = combined.loc[keep_indices].reset_index(drop=True)
+        unified_df = unified_df.loc[:, ~unified_df.columns.str.contains('unnamed', case=False)]
+
+        stats["unified"] = int(len(unified_df))
+        stats["duplicates_removed"] = int(duplicates_removed)
+
+        if save and output_path:
+            saved = self.save_dataframe_to_excel(unified_df, output_path, overwrite=True)
+            stats["output_path"] = saved
+            if saved:
+                print(
+                    f"Banco unificado guardado en '{saved}': {stats['unified']} preguntas "
+                    f"({stats['duplicates_removed']} duplicados eliminados de {stats['total_read']} leídas)."
+                )
+
+        return unified_df, stats
+
     def save_dataframe_to_excel(
             self,
             df: pd.DataFrame,

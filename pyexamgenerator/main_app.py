@@ -202,6 +202,10 @@ class ExamApp:
         self.duplicate_check_var = tk.StringVar(value="pregunta_unica")
         self.xml_use_answer_text_var = tk.BooleanVar(value=False)
         self.template_docx_path_var = tk.StringVar(value="")
+        # Unificación de varios bancos en uno definitivo.
+        self.unify_duplicate_check_var = tk.StringVar(value="pregunta_respuestas")
+        self.unify_banks_display_var = tk.StringVar(value="")
+        self.unify_bank_paths: list = []
 
         # Añadimos variables para gestionar el tooltip de la tabla de modelos
         self.tree_tooltip = None
@@ -2402,6 +2406,98 @@ class ExamApp:
         ToolTip(update_bank_button, text="Empareja por enunciado las preguntas del examen con el banco, marca su uso y recalcula 'Veces usada en examen'.")
 
         update_with_exam_frame.columnconfigure(1, weight=1)
+
+        # --- Section to unify several banks into one definitive bank ---
+        unify_frame = ttk.LabelFrame(inner_frame_manage, text="Unificar Bancos de Preguntas")
+        unify_frame.pack(padx=5, pady=10, fill='x')
+        ToolTip(unify_frame, text="Combina varios bancos en uno solo, eliminando duplicados según el criterio elegido. El primer banco tiene prioridad cuando una pregunta aparece en varios.")
+
+        unify_banks_label = ttk.Label(unify_frame, text="Bancos a Unificar:")
+        unify_banks_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(unify_banks_label, text="Seleccione dos o más archivos XLSX de bancos de preguntas a combinar.")
+
+        unify_banks_entry = ttk.Entry(unify_frame, width=40, textvariable=self.unify_banks_display_var, state='readonly')
+        unify_banks_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(unify_banks_entry, text="Archivos de bancos seleccionados (en orden de prioridad).")
+
+        select_unify_button = ttk.Button(unify_frame, text="Seleccionar...", command=self.select_unify_bank_files)
+        select_unify_button.grid(row=0, column=2, padx=5, pady=5)
+        ToolTip(select_unify_button, text="Abre un diálogo para seleccionar varios archivos XLSX de bancos a unificar.")
+
+        unify_criteria_frame = ttk.LabelFrame(unify_frame, text="Criterio de Duplicado")
+        unify_criteria_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        ToolTip(unify_criteria_frame, text="Seleccione cómo decidir si dos preguntas de bancos distintos son la misma.")
+
+        unify_statement_radio = ttk.Radiobutton(unify_criteria_frame, text="Solo enunciado", variable=self.unify_duplicate_check_var, value="pregunta_unica")
+        unify_statement_radio.pack(side='left', padx=10)
+        ToolTip(unify_statement_radio, text="Si el enunciado coincide se considera la misma pregunta (se conserva una). Las respuestas no se tienen en cuenta.")
+
+        unify_full_radio = ttk.Radiobutton(unify_criteria_frame, text="Enunciado y respuestas", variable=self.unify_duplicate_check_var, value="pregunta_respuestas")
+        unify_full_radio.pack(side='left', padx=10)
+        ToolTip(unify_full_radio, text="Solo es duplicado si coinciden el enunciado y el conjunto de respuestas (sin importar el orden). Mismo enunciado con respuestas distintas se conservan como preguntas diferentes.")
+
+        unify_button = ttk.Button(unify_frame, text="Unificar Bancos", command=self.unify_question_banks_action)
+        unify_button.grid(row=2, column=0, columnspan=3, pady=10)
+        ToolTip(unify_button, text="Combina los bancos seleccionados en uno solo sin duplicados y pregunta dónde guardarlo.")
+
+        unify_frame.columnconfigure(1, weight=1)
+
+    def select_unify_bank_files(self) -> None:
+        """Opens a dialog to select several question bank XLSX files to unify."""
+        filepaths = filedialog.askopenfilenames(
+            title="Seleccionar Bancos de Preguntas a Unificar",
+            filetypes=[("Archivos Excel", "*.xlsx")]
+        )
+        if filepaths:
+            self.unify_bank_paths = list(filepaths)
+            names = ", ".join(os.path.basename(p) for p in self.unify_bank_paths)
+            self.unify_banks_display_var.set(f"{len(self.unify_bank_paths)} bancos: {names}")
+
+    def unify_question_banks_action(self) -> None:
+        """Unifies the selected question banks into one, removing duplicates by the chosen criterion."""
+        if len(self.unify_bank_paths) < 2:
+            messagebox.showerror("Error", "Seleccione al menos dos bancos de preguntas para unificar.")
+            return
+
+        criterion = self.unify_duplicate_check_var.get()
+        try:
+            unified_df, stats = self.question_bank_manager.unify_question_banks(
+                self.unify_bank_paths,
+                output_path=None,
+                duplicate_criterion=criterion,
+                save=False,
+            )
+        except Exception as e:  # noqa: BLE001 - surface any error to the user.
+            messagebox.showerror("Error", f"No se pudieron unificar los bancos:\n{e}")
+            return
+
+        if unified_df is None:
+            messagebox.showerror("Error", "No se pudo leer ningún banco. Revise la consola para más detalles.")
+            return
+
+        save_path = filedialog.asksaveasfilename(
+            title="Guardar Banco Unificado Como...",
+            defaultextension=".xlsx",
+            initialdir=os.path.dirname(self.unify_bank_paths[0]),
+            initialfile="banco_unificado.xlsx",
+            filetypes=[("Archivos Excel", "*.xlsx")]
+        )
+        if not save_path:
+            return
+
+        filepath = self.question_bank_manager.save_dataframe_to_excel(unified_df, save_path, overwrite=True)
+        if filepath:
+            errors = stats.get("errors", [])
+            extra = f"\nBancos no leídos: {len(errors)}" if errors else ""
+            messagebox.showinfo(
+                "Éxito",
+                f"Banco unificado guardado en: {filepath}\n"
+                f"Preguntas únicas: {stats['unified']}\n"
+                f"Duplicados eliminados: {stats['duplicates_removed']} "
+                f"(de {stats['total_read']} leídas){extra}"
+            )
+        else:
+            messagebox.showerror("Error al guardar", "Error al guardar el banco unificado.")
 
     def select_revised_docx_file(self) -> None:
         """
