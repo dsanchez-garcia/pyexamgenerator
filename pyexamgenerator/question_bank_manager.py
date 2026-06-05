@@ -18,6 +18,7 @@ import pandas as pd
 from docx import Document
 import os
 import re
+import unicodedata
 from typing import Optional, List, Tuple
 
 class QuestionBankManager:
@@ -187,12 +188,200 @@ class QuestionBankManager:
 
         return added_count, df_existing
 
+    @staticmethod
+    def _strip_accents(text: str) -> str:
+        """Removes diacritics from ``text`` (á→a, é→e, ñ→n, ü→u, ...).
+
+        Used before building safe column names so accented letters are kept as their base
+        letter instead of being turned into underscores by the ``[^a-zA-Z0-9_]`` sanitizer.
+        """
+        normalized = unicodedata.normalize('NFKD', str(text))
+        return ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+
+    @classmethod
+    def _usage_column_name(cls, exam_label: Optional[str], exam_path: str) -> str:
+        """Builds the per-exam usage column name (``<label>_uso``) from a label or the file name.
+
+        Accents are stripped first so e.g. 'Evaluación' becomes 'Evaluacion' (not 'Evaluaci_n').
+        """
+        label = (exam_label or '').strip() or os.path.splitext(os.path.basename(exam_path))[0]
+        label = cls._strip_accents(label)
+        safe_label = re.sub(r'[^a-zA-Z0-9_]', '_', label)
+        return f'{safe_label}_uso'
+
+    @staticmethod
+    def _resolve_parts_indices(num_tokens: int, parts) -> List[int]:
+        """Resolves a "parts" selection into a list of 0-based token indices, in the requested order.
+
+        ``parts`` may be:
+            - a list/tuple/iterable of ints: each is a **1-based** index; negative values count
+              from the end (-1 = last token);
+            - a string spec: comma-separated items, each either a single 1-based index ``n`` or an
+              inclusive range ``a:b`` (both 1-based, negatives allowed), e.g. ``"2:-2, 4, 8:10"``.
+
+        Indices that fall outside ``[0, num_tokens)`` after resolution are dropped by the caller.
+        Index ``0`` is invalid in 1-based numbering and is ignored.
+        """
+        def to_zero_based(n: int) -> Optional[int]:
+            if n > 0:
+                return n - 1
+            if n < 0:
+                return num_tokens + n
+            return None  # 0 is meaningless in 1-based numbering.
+
+        indices: List[int] = []
+        if isinstance(parts, str):
+            for raw in (item.strip() for item in parts.split(',')):
+                if not raw:
+                    continue
+                if ':' in raw:
+                    start_str, end_str = raw.split(':', 1)
+                    try:
+                        start, end = int(start_str.strip()), int(end_str.strip())
+                    except ValueError:
+                        continue
+                    start_idx, end_idx = to_zero_based(start), to_zero_based(end)
+                    if start_idx is None or end_idx is None:
+                        continue
+                    step = 1 if end_idx >= start_idx else -1
+                    indices.extend(range(start_idx, end_idx + step, step))
+                else:
+                    try:
+                        n = int(raw)
+                    except ValueError:
+                        continue
+                    idx = to_zero_based(n)
+                    if idx is not None:
+                        indices.append(idx)
+        else:
+            for item in parts:
+                try:
+                    n = int(item)
+                except (ValueError, TypeError):
+                    continue
+                idx = to_zero_based(n)
+                if idx is not None:
+                    indices.append(idx)
+        return indices
+
+    @classmethod
+    def label_from_filename(
+            cls,
+            path: str,
+            delimiter: Optional[str] = None,
+            parts=None,
+            join_with: str = '_',
+    ) -> str:
+        """Derives a label from a file name by splitting it and keeping selected parts.
+
+        Splits the base name (without extension) of ``path`` by ``delimiter`` and keeps the tokens
+        selected by ``parts`` (see :meth:`_resolve_parts_indices`), joined with ``join_with``.
+
+        If ``delimiter`` is falsy or ``parts`` is ``None``/empty, the full base name is returned, so
+        the default behaviour (no splitting) keeps the whole file name as the label.
+
+        Example::
+
+            label_from_filename(
+                "examen_Prevencion_Industrial_de_Riesgos_25_26_1A_completo.xlsx",
+                delimiter="_", parts="2:3, -3:-1",
+            )  # -> "Prevencion_Industrial_25_26_1A"
+        """
+        base = os.path.splitext(os.path.basename(path))[0]
+        if not delimiter or parts is None or (isinstance(parts, str) and not parts.strip()):
+            return base
+        tokens = base.split(delimiter)
+        if not tokens:
+            return base
+        indices = cls._resolve_parts_indices(len(tokens), parts)
+        selected = [tokens[i] for i in indices if 0 <= i < len(tokens)]
+        return join_with.join(selected) if selected else base
+
+    def _mark_exam_usage(
+            self,
+            df_bank: pd.DataFrame,
+            df_exam: pd.DataFrame,
+            usage_column_name: str,
+            match_columns: List[str],
+    ) -> Tuple[pd.DataFrame, int]:
+        """Flags, in ``df_bank``, the rows used by ``df_exam`` under ``usage_column_name``.
+
+        Returns the (possibly mutated) bank DataFrame and the number of exam questions matched.
+        """
+        if usage_column_name not in df_bank.columns:
+            df_bank[usage_column_name] = 0
+
+        def _normalize(series: pd.Series) -> pd.Series:
+            return series.astype(str).str.strip()
+
+        matched_count = 0
+        for _, exam_row in df_exam.iterrows():
+            mask = pd.Series(True, index=df_bank.index)
+            for col in match_columns:
+                mask &= _normalize(df_bank[col]) == str(exam_row[col]).strip()
+            matching_index = df_bank.index[mask]
+            if len(matching_index) > 0:
+                df_bank.loc[matching_index, usage_column_name] = 1
+                matched_count += 1
+        return df_bank, matched_count
+
+    @staticmethod
+    def _recompute_usage_aggregate(df_bank: pd.DataFrame) -> pd.DataFrame:
+        """Recomputes 'Veces usada en examen' from every per-exam '_uso' column and tidies columns."""
+        # Recompute the aggregated usage column from every per-exam '_uso' column.
+        usage_columns = [col for col in df_bank.columns if col.endswith('_uso')]
+        if usage_columns:
+            df_bank['Veces usada en examen'] = df_bank[usage_columns].sum(axis=1)
+
+        # Keep 'Veces usada en examen' right after 'Texto relevante' for readability, mirroring the
+        # column layout used by the exam generator.
+        if 'Veces usada en examen' in df_bank.columns and 'Texto relevante' in df_bank.columns:
+            usage_aggregate = df_bank.pop('Veces usada en examen')
+            try:
+                texto_relevante_idx = df_bank.columns.get_loc('Texto relevante')
+                df_bank.insert(texto_relevante_idx + 1, 'Veces usada en examen', usage_aggregate)
+            except KeyError:
+                df_bank['Veces usada en examen'] = usage_aggregate
+
+        return df_bank.loc[:, ~df_bank.columns.str.contains('unnamed', case=False)]
+
+    @staticmethod
+    def _normalize_exam_specs(exams) -> List[Tuple[str, Optional[str]]]:
+        """Normalizes a heterogeneous list of exam specs into ``[(path, label), ...]``.
+
+        Each item of ``exams`` may be:
+            - a plain path string (no label);
+            - a ``(path, label)`` tuple/list (label optional);
+            - a dict with ``path``/``exam_path`` and ``label``/``exam_label`` keys.
+
+        Items without a usable path are skipped. Blank labels are normalized to ``None``.
+        """
+        if not exams:
+            return []
+        normalized: List[Tuple[str, Optional[str]]] = []
+        for item in exams:
+            if isinstance(item, dict):
+                path = item.get("path") or item.get("exam_path")
+                label = item.get("label") or item.get("exam_label")
+            elif isinstance(item, (tuple, list)):
+                path = item[0] if len(item) >= 1 else None
+                label = item[1] if len(item) >= 2 else None
+            else:
+                path, label = item, None
+            if not path:
+                continue
+            clean_label = str(label).strip() if label is not None else ""
+            normalized.append((str(path), clean_label or None))
+        return normalized
+
     def update_bank_with_exam(
             self,
             bank_path: str,
             exam_path: str,
             exam_label: Optional[str] = None,
-            match_columns: Optional[List[str]] = None
+            match_columns: Optional[List[str]] = None,
+            label_delimiter: Optional[str] = None,
+            label_parts=None,
     ) -> Tuple[int, Optional[pd.DataFrame]]:
         """Marks, in an existing question bank, the questions used in an already generated exam.
 
@@ -204,13 +393,22 @@ class QuestionBankManager:
         Matching is done by the question statement ('Pregunta') by default because exams shuffle the
         answer order, which makes answer-based matching unreliable.
 
+        To register several exams at once (each with its own label) in a single pass, use
+        :meth:`update_bank_with_exams`.
+
         Args:
             bank_path (str): Path to the existing question bank XLSX file.
             exam_path (str): Path to the generated exam XLSX file with the questions used.
-            exam_label (Optional[str]): Label used to name the usage column. If None, the exam file name
-                (without extension) is used.
+            exam_label (Optional[str]): Label used to name the usage column. If None/blank, the label is
+                derived from the exam file name (optionally split with ``label_delimiter``/``label_parts``).
+                Accents in the label are stripped when building the column name (e.g. 'Evaluación' ->
+                'Evaluacion'), so they are not turned into underscores.
             match_columns (Optional[List[str]]): Columns used to match exam questions to bank questions.
                 Defaults to ['Pregunta'].
+            label_delimiter (Optional[str]): Delimiter used to split the file name when deriving the label
+                (only used when ``exam_label`` is None/blank). See :meth:`label_from_filename`.
+            label_parts: Parts of the split file name to keep as the label. See
+                :meth:`label_from_filename` and :meth:`_resolve_parts_indices`.
 
         Returns:
             Tuple[int, Optional[pd.DataFrame]]: The number of exam questions matched in the bank and the
@@ -234,43 +432,115 @@ class QuestionBankManager:
             print(f"Error: faltan columnas para emparejar en el banco o el examen: {missing}")
             return -1, None
 
-        # Build the usage column name from the provided label (or the exam file name).
-        label = (exam_label or '').strip() or os.path.splitext(os.path.basename(exam_path))[0]
-        safe_label = re.sub(r'[^a-zA-Z0-9_]', '_', label)
-        usage_column_name = f'{safe_label}_uso'
-        if usage_column_name not in df_bank.columns:
-            df_bank[usage_column_name] = 0
-
-        def _normalize(series: pd.Series) -> pd.Series:
-            return series.astype(str).str.strip()
-
-        matched_count = 0
-        for _, exam_row in df_exam.iterrows():
-            mask = pd.Series(True, index=df_bank.index)
-            for col in match_columns:
-                mask &= _normalize(df_bank[col]) == str(exam_row[col]).strip()
-            matching_index = df_bank.index[mask]
-            if len(matching_index) > 0:
-                df_bank.loc[matching_index, usage_column_name] = 1
-                matched_count += 1
-
-        # Recompute the aggregated usage column from every per-exam '_uso' column.
-        usage_columns = [col for col in df_bank.columns if col.endswith('_uso')]
-        if usage_columns:
-            df_bank['Veces usada en examen'] = df_bank[usage_columns].sum(axis=1)
-
-        # Keep 'Veces usada en examen' right after 'Texto relevante' for readability, mirroring the
-        # column layout used by the exam generator.
-        if 'Veces usada en examen' in df_bank.columns and 'Texto relevante' in df_bank.columns:
-            usage_aggregate = df_bank.pop('Veces usada en examen')
-            try:
-                texto_relevante_idx = df_bank.columns.get_loc('Texto relevante')
-                df_bank.insert(texto_relevante_idx + 1, 'Veces usada en examen', usage_aggregate)
-            except KeyError:
-                df_bank['Veces usada en examen'] = usage_aggregate
-
-        df_bank = df_bank.loc[:, ~df_bank.columns.str.contains('unnamed', case=False)]
+        effective_label = (exam_label or '').strip() or self.label_from_filename(
+            exam_path, label_delimiter, label_parts
+        )
+        usage_column_name = self._usage_column_name(effective_label, exam_path)
+        df_bank, matched_count = self._mark_exam_usage(df_bank, df_exam, usage_column_name, match_columns)
+        df_bank = self._recompute_usage_aggregate(df_bank)
         return matched_count, df_bank
+
+    def update_bank_with_exams(
+            self,
+            bank_path: str,
+            exams,
+            match_columns: Optional[List[str]] = None,
+            label_delimiter: Optional[str] = None,
+            label_parts=None,
+    ) -> Tuple[int, Optional[pd.DataFrame], dict]:
+        """Registers the usage of **several** generated exams in a question bank in a single pass.
+
+        This is the multi-exam counterpart of :meth:`update_bank_with_exam`. The bank is read once and
+        each exam is matched back to it (by ``match_columns``, ['Pregunta'] by default), getting its own
+        per-exam usage column ``<label>_uso``. After processing every exam, the aggregated
+        ``Veces usada en examen`` column is recomputed from all the ``_uso`` columns.
+
+        Per-exam read errors (or missing match columns in an exam) are reported in the returned ``stats``
+        and skipped, so a single bad exam does not abort the rest. A failure to read the **bank** itself,
+        or missing match columns in the bank, is a hard error that returns ``(-1, None, stats)``.
+
+        Args:
+            bank_path (str): Path to the existing question bank XLSX file.
+            exams: Iterable of exam specs. Each item may be a path string, a ``(path, label)``
+                tuple/list, or a dict with ``path``/``exam_path`` and ``label``/``exam_label`` keys.
+                If two exams resolve to the same label, they share the same ``_uso`` column.
+            match_columns (Optional[List[str]]): Columns used to match exam questions to bank questions.
+                Defaults to ['Pregunta'].
+            label_delimiter (Optional[str]): Default delimiter to split file names when an exam has no
+                explicit label, used together with ``label_parts``. See :meth:`label_from_filename`.
+            label_parts: Default parts of the split file name to keep as the label for exams without an
+                explicit label. See :meth:`label_from_filename` and :meth:`_resolve_parts_indices`.
+
+        Returns:
+            Tuple[int, Optional[pd.DataFrame], dict]: The total number of exam questions matched across
+            all exams, the updated bank DataFrame, and a stats dict::
+
+                {
+                    "exams": [{"path", "label", "column", "matched"}, ...],  # processed exams
+                    "total_matched": int,
+                    "errors": [{"path", "error"}, ...],                      # skipped exams
+                }
+
+            Returns ``(-1, None, stats)`` on bank read errors or missing match columns in the bank.
+        """
+        if match_columns is None:
+            match_columns = ['Pregunta']
+
+        specs = self._normalize_exam_specs(exams)
+        stats: dict = {"exams": [], "total_matched": 0, "errors": []}
+        if not specs:
+            print("Error: no se proporcionó ningún examen para actualizar el banco.")
+            return -1, None, stats
+
+        try:
+            df_bank = pd.read_excel(bank_path)
+        except FileNotFoundError:
+            print("Error: no se encontró el banco de preguntas.")
+            return -1, None, stats
+        except Exception as e:
+            print(f"Error al leer el banco de preguntas: {e}")
+            return -1, None, stats
+
+        missing_bank = [col for col in match_columns if col not in df_bank.columns]
+        if missing_bank:
+            print(f"Error: faltan columnas para emparejar en el banco: {missing_bank}")
+            return -1, None, stats
+
+        total_matched = 0
+        for exam_path, exam_label in specs:
+            try:
+                df_exam = pd.read_excel(exam_path)
+            except FileNotFoundError:
+                print(f"Advertencia: no se encontró el examen '{exam_path}'. Se omite.")
+                stats["errors"].append({"path": exam_path, "error": "archivo no encontrado"})
+                continue
+            except Exception as e:  # noqa: BLE001 - report and continue with the rest of the exams.
+                print(f"Advertencia: no se pudo leer el examen '{exam_path}': {e}. Se omite.")
+                stats["errors"].append({"path": exam_path, "error": str(e)})
+                continue
+
+            missing = [col for col in match_columns if col not in df_exam.columns]
+            if missing:
+                print(f"Advertencia: al examen '{exam_path}' le faltan columnas {missing}. Se omite.")
+                stats["errors"].append({"path": exam_path, "error": f"faltan columnas {missing}"})
+                continue
+
+            effective_label = (exam_label or '').strip() or self.label_from_filename(
+                exam_path, label_delimiter, label_parts
+            )
+            usage_column_name = self._usage_column_name(effective_label, exam_path)
+            df_bank, matched = self._mark_exam_usage(df_bank, df_exam, usage_column_name, match_columns)
+            total_matched += matched
+            stats["exams"].append({
+                "path": exam_path,
+                "label": effective_label,
+                "column": usage_column_name,
+                "matched": matched,
+            })
+
+        df_bank = self._recompute_usage_aggregate(df_bank)
+        stats["total_matched"] = total_matched
+        return total_matched, df_bank, stats
 
     @staticmethod
     def _normalize_text(value: object) -> str:

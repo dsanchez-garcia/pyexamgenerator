@@ -1,8 +1,11 @@
+import os
 import random
 
 import pandas as pd
 from docx import Document
 from docx.enum.section import WD_SECTION
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml.ns import qn
 
 from pyexamgenerator.exam_generator import ExamGenerator
@@ -170,6 +173,61 @@ def test_no_trailing_break_between_questions(tmp_path):
         assert not last_run.text.endswith("\n")
 
 
+# --- Student docx layout: data table widths + centered answer sheet with NC column -------------
+
+def _generate_student_docx(tmp_path, exam="Layout", num_questions=12):
+    bank_path = tmp_path / "bank.xlsx"
+    _build_bank_df({"Tema 01": num_questions}).to_excel(bank_path, index=False)
+    generator = ExamGenerator()
+    random.seed(20260601)
+    generator.generate_exam_from_excel(
+        bank_excel_path=str(bank_path),
+        output_dir=str(tmp_path),
+        subject="Geo",
+        exam=exam,
+        course="25-26",
+        exam_names=["A"],
+        export_moodle_xml=False,
+        update_excel=False,
+    )
+    docx_path = tmp_path / f"examen_Geo_{exam}_25-26_A.docx"
+    assert docx_path.exists()
+    return Document(str(docx_path))
+
+
+def test_student_data_table_has_unequal_columns(tmp_path):
+    document = _generate_student_docx(tmp_path, exam="DataCols")
+    # The first table in the student docx is the 'Datos del alumno' table.
+    student_table = document.tables[0]
+    assert len(student_table.columns) == 2
+    label_width = student_table.cell(0, 0).width
+    value_width = student_table.cell(0, 1).width
+    # The data column must be clearly wider than the label column.
+    assert value_width is not None and label_width is not None
+    assert value_width > label_width
+    assert round(label_width.cm, 1) == 3.5
+
+
+def test_answer_sheet_has_nc_column_centered(tmp_path):
+    document = _generate_student_docx(tmp_path, exam="NCcol", num_questions=12)
+    # The answer sheet is the second table.
+    answer_table = document.tables[1]
+    headers = [answer_table.cell(0, j).text for j in range(len(answer_table.columns))]
+    assert headers == ["Pregunta", "a", "b", "c", "d", "NC"]
+
+    # The whole table is centered on the page.
+    assert answer_table.alignment == WD_TABLE_ALIGNMENT.CENTER
+
+    # The answer option columns (a/b/c/d/NC) are ~1 cm wide; 'Pregunta' is wider (fits its content).
+    for j in range(1, 6):
+        assert round(answer_table.cell(0, j).width.cm, 1) == 1.0
+    assert answer_table.cell(0, 0).width.cm > answer_table.cell(0, 1).width.cm
+
+    # Cell content is centered (check the header and a data cell).
+    assert answer_table.cell(0, 0).paragraphs[0].alignment == WD_PARAGRAPH_ALIGNMENT.CENTER
+    assert answer_table.cell(1, 0).paragraphs[0].alignment == WD_PARAGRAPH_ALIGNMENT.CENTER
+
+
 # --- Task 2: update bank usage from an existing exam ------------------------------------------
 
 def test_update_bank_with_exam_marks_used_questions(tmp_path):
@@ -212,6 +270,175 @@ def test_update_bank_with_exam_missing_file_returns_error(tmp_path):
     )
     assert matched == -1
     assert df_updated is None
+
+
+def test_update_bank_with_exams_multiple_labels(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    bank_df = _build_bank_df({"Tema 01": 4, "Tema 02": 4})
+    bank_df.to_excel(bank_path, index=False)
+
+    # Two exams using overlapping subsets of the bank, each with its own label.
+    exam1 = bank_df.iloc[[0, 1]].copy()
+    exam1_path = tmp_path / "examen_parcial1_completo.xlsx"
+    exam1.to_excel(exam1_path, index=False)
+
+    exam2 = bank_df.iloc[[1, 5, 6]].copy()  # row 1 is shared with exam1
+    exam2_path = tmp_path / "examen_parcial2_completo.xlsx"
+    exam2.to_excel(exam2_path, index=False)
+
+    manager = QuestionBankManager()
+    total, df_updated, stats = manager.update_bank_with_exams(
+        str(bank_path),
+        [
+            {"path": str(exam1_path), "label": "Parcial1 25-26"},
+            (str(exam2_path), "Parcial2 25-26"),
+        ],
+    )
+
+    assert total == 5  # 2 from exam1 + 3 from exam2
+    assert df_updated is not None
+    usage_columns = sorted(c for c in df_updated.columns if c.endswith("_uso"))
+    assert usage_columns == ["Parcial1_25_26_uso", "Parcial2_25_26_uso"]
+    assert df_updated["Parcial1_25_26_uso"].sum() == 2
+    assert df_updated["Parcial2_25_26_uso"].sum() == 3
+    # The shared question (row 1) is flagged in both columns; the aggregate counts both.
+    assert df_updated["Veces usada en examen"].sum() == 5
+    assert df_updated.loc[1, "Veces usada en examen"] == 2
+
+    assert stats["total_matched"] == 5
+    assert [e["matched"] for e in stats["exams"]] == [2, 3]
+    assert stats["errors"] == []
+
+
+def test_update_bank_with_exams_default_label_from_filename(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    bank_df = _build_bank_df({"Tema 01": 3})
+    bank_df.to_excel(bank_path, index=False)
+
+    exam_path = tmp_path / "examen_X_completo.xlsx"
+    bank_df.iloc[[0]].to_excel(exam_path, index=False)
+
+    manager = QuestionBankManager()
+    # A bare path string (no label) falls back to the file name.
+    total, df_updated, stats = manager.update_bank_with_exams(str(bank_path), [str(exam_path)])
+
+    assert total == 1
+    assert "examen_X_completo_uso" in df_updated.columns
+
+
+def test_update_bank_with_exams_skips_unreadable_exam(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    bank_df = _build_bank_df({"Tema 01": 3})
+    bank_df.to_excel(bank_path, index=False)
+
+    good_exam = tmp_path / "bueno_completo.xlsx"
+    bank_df.iloc[[0, 2]].to_excel(good_exam, index=False)
+
+    manager = QuestionBankManager()
+    total, df_updated, stats = manager.update_bank_with_exams(
+        str(bank_path),
+        [
+            {"path": str(good_exam), "label": "Bueno"},
+            {"path": str(tmp_path / "no_existe.xlsx"), "label": "Fantasma"},
+        ],
+    )
+
+    # The missing exam is skipped (reported in errors), the good one is still processed.
+    assert total == 2
+    assert df_updated["Bueno_uso"].sum() == 2
+    assert "Fantasma_uso" not in df_updated.columns
+    assert len(stats["errors"]) == 1
+    assert stats["errors"][0]["path"].endswith("no_existe.xlsx")
+
+
+def test_update_bank_with_exams_bank_missing_returns_error(tmp_path):
+    exam_path = tmp_path / "examen_completo.xlsx"
+    _build_bank_df({"Tema 01": 1}).iloc[[0]].to_excel(exam_path, index=False)
+
+    manager = QuestionBankManager()
+    total, df_updated, stats = manager.update_bank_with_exams(
+        str(tmp_path / "no_existe_bank.xlsx"), [str(exam_path)]
+    )
+    assert total == -1
+    assert df_updated is None
+
+
+def test_update_bank_with_exams_no_exams_returns_error(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    _build_bank_df({"Tema 01": 1}).to_excel(bank_path, index=False)
+
+    manager = QuestionBankManager()
+    total, df_updated, stats = manager.update_bank_with_exams(str(bank_path), [])
+    assert total == -1
+    assert df_updated is None
+
+
+# --- Accent stripping + label-from-filename ----------------------------------------------------
+
+def test_usage_column_name_strips_accents():
+    manager = QuestionBankManager()
+    col = manager._usage_column_name(
+        "examen_Prevención_Industrial_Evaluación_continua_GITI_GIE_GIEI_25_26_1A_completo", "x.xlsx"
+    )
+    # No accented letter is turned into an underscore: 'ó' -> 'o'.
+    assert col == "examen_Prevencion_Industrial_Evaluacion_continua_GITI_GIE_GIEI_25_26_1A_completo_uso"
+    assert "Prevenci_n" not in col
+    # Other diacritics (ñ, ü) are also reduced to the base letter.
+    assert manager._usage_column_name("Año_Múñoz_Düsseldorf", "x.xlsx") == "Ano_Munoz_Dusseldorf_uso"
+
+
+def test_label_from_filename_keeps_selected_parts():
+    manager = QuestionBankManager()
+    name = "examen_Prevencion_Industrial_de_Riesgos_Evaluacion_continua_GITI_GIE_GIEI_25_26_1A_completo.xlsx"
+    # 1-based ranges with negative indices counted from the end.
+    assert manager.label_from_filename(name, "_", "2:3, -4:-2") == "Prevencion_Industrial_25_26_1A"
+    # A list of 1-based indices works too.
+    assert manager.label_from_filename(name, "_", [2, 3]) == "Prevencion_Industrial"
+    # No parts (or empty/None) keeps the whole base name (without extension).
+    whole = "examen_Prevencion_Industrial_de_Riesgos_Evaluacion_continua_GITI_GIE_GIEI_25_26_1A_completo"
+    assert manager.label_from_filename(name) == whole
+    assert manager.label_from_filename(name, "_", "") == whole
+    # Out-of-range indices are ignored; if nothing valid is left, falls back to the whole name.
+    assert manager.label_from_filename("a_b_c.xlsx", "_", "99") == "a_b_c"
+
+
+def test_update_bank_with_exams_derives_label_from_filename(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    bank_df = _build_bank_df({"Tema 01": 3})
+    bank_df.to_excel(bank_path, index=False)
+
+    exam_path = tmp_path / "examen_Prevención_Industrial_25_26_1A_completo.xlsx"
+    bank_df.iloc[[0, 1]].to_excel(exam_path, index=False)
+
+    manager = QuestionBankManager()
+    # No explicit label -> derive from file name keeping parts 2:4, and strip accents in the column.
+    total, df_updated, stats = manager.update_bank_with_exams(
+        str(bank_path), [str(exam_path)], label_delimiter="_", label_parts="2:4"
+    )
+
+    assert total == 2
+    assert stats["exams"][0]["label"] == "Prevención_Industrial_25"
+    assert stats["exams"][0]["column"] == "Prevencion_Industrial_25_uso"
+    assert "Prevencion_Industrial_25_uso" in df_updated.columns
+
+
+def test_update_bank_with_exams_explicit_label_overrides_derivation(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    bank_df = _build_bank_df({"Tema 01": 2})
+    bank_df.to_excel(bank_path, index=False)
+
+    exam_path = tmp_path / "examen_largo_completo.xlsx"
+    bank_df.iloc[[0]].to_excel(exam_path, index=False)
+
+    manager = QuestionBankManager()
+    total, df_updated, stats = manager.update_bank_with_exams(
+        str(bank_path),
+        [{"path": str(exam_path), "label": "MiEtiqueta"}],
+        label_delimiter="_",
+        label_parts="1",  # ignored because an explicit label is provided
+    )
+    assert stats["exams"][0]["label"] == "MiEtiqueta"
+    assert stats["exams"][0]["column"] == "MiEtiqueta_uso"
 
 
 # --- Unify several question banks into one, with a selectable duplicate criterion --------------

@@ -58,8 +58,8 @@ Aquí personalizas el aspecto visual de tu examen en el archivo de Word.
 
 *   **Márgenes (Superior, Inferior, Izquierdo, Derecho):** Define el espacio en blanco alrededor de la página, en pulgadas. Los valores por defecto suelen funcionar bien.
 *   **Tamaño de Fuente:** El tamaño del texto de las preguntas y respuestas.
-*   **Instrucciones Hoja de Respuestas:** El texto que aparecerá justo encima de la tabla de respuestas para guiar al alumno.
-*   **Acción para nuestro ejemplo:** En "Instrucciones Hoja de Respuestas", escribe: `Marque con una "X" la casilla correspondiente a la respuesta correcta. No se permiten tachaduras.`
+*   **Instrucciones Hoja de Respuestas:** El texto que aparecerá justo encima de la tabla de respuestas para guiar al alumno. La tabla de respuestas se genera **centrada** en la página, con columnas estrechas (≈1 cm) y el contenido centrado, e incluye una columna **NC** ("no contestada") además de `a`, `b`, `c`, `d`, para que el alumno marque explícitamente las preguntas que deja sin responder. Conviene que tus instrucciones mencionen esta opción (por ejemplo, "...o la columna NC si se desea dejar sin contestar").
+*   **Acción para nuestro ejemplo:** En "Instrucciones Hoja de Respuestas", escribe: `Marque con una "X" la casilla correspondiente a la respuesta correcta, o la columna NC si desea dejar la pregunta sin contestar. No se permiten tachaduras.`
 
 ### Sección 6: Configuración para Moodle
 

@@ -16,7 +16,7 @@
 
 import tkinter as tk
 import webbrowser
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 import pandas as pd
 from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededError, ServiceOverloadedError
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
@@ -194,8 +194,11 @@ class ExamApp:
         self.reviewed_add_path = tk.StringVar()
         self.add_questions_filter_var = tk.StringVar(value="todas")
         self.update_bank_path_var = tk.StringVar()
-        self.update_exam_path_var = tk.StringVar()
-        self.update_exam_label_var = tk.StringVar()
+        # Lista de exámenes con los que actualizar el banco; cada entrada es {"path", "label"}.
+        self.update_exam_specs: List[Dict[str, str]] = []
+        # Configuración para derivar la etiqueta a partir del nombre del archivo del examen.
+        self.update_label_delimiter_var = tk.StringVar(value="_")
+        self.update_label_parts_var = tk.StringVar(value="")
         self.revised_xlsx_output_dir_var = tk.StringVar()
         self.revised_docx_path_var = tk.StringVar()
         self.new_xlsx_filename_var = tk.StringVar()
@@ -2364,10 +2367,10 @@ class ExamApp:
 
         add_from_bank_frame.columnconfigure(1, weight=1)
 
-        # --- Section to update the bank usage statistics from an already generated exam ---
-        update_with_exam_frame = ttk.LabelFrame(inner_frame_manage, text="Actualizar Banco con Examen Existente")
+        # --- Section to update the bank usage statistics from one or more already generated exams ---
+        update_with_exam_frame = ttk.LabelFrame(inner_frame_manage, text="Actualizar Banco con Exámenes Existentes")
         update_with_exam_frame.pack(padx=5, pady=10, fill='x')
-        ToolTip(update_with_exam_frame, text="Marca como usadas en el banco las preguntas que aparecen en un examen ya generado y recalcula 'Veces usada en examen'.")
+        ToolTip(update_with_exam_frame, text="Marca como usadas en el banco las preguntas que aparecen en uno o varios exámenes ya generados (cada uno con su etiqueta) y recalcula 'Veces usada en examen'.")
 
         update_bank_label = ttk.Label(update_with_exam_frame, text="Banco a Actualizar:")
         update_bank_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
@@ -2381,29 +2384,80 @@ class ExamApp:
         select_update_bank_button.grid(row=0, column=2, padx=5, pady=5)
         ToolTip(select_update_bank_button, text="Abre un diálogo para seleccionar el archivo XLSX del banco de preguntas.")
 
-        update_exam_label = ttk.Label(update_with_exam_frame, text="Examen Generado (XLSX):")
-        update_exam_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(update_exam_label, text="Seleccione el archivo XLSX del examen ya generado (normalmente el archivo '..._completo.xlsx').")
+        update_exams_label = ttk.Label(update_with_exam_frame, text="Exámenes a registrar:")
+        update_exams_label.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
+        ToolTip(update_exams_label, text="Lista de exámenes ya generados (normalmente los archivos '..._completo.xlsx'). Cada uno se registra con su propia etiqueta en una columna '<etiqueta>_uso'.")
 
-        update_exam_entry = ttk.Entry(update_with_exam_frame, width=40, textvariable=self.update_exam_path_var)
-        update_exam_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-        ToolTip(update_exam_entry, text="Ruta del archivo XLSX del examen generado.")
+        # Tabla con los exámenes seleccionados, su etiqueta y la columna de uso resultante.
+        exams_tree_frame = ttk.Frame(update_with_exam_frame)
+        exams_tree_frame.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        self.update_exams_tree = ttk.Treeview(
+            exams_tree_frame, columns=('examen', 'etiqueta', 'columna'), show='headings', height=4
+        )
+        self.update_exams_tree.heading('examen', text='Examen (XLSX)')
+        self.update_exams_tree.heading('etiqueta', text='Etiqueta')
+        self.update_exams_tree.heading('columna', text='Columna en XLSX')
+        self.update_exams_tree.column('examen', width=220)
+        self.update_exams_tree.column('etiqueta', width=150)
+        self.update_exams_tree.column('columna', width=170)
+        self.update_exams_tree.grid(row=0, column=0, sticky='ew')
+        exams_tree_scroll = ttk.Scrollbar(exams_tree_frame, orient='vertical', command=self.update_exams_tree.yview)
+        self.update_exams_tree.configure(yscrollcommand=exams_tree_scroll.set)
+        exams_tree_scroll.grid(row=0, column=1, sticky='ns')
+        exams_tree_frame.columnconfigure(0, weight=1)
+        # Doble clic sobre una fila para editar su etiqueta.
+        self.update_exams_tree.bind('<Double-1>', self._on_update_exam_double_click)
+        ToolTip(self.update_exams_tree, text="Exámenes seleccionados, su etiqueta y la columna que se escribirá en el XLSX (sin tildes ni caracteres especiales). Haga doble clic en una fila para editar la etiqueta.")
 
-        select_update_exam_button = ttk.Button(update_with_exam_frame, text="Seleccionar", command=self.select_update_exam_file)
-        select_update_exam_button.grid(row=1, column=2, padx=5, pady=5)
-        ToolTip(select_update_exam_button, text="Abre un diálogo para seleccionar el archivo XLSX del examen generado.")
+        exams_buttons_frame = ttk.Frame(update_with_exam_frame)
+        exams_buttons_frame.grid(row=1, column=2, padx=5, pady=5, sticky='n')
 
-        update_label_label = ttk.Label(update_with_exam_frame, text="Etiqueta del Examen (opcional):")
-        update_label_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(update_label_label, text="Nombre para la columna de uso (ej. 'Parcial1_25-26'). Si se deja vacío, se usa el nombre del archivo del examen.")
+        add_exam_button = ttk.Button(exams_buttons_frame, text="Añadir...", command=self.select_update_exam_files)
+        add_exam_button.pack(fill='x', pady=2)
+        ToolTip(add_exam_button, text="Abre un diálogo para añadir uno o varios archivos XLSX de examen. La etiqueta inicial se deriva del nombre del archivo según la configuración de 'Etiqueta automática'.")
 
-        update_label_entry = ttk.Entry(update_with_exam_frame, width=40, textvariable=self.update_exam_label_var)
-        update_label_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
-        ToolTip(update_label_entry, text="Etiqueta para la columna de uso en el banco.")
+        edit_label_button = ttk.Button(exams_buttons_frame, text="Editar etiqueta", command=self.edit_update_exam_label)
+        edit_label_button.pack(fill='x', pady=2)
+        ToolTip(edit_label_button, text="Edita la etiqueta del examen seleccionado (nombre de la columna de uso).")
 
-        update_bank_button = ttk.Button(update_with_exam_frame, text="Actualizar Banco con Examen", command=self.update_bank_with_exam)
+        remove_exam_button = ttk.Button(exams_buttons_frame, text="Quitar", command=self.remove_update_exam)
+        remove_exam_button.pack(fill='x', pady=2)
+        ToolTip(remove_exam_button, text="Quita de la lista el examen seleccionado.")
+
+        clear_exams_button = ttk.Button(exams_buttons_frame, text="Limpiar", command=self.clear_update_exams)
+        clear_exams_button.pack(fill='x', pady=2)
+        ToolTip(clear_exams_button, text="Vacía la lista de exámenes.")
+
+        # --- Sub-sección: etiqueta automática derivada del nombre del archivo ---
+        auto_label_frame = ttk.LabelFrame(update_with_exam_frame, text="Etiqueta automática (desde el nombre del archivo)")
+        auto_label_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        ToolTip(auto_label_frame, text="Deriva la etiqueta partiendo el nombre del archivo por un delimitador y quedándote con las partes elegidas. Las tildes se eliminan al escribir la columna.")
+
+        delimiter_label = ttk.Label(auto_label_frame, text="Delimitador:")
+        delimiter_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        delimiter_entry = ttk.Entry(auto_label_frame, width=6, textvariable=self.update_label_delimiter_var)
+        delimiter_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(delimiter_entry, text="Carácter por el que se parte el nombre del archivo (por defecto '_').")
+
+        parts_label = ttk.Label(auto_label_frame, text="Partes a conservar:")
+        parts_label.grid(row=0, column=2, padx=5, pady=5, sticky='w')
+        parts_entry = ttk.Entry(auto_label_frame, width=20, textvariable=self.update_label_parts_var)
+        parts_entry.grid(row=0, column=3, padx=5, pady=5, sticky='ew')
+        ToolTip(parts_entry, text=(
+            "Índices (1 = primera parte) separados por comas; admite rangos 'a:b' (inclusive) e índices "
+            "negativos contados desde el final (-1 = última). Ejemplo: '2:3, -4:-2'. "
+            "Vacío = se usa el nombre completo del archivo."
+        ))
+
+        apply_label_button = ttk.Button(auto_label_frame, text="Aplicar a la lista", command=self.apply_auto_labels)
+        apply_label_button.grid(row=0, column=4, padx=5, pady=5, sticky='e')
+        ToolTip(apply_label_button, text="Recalcula la etiqueta de todos los exámenes de la lista con el delimitador y las partes indicados.")
+
+        auto_label_frame.columnconfigure(3, weight=1)
+
+        update_bank_button = ttk.Button(update_with_exam_frame, text="Actualizar Banco con Exámenes", command=self.update_bank_with_exams_action)
         update_bank_button.grid(row=3, column=0, columnspan=3, pady=10)
-        ToolTip(update_bank_button, text="Empareja por enunciado las preguntas del examen con el banco, marca su uso y recalcula 'Veces usada en examen'.")
+        ToolTip(update_bank_button, text="Empareja por enunciado las preguntas de cada examen con el banco, marca su uso en una columna por etiqueta y recalcula 'Veces usada en examen'.")
 
         update_with_exam_frame.columnconfigure(1, weight=1)
 
@@ -2895,52 +2949,164 @@ class ExamApp:
         if filepath:
             self.update_bank_path_var.set(filepath)
 
-    def select_update_exam_file(self) -> None:
-        """Opens a dialog to select the generated exam XLSX used to update the bank."""
-        filepath = filedialog.askopenfilename(
-            title="Seleccionar Examen Generado (XLSX)",
+    def _default_exam_label(self, exam_path: str) -> str:
+        """Default label for an exam, derived from its file name using the auto-label settings.
+
+        Splits the file name by the configured delimiter and keeps the chosen parts. With the parts
+        field empty it returns the whole file name (without extension).
+        """
+        delimiter = self.update_label_delimiter_var.get()
+        parts = self.update_label_parts_var.get().strip()
+        return self.question_bank_manager.label_from_filename(
+            exam_path,
+            delimiter=delimiter or None,
+            parts=parts or None,
+        )
+
+    def _refresh_update_exams_tree(self) -> None:
+        """Repopulates the exams Treeview from ``self.update_exam_specs`` (index used as item id).
+
+        Also shows the resulting usage column name (accents stripped) so the user sees exactly what
+        will be written to the bank XLSX.
+        """
+        self.update_exams_tree.delete(*self.update_exams_tree.get_children())
+        for index, spec in enumerate(self.update_exam_specs):
+            column_name = self.question_bank_manager._usage_column_name(spec["label"], spec["path"])
+            self.update_exams_tree.insert(
+                "", "end", iid=str(index),
+                values=(os.path.basename(spec["path"]), spec["label"], column_name)
+            )
+
+    def apply_auto_labels(self) -> None:
+        """Recomputes the label of every exam in the list from its file name using the auto-label settings."""
+        if not self.update_exam_specs:
+            messagebox.showinfo("Información", "No hay exámenes en la lista a los que aplicar la etiqueta.")
+            return
+        for spec in self.update_exam_specs:
+            spec["label"] = self._default_exam_label(spec["path"])
+        self._refresh_update_exams_tree()
+
+    def select_update_exam_files(self) -> None:
+        """Opens a dialog to add one or more generated exam XLSX files used to update the bank.
+
+        Each newly added exam gets a default label (its file name without extension), editable later.
+        Files already present in the list are not added twice.
+        """
+        filepaths = filedialog.askopenfilenames(
+            title="Seleccionar Exámenes Generados (XLSX)",
             filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
         )
-        if filepath:
-            self.update_exam_path_var.set(filepath)
+        if not filepaths:
+            return
+        existing_paths = {spec["path"] for spec in self.update_exam_specs}
+        for filepath in filepaths:
+            if filepath in existing_paths:
+                continue
+            self.update_exam_specs.append({"path": filepath, "label": self._default_exam_label(filepath)})
+            existing_paths.add(filepath)
+        self._refresh_update_exams_tree()
 
-    def update_bank_with_exam(self) -> None:
+    def _selected_update_exam_index(self) -> Optional[int]:
+        """Returns the index in ``self.update_exam_specs`` of the selected tree row, or None."""
+        selection = self.update_exams_tree.selection()
+        if not selection:
+            return None
+        try:
+            return int(selection[0])
+        except (ValueError, IndexError):
+            return None
+
+    def edit_update_exam_label(self) -> None:
+        """Edits the label of the selected exam (the name of its '<label>_uso' column)."""
+        index = self._selected_update_exam_index()
+        if index is None:
+            messagebox.showinfo("Información", "Seleccione un examen de la lista para editar su etiqueta.")
+            return
+        spec = self.update_exam_specs[index]
+        new_label = simpledialog.askstring(
+            "Editar Etiqueta",
+            f"Etiqueta para '{os.path.basename(spec['path'])}'\n"
+            f"(se usará como nombre de la columna de uso '<etiqueta>_uso'):",
+            initialvalue=spec["label"],
+            parent=self.root
+        )
+        if new_label is None:
+            return
+        new_label = new_label.strip()
+        spec["label"] = new_label or self._default_exam_label(spec["path"])
+        self._refresh_update_exams_tree()
+
+    def _on_update_exam_double_click(self, event) -> None:
+        """Double-clicking a row in the exams tree edits its label."""
+        if self.update_exams_tree.identify_row(event.y):
+            self.edit_update_exam_label()
+
+    def remove_update_exam(self) -> None:
+        """Removes the selected exam from the list."""
+        index = self._selected_update_exam_index()
+        if index is None:
+            messagebox.showinfo("Información", "Seleccione un examen de la lista para quitarlo.")
+            return
+        del self.update_exam_specs[index]
+        self._refresh_update_exams_tree()
+
+    def clear_update_exams(self) -> None:
+        """Empties the list of exams."""
+        self.update_exam_specs.clear()
+        self._refresh_update_exams_tree()
+
+    def update_bank_with_exams_action(self) -> None:
         """
-        Updates the usage statistics of an existing question bank from an already generated exam.
-        Matches the exam questions back to the bank by statement, marks them as used and recomputes
-        the aggregated 'Veces usada en examen' column.
+        Updates the usage statistics of an existing question bank from one or more generated exams.
+        Each exam is matched back to the bank by statement and marked as used in its own
+        '<label>_uso' column; the aggregated 'Veces usada en examen' column is then recomputed.
         """
         bank_path = self.update_bank_path_var.get()
-        exam_path = self.update_exam_path_var.get()
-        exam_label = self.update_exam_label_var.get().strip() or None
 
-        if not bank_path or not exam_path:
-            messagebox.showerror("Error", "Por favor, seleccione el banco de preguntas y el examen generado.")
+        if not bank_path:
+            messagebox.showerror("Error", "Por favor, seleccione el banco de preguntas a actualizar.")
+            return
+        if not self.update_exam_specs:
+            messagebox.showerror("Error", "Añada al menos un examen para registrar su uso en el banco.")
             return
 
-        matched_count, df_updated = self.question_bank_manager.update_bank_with_exam(
-            bank_path,
-            exam_path,
-            exam_label=exam_label
+        exams = [{"path": spec["path"], "label": spec["label"]} for spec in self.update_exam_specs]
+        total_matched, df_updated, stats = self.question_bank_manager.update_bank_with_exams(
+            bank_path, exams
         )
 
-        if matched_count == -1:
+        if total_matched == -1:
             messagebox.showerror("Error", "Error al procesar los archivos. Revise la consola para más detalles.")
             return
 
-        if matched_count == 0:
-            messagebox.showinfo("Información", "No se encontró ninguna pregunta del examen en el banco. No se realizaron cambios.")
+        # Build a per-exam summary to show the user.
+        detail_lines = [
+            f"• {os.path.basename(exam['path'])} → '{exam['column']}': {exam['matched']} preguntas"
+            for exam in stats.get("exams", [])
+        ]
+        errors = stats.get("errors", [])
+        summary = "\n".join(detail_lines) if detail_lines else "Ningún examen pudo procesarse."
+        if errors:
+            summary += f"\n\nExámenes omitidos (no se pudieron leer): {len(errors)}"
+
+        if total_matched == 0:
+            messagebox.showinfo(
+                "Información",
+                f"No se emparejó ninguna pregunta de los exámenes con el banco. "
+                f"No se realizaron cambios.\n\n{summary}"
+            )
             return
 
         response = messagebox.askyesnocancel(
             "Guardar Cambios",
-            f"Se emparejaron {matched_count} preguntas del examen con el banco. ¿Desea guardar los cambios en el banco existente?",
+            f"Se registraron {total_matched} usos de preguntas en el banco:\n\n{summary}\n\n"
+            f"¿Desea guardar los cambios en el banco existente?",
             default='yes'
         )
         if response is True:
             filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, bank_path, overwrite=True)
             if filepath:
-                messagebox.showinfo("Éxito", f"Banco actualizado con {matched_count} preguntas usadas: {filepath}")
+                messagebox.showinfo("Éxito", f"Banco actualizado con {total_matched} usos registrados: {filepath}")
             else:
                 messagebox.showerror("Error al guardar", "Error al guardar el banco existente.")
         elif response is False:

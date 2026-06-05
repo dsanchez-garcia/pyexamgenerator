@@ -224,6 +224,60 @@ if __name__ == "__main__":
         print("\nNo se encontraron preguntas nuevas para añadir.")
 ```
 
+#### 2.3. Registrar el uso de varios exámenes en el banco
+
+Este script marca en el banco las preguntas usadas en uno o varios exámenes ya generados (los archivos `..._completo.xlsx`), dándole a cada examen su propia **etiqueta**. Cada examen genera una columna `<etiqueta>_uso` y, al final, se recalcula la columna agregada `Veces usada en examen` (que alimenta la selección por *"menos usadas"* al generar exámenes).
+
+```python
+# archivo: registrar_uso_examenes.py
+
+from pyexamgenerator import QuestionBankManager
+
+# --- Configuración ---
+BANK_PATH = "ruta/a/tu/banco_principal.xlsx"
+OUTPUT_PATH = "ruta/a/tu/banco_principal_actualizado.xlsx"
+
+# Lista de exámenes con su etiqueta. Cada examen puede indicarse como:
+#   - un dict {"path": ..., "label": ...},
+#   - una tupla (ruta, etiqueta),
+#   - o solo la ruta (la etiqueta se deriva del nombre del archivo).
+EXAMS = [
+    {"path": "ruta/a/examen_parcial1_completo.xlsx", "label": "Parcial1_24-25"},
+    {"path": "ruta/a/examen_parcial2_completo.xlsx", "label": "Parcial2_24-25"},
+    ("ruta/a/examen_recuperacion_completo.xlsx", "Recuperacion_24-25"),
+    # Sin etiqueta: se derivará del nombre del archivo (ver label_delimiter/label_parts).
+    "ruta/a/examen_Prevencion_Industrial_25_26_1A_completo.xlsx",
+]
+
+# --- Lógica del Script ---
+if __name__ == "__main__":
+    manager = QuestionBankManager()
+
+    total_matched, updated_df, stats = manager.update_bank_with_exams(
+        bank_path=BANK_PATH,
+        exams=EXAMS,
+        # Para los exámenes SIN etiqueta explícita, se deriva del nombre del archivo:
+        # se parte por "_" y se conservan las partes 2:4 (1-based, admite rangos y negativos).
+        label_delimiter="_",
+        label_parts="2:4",
+    )
+
+    if total_matched == -1:
+        print("Error: no se pudo leer el banco o faltan columnas para emparejar.")
+    else:
+        for exam in stats["exams"]:
+            print(f"{exam['label']}: {exam['matched']} preguntas -> columna '{exam['column']}'")
+        if stats["errors"]:
+            print(f"Exámenes omitidos: {len(stats['errors'])}")
+        print(f"\nTotal de usos registrados: {total_matched}")
+        manager.save_dataframe_to_excel(df=updated_df, filepath=OUTPUT_PATH)
+        print(f"Banco actualizado guardado en: {OUTPUT_PATH}")
+```
+
+> Las etiquetas se escriben en la columna `<etiqueta>_uso` **sin tildes** (p. ej. `Evaluación` → `Evaluacion`). Puedes previsualizar la etiqueta derivada de un nombre con `manager.label_from_filename(path, delimiter="_", parts="2:4")`.
+>
+> Para un único examen sigue disponible `manager.update_bank_with_exam(bank_path, exam_path, exam_label=...)`, que devuelve `(coincidencias, banco_actualizado)`.
+
 ### 3. Generar Exámenes con `pyexamgenerator`
 
 #### 3.1. Crear un Examen Sencillo

@@ -15,9 +15,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, Cm
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.section import WD_SECTION
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, ns
 
 import pandas as pd
@@ -754,12 +755,25 @@ class ExamGenerator:
             document.paragraphs[-1].runs[0].font.size = Pt(font_size)
             student_table = document.add_table(rows=4, cols=2)
             student_table.style = 'Table Grid'
+            # Use a fixed layout so the column widths below are honored by Word.
+            student_table.autofit = False
             student_data = ['Nombre', 'Apellidos', 'DNI/NIE', 'Firma']
             for j, data in enumerate(student_data):
                 cell = student_table.cell(j, 0)
                 cell.text = data
                 for paragraph in cell.paragraphs:
                     paragraph.runs[0].font.size = Pt(font_size)
+            # The label column only needs room for words like 'Apellidos'/'DNI/NIE'; give the rest of
+            # the page width to the data column so there is plenty of space to write name, surname, etc.
+            answer_section = document.sections[-1]
+            available_width = answer_section.page_width - answer_section.left_margin - answer_section.right_margin
+            label_col_width = Cm(3.5)
+            if label_col_width > available_width * 0.5:
+                label_col_width = int(available_width * 0.4)
+            value_col_width = available_width - label_col_width
+            for row in student_table.rows:
+                row.cells[0].width = label_col_width
+                row.cells[1].width = value_col_width
             student_table.rows[3].height = Inches(1)
 
             document.add_heading('Hoja de respuestas', level=1)
@@ -779,9 +793,15 @@ class ExamGenerator:
                 else:
                     print(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
 
-            table = document.add_table(rows=len(exam_df_shuffled) + 1, cols=5)
+            # Answer sheet: 'Pregunta' + one column per answer option plus an extra 'NC' (no
+            # contestada) column so students can explicitly mark a question as unanswered instead of
+            # leaving it blank.
+            headers = ['Pregunta', 'a', 'b', 'c', 'd', 'NC']
+            table = document.add_table(rows=len(exam_df_shuffled) + 1, cols=len(headers))
             table.style = 'Table Grid'
-            headers = ['Pregunta', 'a', 'b', 'c', 'd']
+            # Center the whole table on the page and use a fixed layout so the widths below are kept.
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            table.autofit = False
             for j, header in enumerate(headers):
                 cell = table.cell(0, j)
                 cell.text = header
@@ -792,19 +812,28 @@ class ExamGenerator:
                 cell.text = self._format_question_number(row['Número de pregunta'])
                 for paragraph in cell.paragraphs:
                     paragraph.runs[0].font.size = Pt(font_size)
-            for j in range(5):
-                max_width = 0
-                for k in range(len(exam_df_shuffled) + 1):
-                    cell_text = table.cell(k, j).text
-                    cell_width = len(cell_text)
-                    if cell_width > max_width:
-                        max_width = cell_width
-                    table.columns[j].width = Inches(max_width * 0.08)
-                    for row in table.rows:
-                        cell = row.cells[j]
-                        for paragraph in cell.paragraphs:
-                            for run in paragraph.runs:
-                                run.font.size = Pt(font_size)
+
+            # Column widths: 1 cm by default, growing only when the content needs more room (e.g. the
+            # 'Pregunta' column). The answer columns (a/b/c/d/NC) stay at 1 cm.
+            min_col_width_cm = 1.0
+            approx_char_width_cm = 0.23
+            col_widths = []
+            for j in range(len(headers)):
+                longest = max(len(table.cell(k, j).text) for k in range(len(exam_df_shuffled) + 1))
+                width_cm = max(min_col_width_cm, longest * approx_char_width_cm + 0.2)
+                col_widths.append(Cm(width_cm))
+
+            # Apply the widths to every cell (most reliable in Word) and center the content both
+            # horizontally and vertically, keeping the configured font size.
+            for j in range(len(headers)):
+                for row in table.rows:
+                    cell = row.cells[j]
+                    cell.width = col_widths[j]
+                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                    for paragraph in cell.paragraphs:
+                        paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                        for run in paragraph.runs:
+                            run.font.size = Pt(font_size)
 
             document = self.add_page_number(document)
             self._remove_empty_last_section(document)

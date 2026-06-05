@@ -89,20 +89,24 @@ Luego, te preguntará cómo quieres guardar el resultado. Tienes tres opciones:
 
 ![](/_static/gifs/parte5_tarea2_v01.gif)
 
-### Tarea 3: Actualizar el banco con un examen ya generado
+### Tarea 3: Actualizar el banco con uno o varios exámenes ya generados
 
-Si marcaste **"Actualizar Archivo Excel con Uso"** al generar un examen, el banco ya queda al día. Pero si generaste un examen sin esa opción (o lo hiciste desde otro equipo o en otra sesión), puedes registrar su uso *a posteriori* con la sección **"Actualizar Banco con Examen Existente"**.
+Si marcaste **"Actualizar Archivo Excel con Uso"** al generar un examen, el banco ya queda al día. Pero si generaste exámenes sin esa opción (o lo hiciste desde otro equipo o en otra sesión), puedes registrar su uso *a posteriori* con la sección **"Actualizar Banco con Exámenes Existentes"**. Puedes registrar **varios exámenes de una sola vez**, dándole a cada uno su propia etiqueta.
 
 *   **Banco a Actualizar:**
     *   **Acción:** Haz clic en **"Seleccionar"** y elige tu archivo maestro, **`banco_principal.xlsx`**.
 
-*   **Examen Generado (XLSX):**
-    *   **Acción:** Haz clic en **"Seleccionar"** y elige el archivo **`..._completo.xlsx`** que produjo la pestaña *Generar Exámenes* (contiene las preguntas que se usaron en ese examen).
+*   **Exámenes a registrar:**
+    *   **Acción:** Haz clic en **"Añadir..."** y elige uno o varios archivos **`..._completo.xlsx`** que produjo la pestaña *Generar Exámenes* (cada uno contiene las preguntas que se usaron en ese examen). Cada examen aparece en la lista con tres columnas: el **archivo**, su **etiqueta** y la **"Columna en XLSX"** que realmente se escribirá (sin tildes ni caracteres especiales; por ejemplo `Evaluación` se guardará como `Evaluacion`, no como `Evaluaci_n`).
+    *   **Editar la etiqueta:** Haz **doble clic** sobre una fila (o selecciónala y pulsa **"Editar etiqueta"**) y escribe el nombre para su columna de uso, por ejemplo **`Parcial1_24-25`**. Cada examen tendrá su propia columna `<etiqueta>_uso`.
+    *   **Quitar / Limpiar:** Usa **"Quitar"** para eliminar el examen seleccionado o **"Limpiar"** para vaciar la lista.
 
-*   **Etiqueta del Examen (opcional):**
-    *   **Acción:** Escribe un nombre para la columna de uso, por ejemplo **`Parcial1_24-25`**. Si lo dejas en blanco, se usará el nombre del archivo del examen.
+*   **Etiqueta automática (desde el nombre del archivo):** si tus archivos tienen nombres largos y descriptivos, puedes generar las etiquetas automáticamente en lugar de escribirlas a mano:
+    *   **Delimitador:** el carácter por el que se parte el nombre del archivo (por defecto **`_`**).
+    *   **Partes a conservar:** qué trozos quieres conservar, indicados por su posición. Se numeran desde **1** (la primera parte); admite **rangos** `a:b` (ambos incluidos) e **índices negativos** contados desde el final (`-1` es la última parte). Por ejemplo, para `examen_Prevención_Industrial_de_Riesgos_..._25_26_1A_completo.xlsx`, la expresión **`2:3, -4:-2`** produce la etiqueta `Prevención_Industrial_25_26_1A`. Si lo dejas en blanco, se usa el nombre completo del archivo.
+    *   **Botón "Aplicar a la lista":** recalcula la etiqueta de **todos** los exámenes de la lista con el delimitador y las partes indicados. (Los exámenes que añadas después también tomarán su etiqueta inicial con esa misma configuración.) Puedes seguir ajustando cualquier etiqueta a mano con "Editar etiqueta".
 
-*   **Botón "Actualizar Banco con Examen":**
-    *   **Acción:** Haz clic en él. La aplicación empareja por enunciado las preguntas del examen con las del banco (el orden de las respuestas se baraja en el examen, por eso el cruce se hace por el texto de la pregunta), marca cada pregunta usada en la columna `<etiqueta>_uso` y recalcula la columna `Veces usada en examen`. Después te preguntará si quieres sobrescribir el banco o guardar una copia, igual que en la Tarea 2.
+*   **Botón "Actualizar Banco con Exámenes":**
+    *   **Acción:** Haz clic en él. La aplicación empareja por enunciado las preguntas de **cada** examen con las del banco (el orden de las respuestas se baraja en el examen, por eso el cruce se hace por el texto de la pregunta), marca cada pregunta usada en la columna `<etiqueta>_uso` correspondiente y recalcula la columna `Veces usada en examen` sumando todas las columnas de uso. Te mostrará un resumen con las coincidencias de cada examen y después te preguntará si quieres sobrescribir el banco o guardar una copia, igual que en la Tarea 2.
 
 Esto alimenta la opción **"menos usadas"** de la pestaña *Generar Exámenes*, manteniendo el reparto de preguntas equilibrado a lo largo del curso.
