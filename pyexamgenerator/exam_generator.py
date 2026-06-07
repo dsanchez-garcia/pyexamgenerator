@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from docx import Document
-from docx.shared import Inches, Pt, Cm
+from docx.shared import Inches, Pt, Cm, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
@@ -27,7 +27,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import os
-from typing import Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
+from typing import Callable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -53,6 +53,8 @@ class ExamGenerator:
         # Records (one per generated exam type) with the paths of every output file, so a grading
         # session can later be resumed directly from the generated exams.
         self.generated_exams = []
+        self.last_usage_warning_questions = pd.DataFrame()
+        self.generation_cancelled = False
 
     @staticmethod
     def suggest_moodle_config(
@@ -134,6 +136,153 @@ class ExamGenerator:
             exam_df_variant.apply(shuffle_row_answers, axis=1)
         exam_df_variant.drop(columns=['Texto respuesta correcta'], inplace=True)
         return exam_df_variant
+
+    @staticmethod
+    def _generation_usage_column_name(exam: Optional[str], course: Optional[str]) -> str:
+        """Builds the usage column name used while generating exams."""
+        safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(exam or "examen")).strip('_') or "examen"
+        safe_course_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(course or "curso")).strip('_') or "curso"
+        return f'{safe_exam_name}_{safe_course_name}_uso'
+
+    @staticmethod
+    def _questions_over_usage_threshold(exam_df: pd.DataFrame, threshold: int) -> pd.DataFrame:
+        """Returns selected questions whose aggregate usage is strictly greater than threshold."""
+        usage_column = 'Veces usada en examen'
+        if exam_df is None or exam_df.empty or usage_column not in exam_df.columns:
+            return pd.DataFrame()
+
+        usage_counts = pd.to_numeric(exam_df[usage_column], errors='coerce').fillna(0)
+        warning_df = exam_df.loc[usage_counts > threshold].copy()
+        if warning_df.empty:
+            return pd.DataFrame()
+
+        question_number_column = 'N\u00famero de pregunta'
+        display_columns = [
+            col for col in [question_number_column, 'Tema', 'Pregunta', usage_column]
+            if col in warning_df.columns
+        ]
+        return warning_df.loc[:, display_columns].copy()
+
+    @staticmethod
+    def _format_usage_warning_message(warning_df: pd.DataFrame, threshold: int) -> str:
+        """Formats a concise warning for questions that have already been used often."""
+        lines = [
+            f"Hay {len(warning_df)} pregunta(s) seleccionada(s) usadas mas de {threshold} veces.",
+            "",
+        ]
+        max_rows = 12
+        question_number_column = 'N\u00famero de pregunta'
+        usage_column = 'Veces usada en examen'
+        for _, row in warning_df.head(max_rows).iterrows():
+            number = row.get(question_number_column, '')
+            topic = row.get('Tema', '')
+            statement = str(row.get('Pregunta', '')).strip()
+            usage = row.get(usage_column, '')
+            prefix_parts = []
+            if number != '':
+                prefix_parts.append(f"#{number}")
+            if topic != '':
+                prefix_parts.append(str(topic))
+            prefix = " - ".join(prefix_parts)
+            if prefix:
+                prefix += ": "
+            lines.append(f"- {prefix}{statement} ({usage} usos)")
+        if len(warning_df) > max_rows:
+            lines.append(f"- ... y {len(warning_df) - max_rows} mas.")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _style_question_heading(paragraph, font_size: int, font_name: Optional[str] = None) -> None:
+        """Keeps question headings compact while making them visible in Word navigation."""
+        paragraph.style = 'Heading 2'
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.keep_with_next = True
+        for run in paragraph.runs:
+            run.font.size = Pt(font_size)
+            run.font.bold = True
+            run.font.name = font_name or 'Calibri'
+            run.font.color.rgb = RGBColor(0, 0, 0)
+
+    def _add_question_block(
+            self,
+            document: Document,
+            row: pd.Series,
+            font_size: int,
+            include_solution: bool = False,
+            use_two_digits: bool = False
+    ) -> None:
+        """Adds a question as a Heading 2 paragraph plus normal paragraphs with answers/details."""
+        question_number_column = 'N\u00famero de pregunta'
+        pregunta_num = row[question_number_column]
+        formatted_pregunta_num = self._format_question_number(pregunta_num) if use_two_digits else str(int(pregunta_num))
+
+        question_paragraph = document.add_paragraph(style='Heading 2')
+        question_paragraph.add_run(f"Pregunta {formatted_pregunta_num}: ")
+        question_paragraph.add_run(str(row['Pregunta']))
+        normal_font_name = document.styles['Normal'].font.name or 'Calibri'
+        self._style_question_heading(question_paragraph, font_size, normal_font_name)
+
+        details_paragraph = document.add_paragraph()
+        details_paragraph.paragraph_format.space_before = Pt(0)
+        details_paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"d) {row['Respuesta D']}").font.size = Pt(font_size)
+        if include_solution:
+            details_paragraph.add_run(f"\nRespuesta correcta: {row['Respuesta correcta'].lower()}").font.size = Pt(font_size)
+            details_paragraph.add_run(f"\nTexto relevante: {row['Texto relevante']}").font.size = Pt(font_size)
+            details_paragraph.add_run(f"\nTema: {row['Tema']}").font.size = Pt(font_size)
+
+    @staticmethod
+    def _add_student_identification_header(
+            document: Document,
+            subject: Optional[str],
+            exam: Optional[str],
+            course: Optional[str],
+            exam_type_name: Optional[str],
+            font_size: int
+    ) -> None:
+        """Adds repeated student identification blanks to the student document header."""
+        section = document.sections[0]
+        header = section.header
+        header_paragraph = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        header_paragraph.text = f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name}"
+        header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        for run in header_paragraph.runs:
+            run.font.size = Pt(font_size)
+
+        available_width = section.page_width - section.left_margin - section.right_margin
+        table = header.add_table(rows=2, cols=4, width=available_width)
+        table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
+
+        labels = [["Nombre", "Apellidos"], ["DNI/NIE", "Firma"]]
+        label_width = Cm(2.1)
+        value_width = int((available_width - (label_width * 2)) / 2)
+        for row_idx, row_labels in enumerate(labels):
+            for pair_idx, label in enumerate(row_labels):
+                label_cell = table.cell(row_idx, pair_idx * 2)
+                value_cell = table.cell(row_idx, pair_idx * 2 + 1)
+                label_cell.text = label
+                label_cell.width = label_width
+                value_cell.width = value_width
+                for cell in (label_cell, value_cell):
+                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                    for paragraph in cell.paragraphs:
+                        for run in paragraph.runs:
+                            run.font.size = Pt(font_size)
+
+    @staticmethod
+    def _add_exam_usage_column_for_export(exam_df: pd.DataFrame, usage_column_name: str) -> pd.DataFrame:
+        """Returns the generated-exam XLSX dataframe with a final all-ones usage column."""
+        export_df = exam_df.copy()
+        export_df = export_df.loc[:, ~export_df.columns.str.contains('unnamed', case=False)]
+        if usage_column_name in export_df.columns:
+            export_df = export_df.drop(columns=[usage_column_name])
+        export_df[usage_column_name] = 1
+        return export_df
 
     def _select_questions_by_topic(
             self,
@@ -531,6 +680,9 @@ class ExamGenerator:
             answer_sheet_instructions: Optional[str] = None,
             template_docx_path: Optional[str] = None,
             session_output_path: Optional[str] = None,
+            usage_warning_enabled: bool = True,
+            usage_warning_threshold: int = 3,
+            usage_warning_callback: Optional[Callable[[pd.DataFrame, int, str], bool]] = None,
             verbose: bool = False
     ):
         """
@@ -571,10 +723,16 @@ class ExamGenerator:
             template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
             session_output_path (Optional[str]): If set, writes a resumable grading session (``.pkl`` +
                 ``.json``) recording the paths of every generated exam, so correction can be resumed later.
+            usage_warning_enabled (bool): If True, warns when selected questions have been used more than
+                ``usage_warning_threshold`` times according to 'Veces usada en examen'.
+            usage_warning_threshold (int): Usage count threshold for the repeated-question warning.
+            usage_warning_callback (Optional[Callable]): Optional callback that receives
+                ``(warning_df, threshold, message)`` and returns True to continue or False to cancel.
             verbose (bool): If True, prints detailed progress messages to the console.
         """
         # Start a fresh list of generated-exam records for this run.
         self.generated_exams = []
+        self.generation_cancelled = False
 
         if self.df is None:
             self.df = self.read_questions_from_excel(bank_excel_path)
@@ -629,6 +787,34 @@ class ExamGenerator:
             else:
                 print(f"Verbose: self.exam_df no es un DataFrame: {self.exam_df}")
 
+        self.last_usage_warning_questions = pd.DataFrame()
+        if usage_warning_enabled:
+            try:
+                usage_warning_threshold_int = int(usage_warning_threshold)
+            except (TypeError, ValueError):
+                usage_warning_threshold_int = 3
+            self.last_usage_warning_questions = self._questions_over_usage_threshold(
+                self.exam_df,
+                usage_warning_threshold_int
+            )
+            if not self.last_usage_warning_questions.empty:
+                warning_message = self._format_usage_warning_message(
+                    self.last_usage_warning_questions,
+                    usage_warning_threshold_int
+                )
+                if usage_warning_callback:
+                    should_continue = usage_warning_callback(
+                        self.last_usage_warning_questions.copy(),
+                        usage_warning_threshold_int,
+                        warning_message
+                    )
+                    if not should_continue:
+                        self.generation_cancelled = True
+                        print("Generacion de examenes cancelada por alerta de uso de preguntas.")
+                        return
+                else:
+                    print(warning_message)
+
         if check:
             preview_exam_df = self.exam_df.copy()
             preview_exam_df['Número de pregunta'] = range(1, len(preview_exam_df) + 1)
@@ -676,6 +862,7 @@ class ExamGenerator:
         if output_dir is None:
             output_dir = os.path.dirname(bank_excel_path)
         os.makedirs(output_dir, exist_ok=True)
+        usage_column_name = self._generation_usage_column_name(exam, course)
 
         for i in range(num_exams_to_generate):
             exam_type_name = exam_name_list[i]
@@ -720,33 +907,18 @@ class ExamGenerator:
             section.left_margin = Inches(left_margin)
             section.right_margin = Inches(right_margin)
 
-            header = section.header
-            header_paragraph = header.paragraphs[0]
-            header_paragraph.text = f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name}"
-            header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            header_paragraph.runs[0].font.size = Pt(font_size)
+            self._add_student_identification_header(
+                document=document,
+                subject=subject,
+                exam=exam,
+                course=course,
+                exam_type_name=exam_type_name,
+                font_size=font_size
+            )
 
-            for index, row in exam_df_shuffled.iterrows():
-                paragraph = document.add_paragraph()
-                pregunta_num = row['Número de pregunta']
-                use_two_digits = len(exam_df_shuffled) > 9
-                formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
-
-                # Add the question number in bold.
-                run_numero = paragraph.add_run(f"Pregunta {formatted_pregunta_num}: ")
-                run_numero.font.size = Pt(font_size)
-                run_numero.font.bold = True
-                # Add the question statement in bold.
-                run_enunciado = paragraph.add_run(f"{row['Pregunta']}\n")
-                run_enunciado.font.size = Pt(font_size)
-                run_enunciado.font.bold = True
-                # Add the answer options.
-                paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
-                # No trailing line break on the last option: the paragraph style already provides
-                # enough spacing to separate it from the next question.
-                paragraph.add_run(f"d) {row['Respuesta D']}").font.size = Pt(font_size)
+            use_two_digits = len(exam_df_shuffled) > 9
+            for _, row in exam_df_shuffled.iterrows():
+                self._add_question_block(document, row, font_size, include_solution=False, use_two_digits=use_two_digits)
 
             # Start the answer sheet on an odd page so it prints as a single, self-contained sheet
             # (front of a physical page) while staying in the same document as the questions.
@@ -860,37 +1032,17 @@ class ExamGenerator:
             full_header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             full_header_paragraph.runs[0].font.size = Pt(font_size)
 
-            for index, row in exam_df_shuffled.iterrows():
-                paragraph = full_document.add_paragraph()
-                pregunta_num = row['Número de pregunta']
-                use_two_digits = len(exam_df_shuffled) > 9
-                formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
-
-                # Add the question number in bold.
-                run_numero = paragraph.add_run(f"Pregunta {formatted_pregunta_num}: ")
-                run_numero.font.size = Pt(font_size)
-                run_numero.font.bold = True
-                # Add the question statement in bold.
-                run_enunciado = paragraph.add_run(f"{row['Pregunta']}\n")
-                run_enunciado.font.size = Pt(font_size)
-                run_enunciado.font.bold = True
-                # Add the answer options (not bold).
-                paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"d) {row['Respuesta D']}\n").font.size = Pt(font_size)
-                # Add the correct answer and relevant text (not bold).
-                paragraph.add_run(f"Respuesta correcta: {row['Respuesta correcta'].lower()}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"Texto relevante: {row['Texto relevante']}\n").font.size = Pt(font_size)
-                # No trailing line break: the paragraph style already separates one question from the next.
-                paragraph.add_run(f"Tema: {row['Tema']}").font.size = Pt(font_size)
+            use_two_digits = len(exam_df_shuffled) > 9
+            for _, row in exam_df_shuffled.iterrows():
+                self._add_question_block(full_document, row, font_size, include_solution=True, use_two_digits=use_two_digits)
 
 
             full_document = self.add_page_number(full_document)
             self._remove_empty_last_section(full_document)
             full_document.save(full_docx_path)
 
-            exam_df_shuffled.to_excel(excel_path_out, index=False)
+            exam_export_df = self._add_exam_usage_column_for_export(exam_df_shuffled, usage_column_name)
+            exam_export_df.to_excel(excel_path_out, index=False)
 
             if export_moodle_xml:
                 self.generate_moodle_xml(
@@ -920,11 +1072,6 @@ class ExamGenerator:
             self._save_grading_session(session_output_path, subject=subject, exam=exam, course=course)
 
         if update_excel:
-            new_column_name_base = f'{exam}_{course}'
-            safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', exam)
-            safe_course_name = re.sub(r'[^a-zA-Z0-9_]', '_', course)
-            usage_column_name = f'{safe_exam_name}_{safe_course_name}_uso'
-
             if usage_column_name not in self.df.columns:
                 self.df[usage_column_name] = 0
 

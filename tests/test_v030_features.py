@@ -228,6 +228,94 @@ def test_answer_sheet_has_nc_column_centered(tmp_path):
     assert answer_table.cell(1, 0).paragraphs[0].alignment == WD_PARAGRAPH_ALIGNMENT.CENTER
 
 
+def test_student_docx_has_identification_blanks_in_repeated_header(tmp_path):
+    document = _generate_student_docx(tmp_path, exam="HeaderFields", num_questions=12)
+    header = document.sections[0].header
+    assert header.tables, "La cabecera del alumno debe incluir una tabla de identificacion."
+    header_cells_text = "\n".join(
+        cell.text
+        for table in header.tables
+        for row in table.rows
+        for cell in row.cells
+    )
+    for label in ["Nombre", "Apellidos", "DNI/NIE", "Firma"]:
+        assert label in header_cells_text
+    assert len(document.sections) >= 2
+    assert document.sections[1].header.is_linked_to_previous
+
+
+def test_question_statements_use_heading_2_for_word_navigation(tmp_path):
+    document = _generate_student_docx(tmp_path, exam="Heading2", num_questions=4)
+    question_paragraphs = [p for p in document.paragraphs if p.text.startswith("Pregunta ")]
+    assert question_paragraphs
+    for paragraph in question_paragraphs:
+        assert paragraph.style.name == "Heading 2"
+        assert all(run.font.bold for run in paragraph.runs if run.text)
+        assert not paragraph.text.endswith("\n")
+
+
+def test_generated_complete_xlsx_marks_current_exam_usage_column_as_one(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    bank = _build_bank_df({"Tema 01": 5})
+    bank["Historico_uso"] = [0, 1, 0, 1, 0]
+    bank["Veces usada en examen"] = [0, 1, 2, 3, 4]
+    bank.to_excel(bank_path, index=False)
+
+    generator = ExamGenerator()
+    random.seed(20260601)
+    generator.generate_exam_from_excel(
+        bank_excel_path=str(bank_path),
+        output_dir=str(tmp_path),
+        subject="Geo",
+        exam="UsoXlsx",
+        course="25-26",
+        exam_names=["A"],
+        total_questions=3,
+        export_moodle_xml=False,
+        update_excel=False,
+    )
+
+    exam_xlsx = tmp_path / "examen_Geo_UsoXlsx_25-26_A_completo.xlsx"
+    df = pd.read_excel(exam_xlsx)
+    assert df.columns[-1] == "UsoXlsx_25_26_uso"
+    assert df["UsoXlsx_25_26_uso"].tolist() == [1, 1, 1]
+
+
+def test_usage_warning_callback_can_cancel_generation(tmp_path):
+    bank_path = tmp_path / "bank.xlsx"
+    bank = _build_bank_df({"Tema 01": 3})
+    bank["Veces usada en examen"] = [4, 3, 5]
+    bank.to_excel(bank_path, index=False)
+
+    calls = []
+
+    def cancel_callback(warning_df, threshold, message):
+        calls.append((warning_df.copy(), threshold, message))
+        return False
+
+    generator = ExamGenerator()
+    generator.generate_exam_from_excel(
+        bank_excel_path=str(bank_path),
+        output_dir=str(tmp_path),
+        subject="Geo",
+        exam="Warn",
+        course="25-26",
+        exam_names=["A"],
+        export_moodle_xml=False,
+        update_excel=False,
+        usage_warning_threshold=3,
+        usage_warning_callback=cancel_callback,
+    )
+
+    assert generator.generation_cancelled is True
+    assert len(calls) == 1
+    warning_df, threshold, message = calls[0]
+    assert threshold == 3
+    assert len(warning_df) == 2
+    assert "mas de 3 veces" in message
+    assert not (tmp_path / "examen_Geo_Warn_25-26_A.docx").exists()
+
+
 # --- Task 2: update bank usage from an existing exam ------------------------------------------
 
 def test_update_bank_with_exam_marks_used_questions(tmp_path):

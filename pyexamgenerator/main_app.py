@@ -157,6 +157,8 @@ class ExamApp:
         self.xml_cat_additional_text = tk.StringVar(value="Prueba GUI")
         self.export_moodle = tk.BooleanVar(value=False)
         self.update_excel = tk.BooleanVar(value=False)
+        self.usage_alert_enabled_var = tk.BooleanVar(value=True)
+        self.usage_alert_threshold_var = tk.StringVar(value="3")
         self.num_columns_var = tk.StringVar(value="3")
         self.selection_method_var = tk.StringVar(value="diccionario")
         self.total_questions_var = tk.StringVar(value="20")
@@ -2118,6 +2120,20 @@ class ExamApp:
                 text="azar: selecciona preguntas aleatoriamente. primeras: selecciona las primeras preguntas encontradas para el tema. menos usadas: selecciona las preguntas menos usadas.")
         row += 1  # Increment the row for the next LabelFrame
 
+        usage_alert_frame = ttk.LabelFrame(inner_frame_exam, text="Alerta de uso de preguntas")
+        usage_alert_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
+        usage_alert_check = ttk.Checkbutton(
+            usage_alert_frame,
+            text="Avisar si alguna pregunta supera este numero de usos:",
+            variable=self.usage_alert_enabled_var
+        )
+        usage_alert_check.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(usage_alert_check, text="Si esta activado, se mostrara una alerta antes de generar cuando alguna pregunta seleccionada tenga mas usos que el umbral indicado.")
+        usage_alert_entry = ttk.Entry(usage_alert_frame, width=5, textvariable=self.usage_alert_threshold_var)
+        usage_alert_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(usage_alert_entry, text="Umbral de usos. Por defecto 3; se avisa solo cuando el valor de 'Veces usada en examen' es mayor que este numero.")
+        row += 1
+
         # 5. Docx style (spans 3 columns)
         style_frame = ttk.LabelFrame(inner_frame_exam, text="Estilo del Documento")
         style_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
@@ -2704,6 +2720,8 @@ class ExamApp:
         update_excel = self.update_excel.get()
         xml_use_answer_text = self.xml_use_answer_text_var.get()
         template_docx_path = self.template_docx_path_var.get().strip() or None
+        usage_alert_enabled = self.usage_alert_enabled_var.get()
+        usage_alert_threshold_str = self.usage_alert_threshold_var.get().strip()
 
         if not os.path.exists(excel_path):
             messagebox.showerror("Error", f"El archivo Excel '{excel_path}' no se encuentra.")
@@ -2717,8 +2735,11 @@ class ExamApp:
             right_margin = float(right_margin_str) if right_margin_str else 0.5
             font_size = int(font_size_str) if font_size_str else 9
             penalty = int(penalty_str) if penalty_str else -25
+            usage_alert_threshold = int(usage_alert_threshold_str) if usage_alert_threshold_str else 3
+            if usage_alert_threshold < 0:
+                raise ValueError
         except ValueError:
-            messagebox.showerror("Error", "Por favor, introduce valores numéricos válidos para los márgenes, tamaño de fuente, número de exámenes y penalización.")
+            messagebox.showerror("Error", "Por favor, introduce valores numericos validos para los margenes, tamano de fuente, numero de examenes, penalizacion y umbral de alerta.")
             return
 
         exam_name_list = [name.strip() for name in exam_names_str.split(',')] if exam_names_str else None
@@ -2785,6 +2806,12 @@ class ExamApp:
 
         output_dir_value = self.gen_exams_output_dir_var.get() or None
 
+        def confirm_usage_warning(_warning_df: pd.DataFrame, _threshold: int, message: str) -> bool:
+            return messagebox.askyesno(
+                "Alerta de uso de preguntas",
+                f"{message}\n\nDeseas continuar con la generacion?"
+            )
+
         self.update_status("Generando exámenes...")
         try:
             self.exam_generator.generate_exam_from_excel(
@@ -2811,8 +2838,15 @@ class ExamApp:
                 update_excel=update_excel,
                 answer_sheet_instructions=answer_sheet_instructions,
                 template_docx_path=template_docx_path,
-                session_output_path=(self.gen_session_output_var.get().strip() or None)
+                session_output_path=(self.gen_session_output_var.get().strip() or None),
+                usage_warning_enabled=usage_alert_enabled,
+                usage_warning_threshold=usage_alert_threshold,
+                usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None
             )
+            if getattr(self.exam_generator, "generation_cancelled", False):
+                self.update_status("Generacion de examenes cancelada.")
+                messagebox.showinfo("Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
+                return
             self.update_status("Exámenes generados.")
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
 
@@ -3212,6 +3246,8 @@ class ExamApp:
             "xml_cat_additional_text": self.xml_cat_additional_text.get(),
             "export_moodle": self.export_moodle.get(),
             "update_excel": self.update_excel.get(),
+            "usage_alert_enabled": self.usage_alert_enabled_var.get(),
+            "usage_alert_threshold": self.usage_alert_threshold_var.get(),
             "xml_use_answer_text": self.xml_use_answer_text_var.get(),
             "template_docx_path": self.template_docx_path_var.get(),
         }
@@ -3274,6 +3310,8 @@ class ExamApp:
         self.xml_cat_additional_text.set(config.get("xml_cat_additional_text", self.xml_cat_additional_text.get()))
         self.export_moodle.set(config.get("export_moodle", self.export_moodle.get()))
         self.update_excel.set(config.get("update_excel", self.update_excel.get()))
+        self.usage_alert_enabled_var.set(config.get("usage_alert_enabled", self.usage_alert_enabled_var.get()))
+        self.usage_alert_threshold_var.set(config.get("usage_alert_threshold", self.usage_alert_threshold_var.get()))
         self.xml_use_answer_text_var.set(config.get("xml_use_answer_text", self.xml_use_answer_text_var.get()))
         self.template_docx_path_var.set(config.get("template_docx_path", self.template_docx_path_var.get()))
 
