@@ -56,6 +56,16 @@ class ExamGenerator:
         self.last_usage_warning_questions = pd.DataFrame()
         self.generation_cancelled = False
 
+    # Fraction percentages commonly accepted by Moodle for multichoice answers.
+    _MOODLE_GRADE_OPTIONS_PERCENT: Tuple[float, ...] = (
+        -100.0, -90.0, -83.3333333, -80.0, -75.0, -70.0, -66.6666667, -60.0,
+        -50.0, -40.0, -33.3333333, -30.0, -25.0, -20.0, -16.6666667,
+        -14.2857143, -12.5, -11.1111111, -10.0, -5.0, 0.0, 5.0, 10.0,
+        11.1111111, 12.5, 14.2857143, 16.6666667, 20.0, 25.0, 30.0,
+        33.3333333, 40.0, 50.0, 60.0, 66.6666667, 70.0, 75.0, 80.0,
+        83.3333333, 90.0, 100.0,
+    )
+
     @staticmethod
     def suggest_moodle_config(
         exam: Optional[str] = None,
@@ -106,6 +116,40 @@ class ExamGenerator:
     def _format_question_number(question_number: int) -> str:
         """Formats question numbers using two digits (01, 02, ...)."""
         return f"{int(question_number):02d}"
+
+    @classmethod
+    def _nearest_moodle_grade_option_percent(cls, fraction_percent: float) -> float:
+        """Snaps any percentage to the nearest Moodle-compatible fraction option."""
+        try:
+            numeric_value = float(fraction_percent)
+        except (TypeError, ValueError):
+            numeric_value = -25.0
+        return min(cls._MOODLE_GRADE_OPTIONS_PERCENT, key=lambda option: abs(option - numeric_value))
+
+    @staticmethod
+    def _format_fraction_percent_for_xml(fraction_percent: float) -> str:
+        """Formats a percentage so Moodle XML receives stable numeric strings."""
+        numeric_value = round(float(fraction_percent), 7)
+        if abs(numeric_value - int(numeric_value)) < 1e-7:
+            return str(int(numeric_value))
+        return f"{numeric_value:.7f}".rstrip('0').rstrip('.')
+
+    @staticmethod
+    def _infer_exam_metadata_from_generated_xlsx_name(exam_xlsx_path: str) -> Tuple[Optional[str], Optional[str]]:
+        """Best-effort extraction of exam and exam type from a generated ``*_completo.xlsx`` name."""
+        stem = os.path.splitext(os.path.basename(exam_xlsx_path))[0]
+        if stem.lower().endswith("_completo"):
+            stem = stem[:-len("_completo")]
+
+        parts = [part.strip() for part in stem.split("_") if part.strip()]
+        if len(parts) < 2:
+            return None, None
+
+        inferred_exam_type = parts[-1]
+        inferred_exam = None
+        if len(parts) >= 5 and re.fullmatch(r"\d{2}-\d{2}", parts[-2]):
+            inferred_exam = parts[-3]
+        return inferred_exam, inferred_exam_type
 
     def _build_exam_variant_df(self, source_df: pd.DataFrame) -> pd.DataFrame:
         """Builds one exam variant with a canonical order reused by all outputs."""
@@ -576,7 +620,7 @@ class ExamGenerator:
 
     def generate_moodle_xml(self, df: pd.DataFrame, file_name: str, num_total_questions: int,
                             exam: Optional[str] = None, exam_type: Optional[str] = None,
-                            xml_cat_additional_text: Optional[str] = None, penalty: int = -25,
+                            xml_cat_additional_text: Optional[str] = None, penalty: float = -25,
                             xml_use_answer_text: bool = False):
         """
         Generates a Moodle XML file from a DataFrame, including category information and correctly
@@ -589,12 +633,15 @@ class ExamGenerator:
             exam (Optional[str], optional): The name of the exam.
             exam_type (Optional[str], optional): The type of exam.
             xml_cat_additional_text (Optional[str], optional): Additional text for the Moodle XML category.
-            penalty (int, optional): The penalty percentage for an incorrect answer (e.g., -25 for 25%).
+            penalty (float, optional): Penalty percentage for an incorrect answer.
         """
         self.quiz = Element('quiz')
         self.category = SubElement(self.quiz, 'question', type='category')
         self.category_name = SubElement(self.category, 'category')
         self.text = SubElement(self.category_name, 'text')
+        wrong_fraction = self._format_fraction_percent_for_xml(
+            self._nearest_moodle_grade_option_percent(penalty)
+        )
 
         # Build the category text dynamically.
         category_text = "$course$/top/Examen"
@@ -607,7 +654,7 @@ class ExamGenerator:
 
         self.text.text = category_text
         for _, row in df.iterrows():
-            correct_answer = row['Respuesta correcta'].lower()
+            correct_answer = str(row.get('Respuesta correcta', '')).strip().lower()
 
             pregunta_num = row['Número de pregunta']
             formatted_pregunta_num = self._format_question_number(pregunta_num)
@@ -624,34 +671,109 @@ class ExamGenerator:
             if correct_answer == 'a':
                 self.answer_a = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_a = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_a = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_a, 'text')
             self.text.text = row.get('Respuesta A', '') if xml_use_answer_text else 'a'
 
             if correct_answer == 'b':
                 self.answer_b = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_b = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_b = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_b, 'text')
             self.text.text = row.get('Respuesta B', '') if xml_use_answer_text else 'b'
 
             if correct_answer == 'c':
                 self.answer_c = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_c = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_c = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_c, 'text')
             self.text.text = row.get('Respuesta C', '') if xml_use_answer_text else 'c'
 
             if correct_answer == 'd':
                 self.answer_d = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_d = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_d = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_d, 'text')
             self.text.text = row.get('Respuesta D', '') if xml_use_answer_text else 'd'
 
         self.xml_str = minidom.parseString(tostring(self.quiz)).toprettyxml(indent="  ")
         with open(file_name, 'w', encoding='utf-8') as f:
             f.write(self.xml_str)
+
+    def generate_moodle_xml_from_existing_exam_xlsx(
+            self,
+            exam_xlsx_path: str,
+            xml_output_path: Optional[str] = None,
+            exam: Optional[str] = None,
+            exam_type: Optional[str] = None,
+            xml_cat_additional_text: Optional[str] = None,
+            penalty: float = -25,
+            xml_use_answer_text: bool = False,
+    ) -> str:
+        """Generates Moodle XML from an already generated ``*_completo.xlsx`` exam file.
+
+        Args:
+            exam_xlsx_path (str): Path to the existing exam XLSX.
+            xml_output_path (Optional[str]): Output XML path. If omitted, uses the same base name
+                and drops the ``_completo`` suffix when present.
+            exam (Optional[str]): Exam name for the category path. If not provided, it is inferred
+                from the file name when possible.
+            exam_type (Optional[str]): Exam type/version for the category path. If not provided, it is
+                inferred from the file name when possible.
+            xml_cat_additional_text (Optional[str]): Extra category text appended to Moodle category.
+            penalty (float): Incorrect-answer penalty percentage.
+            xml_use_answer_text (bool): If True, writes full statements/answers instead of a/b/c/d.
+
+        Returns:
+            str: Absolute path of the generated XML file.
+        """
+        if not os.path.exists(exam_xlsx_path):
+            raise FileNotFoundError(f"No se encontró el archivo XLSX: {exam_xlsx_path}")
+
+        df = self.read_questions_from_excel(exam_xlsx_path)
+        if df is None:
+            raise ValueError(f"No se pudo leer el archivo XLSX: {exam_xlsx_path}")
+
+        required_columns = {
+            'Número de pregunta',
+            'Respuesta correcta',
+            'Respuesta A',
+            'Respuesta B',
+            'Respuesta C',
+            'Respuesta D',
+        }
+        missing_columns = sorted(required_columns.difference(df.columns))
+        if missing_columns:
+            raise ValueError(
+                "El XLSX no contiene las columnas necesarias para exportar XML: "
+                f"{', '.join(missing_columns)}"
+            )
+
+        inferred_exam, inferred_exam_type = self._infer_exam_metadata_from_generated_xlsx_name(exam_xlsx_path)
+        resolved_exam = exam.strip() if isinstance(exam, str) and exam.strip() else inferred_exam
+        resolved_exam_type = exam_type.strip() if isinstance(exam_type, str) and exam_type.strip() else inferred_exam_type
+
+        if not xml_output_path:
+            xml_base = os.path.splitext(exam_xlsx_path)[0]
+            if xml_base.lower().endswith("_completo"):
+                xml_base = xml_base[:-len("_completo")]
+            xml_output_path = f"{xml_base}.xml"
+
+        output_dir = os.path.dirname(xml_output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
+        self.generate_moodle_xml(
+            df=df.copy(),
+            file_name=xml_output_path,
+            num_total_questions=len(df),
+            exam=resolved_exam,
+            exam_type=resolved_exam_type,
+            xml_cat_additional_text=xml_cat_additional_text,
+            penalty=penalty,
+            xml_use_answer_text=xml_use_answer_text,
+        )
+        return os.path.abspath(xml_output_path)
 
     def generate_exam_from_excel(
             self,
@@ -673,7 +795,7 @@ class ExamGenerator:
             export_moodle_xml: bool = False,
             font_size: int = 9,
             xml_cat_additional_text: Optional[str] = None,
-            penalty: int = -25,
+            penalty: float = -25,
             xml_use_answer_text: bool = False,
             check: bool = False,
             update_excel: bool = False,
@@ -715,7 +837,7 @@ class ExamGenerator:
             export_moodle_xml (bool): If True, exports the exam to Moodle XML format.
             font_size (int): Font size for the text in the document.
             xml_cat_additional_text (Optional[str]): Additional text for the Moodle XML category.
-            penalty (int): Penalty for incorrect answers in the Moodle XML export.
+            penalty (float): Penalty for incorrect answers in the Moodle XML export.
             xml_use_answer_text (bool): If True, XML stores full question and answer text instead of a/b/c/d.
             check (bool): If True, generates a preview and waits for user confirmation before creating all exams.
             update_excel (bool): If True, updates the source Excel file with usage statistics.

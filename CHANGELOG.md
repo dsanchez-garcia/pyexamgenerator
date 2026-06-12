@@ -8,6 +8,8 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 ## [Unreleased]
 
 ### Añadido
+- **Generar XML Moodle desde un examen XLSX existente:** Nuevo método `ExamGenerator.generate_moodle_xml_from_existing_exam_xlsx(...)` para convertir directamente un `*_completo.xlsx` en XML de Moodle sin volver a generar el examen completo.
+- **Conversión XLSX→XML en la pestaña Generar Exámenes:** La GUI añade la sección **"Generar Moodle XML desde XLSX de Examen"** (selección de `*_completo.xlsx`, ruta XML de salida opcional, penalización, texto extra de categoría y modo de XML no blanco).
 - **Alerta por preguntas muy usadas al generar exámenes:** La pestaña **Generar Exámenes** avisa, por defecto, cuando alguna pregunta seleccionada supera 3 usos en `Veces usada en examen`; el umbral es configurable, la alerta se puede desactivar y la configuración se guarda/carga con la plantilla de la pestaña.
 - **Identificación del alumno en cada página:** El DOCX del alumno incluye en la cabecera repetida de cada página huecos para Nombre, Apellidos, DNI/NIE y Firma, además de conservar la tabla de datos de la hoja de respuestas.
 - **Comparar y sobrescribir resultados:** Nuevo `pyexamgenerator.grading.ResultComparator` (+ `ComparisonConfig` y `ExamCorrectionAPI.compare_results`) para comparar unas calificaciones o asistencias con una versión previa —emparejando alumnos por ID o nombre— y obtener un informe de celdas cambiadas, altas y bajas; opcionalmente **combina sobrescribiendo** con los valores nuevos (en un fichero aparte o reemplazando el existente en su sitio). Sección **"Comparar / sobrescribir resultados"** en la GUI y método en scripting.
@@ -49,6 +51,8 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Prueba de integración** usando el fixture real `prueba_error/examen_CSP_Q-PA_25-26.xlsx` para verificar coherencia entre tabla de respuestas en DOCX y preguntas en XML.
 
 ### Cambiado
+- **Penalización Moodle con decimales en GUI:** El campo de penalización ahora admite valores decimales (con coma o punto), tanto en la generación normal de exámenes como en la conversión de XLSX existente a XML.
+- **Ubicación de la conversión XLSX→XML:** La opción de generar XML desde un `*_completo.xlsx` se mueve a la pestaña **Generar Exámenes** para centralizar el flujo de exportación a Moodle.
 - **Enunciados navegables en Word:** Los enunciados de pregunta de los DOCX generados se escriben como `Heading 2`, manteniendo el aspecto compacto de fuente normal en negrita, para que aparezcan en el panel de navegación de Word.
 - **Pestaña "Corregir Exámenes" por secciones independientes:** En lugar de un único botón que exigía todos los ficheros, ahora hay secciones con botón propio (corregir desde imágenes/OCR o desde respuestas Moodle, asistencia + justificaciones **opcional**, integrar notas, punto extra y nota final ponderada), además de mapeo de columnas y guardar/cargar sesión. Se mantiene un botón **"Pipeline completo"** para ejecutar todo de una pasada.
 - **Hoja de respuestas en página impar:** En el DOCX del alumno, la hoja de respuestas (datos del alumno + tabla) ahora comienza en una **página impar** mediante un salto de sección `oddPage`, de modo que al imprimir a doble cara queda como una hoja física independiente sin salir del mismo documento que el examen.
@@ -61,6 +65,8 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Arreglado
+- **Fracciones de penalización compatibles con Moodle:** Al exportar XML, las penalizaciones se ajustan automáticamente a opciones válidas de Moodle (p. ej., `-33` se normaliza a `-33.3333333`) para evitar omisión de preguntas al importar.
+- **Scroll con rueda en pestañas largas de GUI:** Se corrige la rueda del ratón para que desplace aunque el cursor esté sobre campos o controles internos en **Gestionar Banco de Preguntas** y **Generar Preguntas**.
 - **Columna de uso del `*_completo.xlsx`:** El XLSX generado junto al examen ahora añade al final la columna de uso del examen actual (`<examen>_<curso>_uso`) con valor `1` en todas sus filas, en lugar de dejar visibles valores históricos heredados del banco para las preguntas seleccionadas.
 - **Integración de notas OCR en formato *quiz-totals*:** `OcrGradeIntegrator` no conseguía volcar las notas manuscritas cuando un mismo tipo de examen existía en varios grupos (p. ej. `GIM` y `GITI-GIE-GIEI`), porque el mapa `Número de ID → grupo` no casaba con el índice del fichero de Moodle (`Nombre de usuario`). Ahora desambigua usando el `Grupo_Principal` que viene en la propia fila OCR, de modo que las notas aterrizan en la columna de cuestionario correcta.
 - **Estado case-insensitive:** El filtro de preguntas con estado "Aceptable" ahora acepta variantes como "aceptable" en generación de exámenes y en fusión de bancos.

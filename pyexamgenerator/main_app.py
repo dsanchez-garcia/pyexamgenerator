@@ -204,6 +204,11 @@ class ExamApp:
         self.revised_xlsx_output_dir_var = tk.StringVar()
         self.revised_docx_path_var = tk.StringVar()
         self.new_xlsx_filename_var = tk.StringVar()
+        self.existing_exam_xlsx_for_xml_var = tk.StringVar()
+        self.existing_exam_xml_output_var = tk.StringVar()
+        self.existing_exam_xml_penalty_var = tk.StringVar(value="-25")
+        self.existing_exam_xml_cat_text_var = tk.StringVar(value="")
+        self.existing_exam_xml_use_answer_text_var = tk.BooleanVar(value=False)
         self.duplicate_check_var = tk.StringVar(value="pregunta_unica")
         self.xml_use_answer_text_var = tk.BooleanVar(value=False)
         self.template_docx_path_var = tk.StringVar(value="")
@@ -1255,16 +1260,32 @@ class ExamApp:
         canvas_question.configure(yscrollcommand=scrollbar_question.set)
         scrollbar_question.pack(side="right", fill="y")
         canvas_question.pack(side="left", fill="both", expand=True)
-        canvas_question.bind("<MouseWheel>", lambda event: canvas_question.yview_scroll(int(-1 * (event.delta / 120)), "units"))
-        canvas_question.bind("<Button-4>", lambda event: canvas_question.yview_scroll(-1, "units"))
-        canvas_question.bind("<Button-5>", lambda event: canvas_question.yview_scroll(1, "units"))
+
+        def _on_question_mousewheel(event):
+            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
+            if delta_units == 0:
+                delta_units = -1 if event.delta > 0 else 1
+            canvas_question.yview_scroll(delta_units, "units")
+            return "break"
+
+        def _on_question_scroll_up(_event):
+            canvas_question.yview_scroll(-1, "units")
+            return "break"
+
+        def _on_question_scroll_down(_event):
+            canvas_question.yview_scroll(1, "units")
+            return "break"
+
+        def _bind_question_scroll_recursively(widget):
+            widget.bind("<MouseWheel>", _on_question_mousewheel)
+            widget.bind("<Button-4>", _on_question_scroll_up)
+            widget.bind("<Button-5>", _on_question_scroll_down)
+            for child in widget.winfo_children():
+                _bind_question_scroll_recursively(child)
 
         inner_frame_question = ttk.Frame(canvas_question)
         inner_frame_question.bind("<Configure>", lambda e: canvas_question.configure(scrollregion=canvas_question.bbox("all")))
         canvas_question.create_window((0, 0), window=inner_frame_question, anchor="nw")
-        inner_frame_question.bind("<MouseWheel>", lambda event: canvas_question.yview_scroll(int(-1 * (event.delta / 120)), "units"))
-        inner_frame_question.bind("<Button-4>", lambda event: canvas_question.yview_scroll(-1, "units"))
-        inner_frame_question.bind("<Button-5>", lambda event: canvas_question.yview_scroll(1, "units"))
 
         # --- Prompts and PDF section ---
         prompt_type_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar/Editar Tipo de Prompt")
@@ -1564,6 +1585,10 @@ class ExamApp:
 
         config_frame.columnconfigure(1, weight=1)
         inner_frame_question.columnconfigure(0, weight=1)
+
+        # Bind wheel events after creating all child widgets in this scrollable tab.
+        _bind_question_scroll_recursively(canvas_question)
+        _bind_question_scroll_recursively(inner_frame_question)
 
     def populate_models_table(self):
         """
@@ -2211,7 +2236,71 @@ class ExamApp:
         ToolTip(suggest_moodle_button, text="Muestra nombres de cuestionario y columnas recomendados para que el xlsx exportado de Moodle sea identificable por el corrector.")
         row += 1
 
-        # 7. Update excel file with usage (spans 3 columns)
+        # 7. Generate Moodle XML from an existing generated exam XLSX (spans 3 columns)
+        existing_xlsx_xml_frame = ttk.LabelFrame(inner_frame_exam, text="Generar Moodle XML desde XLSX de Examen")
+        existing_xlsx_xml_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
+        ToolTip(existing_xlsx_xml_frame, text="Convierte un archivo de examen ya generado (normalmente '*_completo.xlsx') en un XML de Moodle sin volver a generar el examen.")
+
+        xml_source_label = ttk.Label(existing_xlsx_xml_frame, text="XLSX del Examen:")
+        xml_source_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_source_label, text="Seleccione el archivo XLSX del examen (preferiblemente el que termina en '_completo.xlsx').")
+
+        xml_source_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xlsx_for_xml_var)
+        xml_source_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(xml_source_entry, text="Ruta del XLSX de examen desde el que se generará el XML.")
+
+        xml_source_button = ttk.Button(existing_xlsx_xml_frame, text="Seleccionar XLSX", command=self.select_existing_exam_xlsx_for_xml)
+        xml_source_button.grid(row=0, column=2, padx=5, pady=5)
+        ToolTip(xml_source_button, text="Abre un diálogo para seleccionar el XLSX del examen.")
+
+        xml_output_label = ttk.Label(existing_xlsx_xml_frame, text="XML de Salida (opcional):")
+        xml_output_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_output_label, text="Ruta del XML de salida. Si se deja vacía, se usará el mismo nombre base del XLSX.")
+
+        xml_output_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xml_output_var)
+        xml_output_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(xml_output_entry, text="Ruta de salida para el XML de Moodle.")
+
+        xml_output_button = ttk.Button(existing_xlsx_xml_frame, text="Seleccionar XML", command=self.select_existing_exam_xml_output)
+        xml_output_button.grid(row=1, column=2, padx=5, pady=5)
+        ToolTip(xml_output_button, text="Elegir dónde guardar el XML generado.")
+
+        xml_penalty_label = ttk.Label(existing_xlsx_xml_frame, text="Penalización (-%):")
+        xml_penalty_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_penalty_label, text="Penalización por respuesta incorrecta. Admite decimales (ej. -33.333333 para 4 opciones).")
+
+        xml_penalty_entry = ttk.Entry(existing_xlsx_xml_frame, width=10, textvariable=self.existing_exam_xml_penalty_var)
+        xml_penalty_entry.grid(row=2, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(xml_penalty_entry, text="Porcentaje de penalización para respuestas incorrectas en Moodle.")
+
+        xml_cat_extra_label = ttk.Label(existing_xlsx_xml_frame, text="Texto adicional categoría XML:")
+        xml_cat_extra_label.grid(row=3, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_cat_extra_label, text="Texto opcional que se añadirá al nombre de categoría en Moodle.")
+
+        xml_cat_extra_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xml_cat_text_var)
+        xml_cat_extra_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(xml_cat_extra_entry, text="Texto adicional para la categoría Moodle (opcional).")
+
+        xml_full_text_check = ttk.Checkbutton(
+            existing_xlsx_xml_frame,
+            text="XML no blanco (usar enunciado y respuestas completas)",
+            variable=self.existing_exam_xml_use_answer_text_var
+        )
+        xml_full_text_check.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='w')
+        ToolTip(xml_full_text_check, text="Si se marca, el XML incluirá enunciados y respuestas completas en lugar de a/b/c/d.")
+
+        generate_xml_button = ttk.Button(
+            existing_xlsx_xml_frame,
+            text="Generar XML Moodle desde XLSX",
+            command=self.generate_moodle_xml_from_existing_xlsx_action
+        )
+        generate_xml_button.grid(row=5, column=0, columnspan=3, pady=10)
+        ToolTip(generate_xml_button, text="Genera el XML de Moodle a partir del XLSX seleccionado.")
+
+        existing_xlsx_xml_frame.columnconfigure(1, weight=1)
+        row += 1
+
+        # 8. Update excel file with usage (spans 3 columns)
         update_excel_frame = ttk.Frame(inner_frame_exam)
         update_excel_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
         update_excel_check = ttk.Checkbutton(update_excel_frame, text="Actualizar Archivo Excel con Uso", variable=self.update_excel)
@@ -2277,8 +2366,43 @@ class ExamApp:
         manage_bank_tab = ttk.Frame(self.notebook)
         self.notebook.add(manage_bank_tab, text='Gestionar Banco de Preguntas')
 
-        inner_frame_manage = ttk.Frame(manage_bank_tab)
-        inner_frame_manage.pack(padx=10, pady=10, fill='x')
+        # Canvas to enable vertical scrolling in this long tab.
+        canvas_manage = tk.Canvas(manage_bank_tab)
+        scrollbar_manage = ttk.Scrollbar(manage_bank_tab, orient="vertical", command=canvas_manage.yview)
+        canvas_manage.configure(yscrollcommand=scrollbar_manage.set)
+
+        scrollbar_manage.pack(side="right", fill="y")
+        canvas_manage.pack(side="left", fill="both", expand=True)
+
+        inner_frame_manage = ttk.Frame(canvas_manage)
+        inner_frame_manage.bind("<Configure>", lambda e: canvas_manage.configure(scrollregion=canvas_manage.bbox("all")))
+        manage_window_id = canvas_manage.create_window((0, 0), window=inner_frame_manage, anchor="nw")
+
+        # Keep the inner frame width synced with the visible canvas width.
+        canvas_manage.bind("<Configure>", lambda e: canvas_manage.itemconfigure(manage_window_id, width=e.width))
+
+        # Mouse wheel support (Windows/macOS + Linux) across the whole widget tree.
+        def _on_manage_mousewheel(event):
+            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
+            if delta_units == 0:
+                delta_units = -1 if event.delta > 0 else 1
+            canvas_manage.yview_scroll(delta_units, "units")
+            return "break"
+
+        def _on_manage_scroll_up(_event):
+            canvas_manage.yview_scroll(-1, "units")
+            return "break"
+
+        def _on_manage_scroll_down(_event):
+            canvas_manage.yview_scroll(1, "units")
+            return "break"
+
+        def _bind_manage_scroll_recursively(widget):
+            widget.bind("<MouseWheel>", _on_manage_mousewheel)
+            widget.bind("<Button-4>", _on_manage_scroll_up)
+            widget.bind("<Button-5>", _on_manage_scroll_down)
+            for child in widget.winfo_children():
+                _bind_manage_scroll_recursively(child)
 
         # --- Section to generate XLSX from a revised DOCX ---
         docx_xlsx_group = ttk.LabelFrame(inner_frame_manage, text="Generar XLSX desde DOCX revisado")
@@ -2323,6 +2447,7 @@ class ExamApp:
         ToolTip(xlsx_button, text="Guarda las preguntas revisadas en un nuevo archivo XLSX.")
 
         docx_xlsx_group.columnconfigure(1, weight=1)
+
 
         # --- Section to add questions from another bank ---
         add_from_bank_frame = ttk.LabelFrame(inner_frame_manage, text="Añadir Preguntas Existentes")
@@ -2512,6 +2637,10 @@ class ExamApp:
 
         unify_frame.columnconfigure(1, weight=1)
 
+        # Bind wheel events after creating all child widgets in the scrollable frame.
+        _bind_manage_scroll_recursively(canvas_manage)
+        _bind_manage_scroll_recursively(inner_frame_manage)
+
     def select_unify_bank_files(self) -> None:
         """Opens a dialog to select several question bank XLSX files to unify."""
         filepaths = filedialog.askopenfilenames(
@@ -2612,6 +2741,85 @@ class ExamApp:
             messagebox.showinfo("Guardado", f"Las preguntas revisadas se han guardado en: {saved_path}")
         else:
             messagebox.showerror("Error al Guardar", "Ocurrió un error al generar el archivo XLSX. Revise la consola para más detalles.")
+
+    @staticmethod
+    def _parse_penalty_value(raw_penalty: str, default: float = -25.0) -> float:
+        """Parses penalty values from UI entries, accepting comma or dot as decimal separator."""
+        cleaned = (raw_penalty or "").strip()
+        if not cleaned:
+            return default
+        return float(cleaned.replace(',', '.'))
+
+    def select_existing_exam_xlsx_for_xml(self) -> None:
+        """Opens a dialog to select an already generated exam XLSX file for XML export."""
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar Examen XLSX",
+            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+        )
+        if filepath:
+            self.existing_exam_xlsx_for_xml_var.set(filepath)
+            if not self.existing_exam_xml_output_var.get().strip():
+                xml_base = os.path.splitext(filepath)[0]
+                if xml_base.lower().endswith("_completo"):
+                    xml_base = xml_base[:-len("_completo")]
+                self.existing_exam_xml_output_var.set(f"{xml_base}.xml")
+
+    def select_existing_exam_xml_output(self) -> None:
+        """Opens a dialog to choose the output path of the generated Moodle XML."""
+        source_xlsx = self.existing_exam_xlsx_for_xml_var.get().strip()
+        initial_dir = os.path.dirname(source_xlsx) if source_xlsx else os.getcwd()
+        initial_file = "examen.xml"
+        if source_xlsx:
+            xml_base = os.path.splitext(os.path.basename(source_xlsx))[0]
+            if xml_base.lower().endswith("_completo"):
+                xml_base = xml_base[:-len("_completo")]
+            initial_file = f"{xml_base}.xml"
+
+        filepath = filedialog.asksaveasfilename(
+            title="Guardar Moodle XML como...",
+            defaultextension=".xml",
+            initialdir=initial_dir,
+            initialfile=initial_file,
+            filetypes=[("Archivos XML", "*.xml")]
+        )
+        if filepath:
+            self.existing_exam_xml_output_var.set(filepath)
+
+    def generate_moodle_xml_from_existing_xlsx_action(self) -> None:
+        """Generates Moodle XML from a selected existing exam XLSX file."""
+        exam_xlsx_path = self.existing_exam_xlsx_for_xml_var.get().strip()
+        xml_output_path = self.existing_exam_xml_output_var.get().strip() or None
+        xml_cat_additional_text = self.existing_exam_xml_cat_text_var.get().strip() or None
+        xml_use_answer_text = self.existing_exam_xml_use_answer_text_var.get()
+
+        if not exam_xlsx_path:
+            messagebox.showerror("Error", "Por favor, seleccione un archivo XLSX de examen.")
+            return
+        if not os.path.exists(exam_xlsx_path):
+            messagebox.showerror("Error", f"El archivo XLSX '{exam_xlsx_path}' no se encuentra.")
+            return
+
+        try:
+            penalty = self._parse_penalty_value(self.existing_exam_xml_penalty_var.get(), default=-25.0)
+        except ValueError:
+            messagebox.showerror("Error", "La penalización debe ser numérica (puede usar coma o punto decimal).")
+            return
+
+        self.update_status("Generando XML Moodle desde XLSX existente...")
+        try:
+            generated_xml_path = self.exam_generator.generate_moodle_xml_from_existing_exam_xlsx(
+                exam_xlsx_path=exam_xlsx_path,
+                xml_output_path=xml_output_path,
+                xml_cat_additional_text=xml_cat_additional_text,
+                penalty=penalty,
+                xml_use_answer_text=xml_use_answer_text,
+            )
+            self.existing_exam_xml_output_var.set(generated_xml_path)
+            self.update_status("XML Moodle generado.")
+            messagebox.showinfo("Éxito", f"Archivo XML generado correctamente en:\n{generated_xml_path}")
+        except Exception as e:
+            self.update_status(f"Error al generar XML Moodle: {e}")
+            messagebox.showerror("Error", f"No se pudo generar el XML de Moodle:\n{e}")
 
     def load_themes_for_selection(self) -> None:
         """
@@ -2734,12 +2942,12 @@ class ExamApp:
             left_margin = float(left_margin_str) if left_margin_str else 0.5
             right_margin = float(right_margin_str) if right_margin_str else 0.5
             font_size = int(font_size_str) if font_size_str else 9
-            penalty = int(penalty_str) if penalty_str else -25
+            penalty = self._parse_penalty_value(penalty_str, default=-25.0)
             usage_alert_threshold = int(usage_alert_threshold_str) if usage_alert_threshold_str else 3
             if usage_alert_threshold < 0:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Error", "Por favor, introduce valores numericos validos para los margenes, tamano de fuente, numero de examenes, penalizacion y umbral de alerta.")
+            messagebox.showerror("Error", "Por favor, introduce valores numericos validos para los margenes, tamano de fuente, numero de examenes, penalizacion (admite decimales) y umbral de alerta.")
             return
 
         exam_name_list = [name.strip() for name in exam_names_str.split(',')] if exam_names_str else None
