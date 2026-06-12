@@ -65,6 +65,8 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Arreglado
+- **Lectura de imágenes OCR en rutas Windows con Unicode:** `AnswerSheetExtractor` añade un fallback `np.fromfile + cv2.imdecode` cuando `cv2.imread(...)` falla, evitando errores *"Could not read image"* en rutas con acentos/caracteres especiales (p. ej. carpetas de OneDrive).
+- **Tipos de examen con letra sola (`A`, `B`) en corrección:** la inferencia del tipo desde XML y el parseo de columnas Moodle en integración (`Cuestionario:..._Tipo A (Real)`) aceptan ahora tanto formatos `A/B` como `1A/1B`.
 - **Fracciones de penalización compatibles con Moodle:** Al exportar XML, las penalizaciones se ajustan automáticamente a opciones válidas de Moodle (p. ej., `-33` se normaliza a `-33.3333333`) para evitar omisión de preguntas al importar.
 - **Scroll con rueda en pestañas largas de GUI:** Se corrige la rueda del ratón para que desplace aunque el cursor esté sobre campos o controles internos en **Gestionar Banco de Preguntas** y **Generar Preguntas**.
 - **Columna de uso del `*_completo.xlsx`:** El XLSX generado junto al examen ahora añade al final la columna de uso del examen actual (`<examen>_<curso>_uso`) con valor `1` en todas sus filas, en lugar de dejar visibles valores históricos heredados del banco para las preguntas seleccionadas.

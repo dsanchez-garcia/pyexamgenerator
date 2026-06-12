@@ -12,6 +12,25 @@ QuestionMap = Dict[str, Dict[str, float]]
 QuestionsByExamTypeMap = Dict[str, QuestionMap]
 
 
+def infer_exam_type_from_xml_filename(xml_path: str) -> str:
+    """Infer exam type from XML filename (supports both `1A` and letter-only `A`)."""
+    name = Path(xml_path).name.upper()
+
+    # Prefer explicit suffixes such as "..._1A.xml" or "..._A.xml".
+    suffix_match = re.search(r"[_\-\s]([0-9]*[A-Z])\.XML$", name)
+    if suffix_match:
+        return suffix_match.group(1)
+
+    # Fallback: scan stem tokens right-to-left and keep the first token shaped as type.
+    stem = Path(xml_path).stem.upper()
+    tokens = [t for t in re.split(r"[^0-9A-Z]+", stem) if t]
+    for token in reversed(tokens):
+        if re.fullmatch(r"[0-9]*[A-Z]", token):
+            return token
+
+    raise ValueError(f"Could not infer exam type from XML filename: {xml_path}")
+
+
 class SharedExamDataStore:
     """In-memory cache for XML/Excel datasets shared across pipeline modules."""
 
@@ -105,16 +124,7 @@ class SharedExamDataStore:
 
     @staticmethod
     def _infer_exam_type_from_filename(xml_path: str) -> str:
-        name = Path(xml_path).name.upper()
-        match = re.search(r"_([0-9]+[A-Z])\.XML$", name)
-        if match:
-            return match.group(1)
-
-        match = re.search(r"\b([0-9]+[A-Z])\b", name)
-        if match:
-            return match.group(1)
-
-        raise ValueError(f"Could not infer exam type from XML filename: {xml_path}")
+        return infer_exam_type_from_xml_filename(xml_path)
 
     # Backward-compatible aliases
     load_preguntas_xml = load_questions_xml

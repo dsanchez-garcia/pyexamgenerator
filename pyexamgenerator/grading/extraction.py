@@ -633,8 +633,24 @@ class AnswerSheetExtractor:
 
         return rows
 
-    def process_image(self, image_path: str) -> SheetResult:
+    @staticmethod
+    def _load_grayscale_image(image_path: str) -> Optional[np.ndarray]:
+        """Read grayscale image with a Unicode-path fallback for Windows/OpenCV."""
         image_gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        if image_gray is not None:
+            return image_gray
+
+        try:
+            raw = np.fromfile(image_path, dtype=np.uint8)
+        except OSError:
+            return None
+
+        if raw.size == 0:
+            return None
+        return cv2.imdecode(raw, cv2.IMREAD_GRAYSCALE)
+
+    def process_image(self, image_path: str) -> SheetResult:
+        image_gray = self._load_grayscale_image(image_path)
         if image_gray is None:
             raise FileNotFoundError(f"Could not read image: {image_path}")
 
@@ -802,6 +818,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import pandas as pd
 
 from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
+from pyexamgenerator.grading.data import infer_exam_type_from_xml_filename
 from pyexamgenerator.grading.data import SharedExamDataStore
 
 
@@ -891,16 +908,7 @@ class ImageExamGrader:
 
     @staticmethod
     def _infer_exam_type_from_xml_filename(xml_path: str) -> str:
-        name = Path(xml_path).name.upper()
-        match = re.search(r"_([0-9]+[A-Z])\.XML$", name)
-        if match:
-            return match.group(1)
-
-        match = re.search(r"\b([0-9]+[A-Z])\b", name)
-        if match:
-            return match.group(1)
-
-        raise ValueError(f"Could not infer exam type from XML filename: {xml_path}")
+        return infer_exam_type_from_xml_filename(xml_path)
 
     def _load_xmls_by_exam_type(self, xml_paths: Sequence[str]) -> Dict[str, Dict[str, QuestionInfo]]:
         raw = self.shared_store.load_questions_by_exam_type(

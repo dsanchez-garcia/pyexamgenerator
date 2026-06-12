@@ -134,7 +134,7 @@ class MoodleGradeIntegrator:
     @staticmethod
     def _parse_quiz_total_column(column_name: str) -> Optional[Tuple[str, str]]:
         text = str(column_name).strip()
-        match = re.match(r"^Cuestionario:(.+?)_Tipo\s*([0-9]+[A-Z])\s*\(Real\)$", text, flags=re.IGNORECASE)
+        match = re.match(r"^Cuestionario:(.+?)_Tipo\s*([0-9]*[A-Z])\s*\(Real\)$", text, flags=re.IGNORECASE)
         if not match:
             return None
         return match.group(1).strip(), match.group(2).strip().upper()
@@ -473,7 +473,7 @@ class OcrGradeIntegrator:
     @staticmethod
     def _parse_quiz_total_column(column_name: str) -> Optional[Tuple[str, str]]:
         text = str(column_name).strip()
-        match = re.match(r"^Cuestionario:(.+?)_Tipo\s*([0-9]+[A-Z])\s*\(Real\)$", text, flags=re.IGNORECASE)
+        match = re.match(r"^Cuestionario:(.+?)_Tipo\s*([0-9]*[A-Z])\s*\(Real\)$", text, flags=re.IGNORECASE)
         if not match:
             return None
         return match.group(1).strip(), match.group(2).strip().upper()

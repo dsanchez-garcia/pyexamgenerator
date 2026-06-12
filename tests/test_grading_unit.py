@@ -6,11 +6,13 @@ por tema). El OCR pesado (cv2/rapidocr) se prueba solo si el extra `[grading]` e
 
 import pandas as pd
 import pytest
+import numpy as np
 
 from pyexamgenerator import grading
 from pyexamgenerator.grading import (
     EnrollmentMerger,
     OcrGradeIntegrator,
+    SharedExamDataStore,
     TheoryBonusApplier,
     TheoryTopicReporter,
 )
@@ -44,7 +46,14 @@ def test_enrollment_merger_combines_sources(tmp_path):
     assert set(merged["Número de ID"]) == {"1", "2"}
     # El objeto retiene inputs y output.
     assert merger.merged_df is merged
+    assert merger.source_dfs is not None
     assert len(merger.source_dfs) == 2
+
+
+def test_exam_type_inference_accepts_letter_only_and_numeric_letter():
+    infer = SharedExamDataStore._infer_exam_type_from_filename
+    assert infer("examen_Geo_Parcial_25-26_A.xml") == "A"
+    assert infer("examen_Geo_Parcial_25-26_1A.xml") == "1A"
 
 
 def test_theory_bonus_applies_plus_one(tmp_path):
@@ -107,7 +116,8 @@ def test_theory_topic_reporter_exposes_extra_point():
     assert reporter.quiz_report_df is quiz_report
 
 
-def test_ocr_integrator_quiz_totals_uses_group_hint(tmp_path):
+@pytest.mark.parametrize("exam_type", ["1A", "A"])
+def test_ocr_integrator_quiz_totals_uses_group_hint(tmp_path, exam_type):
     """En formato quiz-totals, cuando un tipo de examen existe en >1 grupo (GIM vs GITI...),
     la nota manuscrita debe aterrizar en la columna del grupo indicado por la fila OCR
     (Grupo_Principal), no quedarse sin volcar."""
@@ -117,14 +127,14 @@ def test_ocr_integrator_quiz_totals_uses_group_hint(tmp_path):
             "Apellido(s)": "CHEBBI",
             "Nombre": "LOUAY",
             "Dirección de correo": "louay.chebbi@x.es",
-            "Cuestionario:GIM_Tipo 1A (Real)": "-",
-            "Cuestionario:GITI-GIE-GIEI_Tipo 1A (Real)": "-",
+            f"Cuestionario:GIM_Tipo {exam_type} (Real)": "-",
+            f"Cuestionario:GITI-GIE-GIEI_Tipo {exam_type} (Real)": "-",
         }]
     )
     ocr = pd.DataFrame(
         [{
             "Imagen": "img.jpg",
-            "Tipo_Examen": "1A",
+            "Tipo_Examen": exam_type,
             "Nombre": "LOUAY",
             "Apellido(s)": "CHEBBI",
             "Número de ID": "190708",
@@ -146,7 +156,7 @@ def test_ocr_integrator_quiz_totals_uses_group_hint(tmp_path):
     row = result[result["Apellido(s)"] == "CHEBBI"].iloc[0]
     assert float(row["Calificación/10,00"]) == pytest.approx(9.13)
     assert row["Tipo_Grupo"] == "GITI-GIE-GIEI"
-    assert row["Tipo_Examen"] == "1A"
+    assert row["Tipo_Examen"] == exam_type
 
 
 def test_image_grader_available_only_with_ocr_extra():
@@ -155,3 +165,27 @@ def test_image_grader_available_only_with_ocr_extra():
         assert grading.ImageExamGrader is not None
     else:
         assert grading.ImageExamGrader is None
+
+
+def test_answer_sheet_extractor_image_read_fallback_when_imread_fails(tmp_path, monkeypatch):
+    if not grading.HAS_OCR:
+        pytest.skip("OCR extra no disponible")
+
+    cv2 = pytest.importorskip("cv2")
+    from pyexamgenerator.grading.extraction import AnswerSheetExtractor
+
+    img_dir = tmp_path / "exam_images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    img_path = img_dir / "sheet.jpg"
+
+    img = np.zeros((12, 12, 3), dtype=np.uint8)
+    ok, encoded = cv2.imencode(".jpg", img)
+    assert ok
+    encoded.tofile(str(img_path))
+
+    monkeypatch.setattr(cv2, "imread", lambda *args, **kwargs: None)
+    loaded = AnswerSheetExtractor._load_grayscale_image(str(img_path))
+    assert loaded is not None
+    assert tuple(loaded.shape) == (12, 12)
+
+
