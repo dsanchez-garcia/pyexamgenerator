@@ -17,6 +17,7 @@ from pyexamgenerator.grading import (
     TheoryBonusApplier,
     TheoryTopicReporter,
 )
+from pyexamgenerator.grading.integrations import MoodleGradeIntegrator
 
 
 def test_grading_imports_and_has_ocr_flag():
@@ -158,6 +159,219 @@ def test_ocr_integrator_quiz_totals_uses_group_hint(tmp_path, exam_type):
     assert float(row["Calificación/10,00"]) == pytest.approx(9.13)
     assert row["Tipo_Grupo"] == "GITI-GIE-GIEI"
     assert row["Tipo_Examen"] == exam_type
+
+
+def test_ocr_integrator_quiz_totals_drops_summary_row_from_general(tmp_path):
+    general = pd.DataFrame(
+        [
+            {
+                "Nombre de usuario": "uy8862138",
+                "Apellido(s)": "CHEBBI",
+                "Nombre": "LOUAY",
+                "Dirección de correo": "louay.chebbi@x.es",
+                "Cuestionario:GIM_Tipo A (Real)": "-",
+            },
+            {
+                "Nombre de usuario": "",
+                "Apellido(s)": "Promedio general",
+                "Nombre": "",
+                "Dirección de correo": "",
+                "Cuestionario:GIM_Tipo A (Real)": "5,00",
+            },
+        ]
+    )
+    ocr = pd.DataFrame(
+        [{
+            "Imagen": "img.jpg",
+            "Tipo_Examen": "A",
+            "Nombre": "LOUAY",
+            "Apellido(s)": "CHEBBI",
+            "Calificacion/10,00": "8,75",
+        }]
+    )
+    general_path = tmp_path / "teoria.xlsx"
+    ocr_path = tmp_path / "ocr.xlsx"
+    out_path = tmp_path / "integrada.xlsx"
+    general.to_excel(general_path, index=False)
+    ocr.to_excel(ocr_path, index=False)
+
+    integrator = OcrGradeIntegrator(
+        general_xlsx_path=str(general_path),
+        ocr_xlsx_path=str(ocr_path),
+    )
+    result = integrator.integrate(str(out_path))
+
+    assert len(result) == 1
+    assert float(result["Calificación/10,00"].iloc[0]) == pytest.approx(8.75)
+    summary = integrator.last_integration_summary
+    assert summary["general_summary_rows_removed"] == 1
+
+
+def test_moodle_integrator_preserves_leading_zero_ids(tmp_path):
+    source = pd.DataFrame(
+        [{
+            "Número de ID": "001234",
+            "Nombre": "Ana",
+            "Apellido(s)": "Gil",
+            "Calificación/10,00": "6,50",
+        }]
+    )
+    source_path = tmp_path / "moodle.xlsx"
+    source.to_excel(source_path, index=False)
+
+    result = MoodleGradeIntegrator(xlsx_files=[str(source_path)]).integrate_grades()
+    assert str(result["Número de ID"].iloc[0]) == "001234"
+
+
+def test_ocr_integrator_preserves_leading_zero_ids_on_match_and_append(tmp_path):
+    general = pd.DataFrame(
+        [{
+            "Número de ID": "000123",
+            "Apellido(s)": "Gil",
+            "Nombre": "Ana",
+            "Calificación/10,00": "6,00",
+            "P. 1 /0,40": "0,40",
+        }]
+    )
+    ocr = pd.DataFrame(
+        [
+            {
+                "Imagen": "img_match.jpg",
+                "Tipo_Examen": "A",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "ID_Oficial": "000123",
+                "Calificacion/10,00": "7,00",
+            },
+            {
+                "Imagen": "img_append.jpg",
+                "Tipo_Examen": "A",
+                "Nombre": "Zoe",
+                "Apellido(s)": "Mar",
+                "ID_Oficial": "000999",
+                "Calificacion/10,00": "5,33",
+            },
+        ]
+    )
+    general_path = tmp_path / "teoria.xlsx"
+    ocr_path = tmp_path / "ocr.xlsx"
+    out_path = tmp_path / "integrada.xlsx"
+    general.to_excel(general_path, index=False)
+    ocr.to_excel(ocr_path, index=False)
+
+    result = OcrGradeIntegrator(
+        general_xlsx_path=str(general_path),
+        ocr_xlsx_path=str(ocr_path),
+    ).integrate(str(out_path))
+
+    by_name = {row["Nombre"]: row for _, row in result.iterrows()}
+    assert str(by_name["Ana"]["Número de ID"]) == "000123"
+    assert str(by_name["Zoe"]["Número de ID"]) == "000999"
+
+
+def test_ocr_integrator_appends_unmatched_and_blocks_missing_identity_by_default(tmp_path):
+    general = pd.DataFrame(
+        [
+            {
+                "Número de ID": "1",
+                "Apellido(s)": "Gil",
+                "Nombre": "Ana",
+                "Calificación/10,00": "6,00",
+                "P. 1 /0,40": "0,40",
+            },
+            {
+                "Número de ID": "",
+                "Apellido(s)": "Promedio general",
+                "Nombre": "",
+                "Calificación/10,00": "6,00",
+                "P. 1 /0,40": "0,40",
+            },
+        ]
+    )
+    ocr = pd.DataFrame(
+        [
+            {
+                "Imagen": "img_unmatched.jpg",
+                "Tipo_Examen": "A",
+                "Nombre": "Zoe",
+                "Apellido(s)": "Mar",
+                "ID_Oficial": "999",
+                "Calificacion/10,00": "5,33",
+            },
+            {
+                "Imagen": "img_missing_identity.jpg",
+                "Tipo_Examen": "A",
+                "Nombre": pd.NA,
+                "Apellido(s)": pd.NA,
+                "ID_Oficial": pd.NA,
+                "Calificacion/10,00": "7,87",
+            },
+        ]
+    )
+    general_path = tmp_path / "teoria.xlsx"
+    ocr_path = tmp_path / "ocr.xlsx"
+    out_path = tmp_path / "integrada.xlsx"
+    general.to_excel(general_path, index=False)
+    ocr.to_excel(ocr_path, index=False)
+
+    integrator = OcrGradeIntegrator(
+        general_xlsx_path=str(general_path),
+        ocr_xlsx_path=str(ocr_path),
+    )
+    result = integrator.integrate(str(out_path))
+
+    assert len(result) == 2
+    assert not result["Apellido(s)"].fillna("").str.contains("promedio", case=False).any()
+    summary = integrator.last_integration_summary
+    assert summary["general_summary_rows_removed"] == 1
+    assert summary["blocked_unmatched"] == 0
+    assert summary["blocked_missing_identity"] == 1
+    assert summary["rows_appended_unmatched"] == 1
+    incidents = integrator.last_integration_incidents_df
+    assert len(incidents) == 1
+    assert set(incidents["Tipo"]) == {"MISSING_IDENTITY"}
+
+
+def test_ocr_integrator_blocks_unmatched_when_strict_mode_is_enabled(tmp_path):
+    general = pd.DataFrame(
+        [{
+            "Número de ID": "1",
+            "Apellido(s)": "Gil",
+            "Nombre": "Ana",
+            "Calificación/10,00": "6,00",
+            "P. 1 /0,40": "0,40",
+        }]
+    )
+    ocr = pd.DataFrame(
+        [{
+            "Imagen": "img_unmatched.jpg",
+            "Tipo_Examen": "A",
+            "Nombre": "Zoe",
+            "Apellido(s)": "Mar",
+            "ID_Oficial": "999",
+            "Calificacion/10,00": "5,33",
+            "P. 1 /0,40": "0,40",
+        }]
+    )
+    general_path = tmp_path / "teoria.xlsx"
+    ocr_path = tmp_path / "ocr.xlsx"
+    out_path = tmp_path / "integrada.xlsx"
+    general.to_excel(general_path, index=False)
+    ocr.to_excel(ocr_path, index=False)
+
+    integrator = OcrGradeIntegrator(
+        general_xlsx_path=str(general_path),
+        ocr_xlsx_path=str(ocr_path),
+        append_unmatched_students=False,
+    )
+    result = integrator.integrate(str(out_path))
+
+    assert len(result) == 1
+    summary = integrator.last_integration_summary
+    assert summary["rows_appended_unmatched"] == 0
+    assert summary["blocked_unmatched"] == 1
+    assert len(integrator.last_integration_incidents_df) == 1
+    assert integrator.last_integration_incidents_df["Tipo"].iloc[0] == "UNMATCHED_STUDENT"
 
 
 def test_image_grader_available_only_with_ocr_extra():

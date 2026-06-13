@@ -618,6 +618,7 @@ class ExamApp:
         self.grad_ocr_grades_var = tk.StringVar()
         self.grad_integrated_var = tk.StringVar()
         self.grad_attquiz_var = tk.StringVar()
+        self.grad_append_unmatched_var = tk.BooleanVar(value=True)
         # Column mapping (defaults match the historical hard-coded names).
         self.grad_id_col_var = tk.StringVar(value="Número de ID")
         self.grad_first_col_var = tk.StringVar(value="Nombre")
@@ -728,6 +729,19 @@ class ExamApp:
                  "Excel de calificaciones de teoría exportado de Moodle.")
         file_row(integ_sec, "Notas OCR (xlsx):", self.grad_ocr_grades_var,
                  "Notas manuscritas a integrar. Vacío = '<salida>/calificaciones_manuscritos.xlsx'.")
+        append_unmatched_chk = ttk.Checkbutton(
+            integ_sec,
+            text="Añadir alumnos OCR que no estén en teoría (modo unión)",
+            variable=self.grad_append_unmatched_var,
+        )
+        append_unmatched_chk.pack(anchor="w", padx=6, pady=(0, 4))
+        ToolTip(
+            append_unmatched_chk,
+            text=(
+                "Activado (recomendado): une teoría+OCR añadiendo filas OCR no presentes en teoría.\n"
+                "Desactivado: modo estricto, bloquea esas filas y las registra en incidencias."
+            ),
+        )
         ttk.Button(integ_sec, text="Integrar notas", command=self.run_integrate_grades).pack(pady=4)
 
         # --- Section: theory bonus ---
@@ -809,13 +823,31 @@ class ExamApp:
     def _grad_run_async(self, status_msg: str, work_fn) -> None:
         """Runs ``work_fn`` in a background thread, updating the status bar and reporting result/errors.
 
-        ``work_fn`` may return a string to show in an info dialog on success.
+        ``work_fn`` may return either:
+        - a string (success info), or
+        - a dict like {"info": "...", "warnings": ["...", ...]}.
         """
         def worker():
             try:
                 self.root.after(0, lambda: self.update_status(status_msg))
-                result_msg = work_fn()
+                result = work_fn()
+
+                result_msg = ""
+                warning_msgs: List[str] = []
+                if isinstance(result, dict):
+                    result_msg = str(result.get("info", "") or "").strip()
+                    raw_warnings = result.get("warnings", [])
+                    if isinstance(raw_warnings, str):
+                        raw_warnings = [raw_warnings]
+                    if isinstance(raw_warnings, (list, tuple)):
+                        warning_msgs = [str(msg).strip() for msg in raw_warnings if str(msg).strip()]
+                elif result:
+                    result_msg = str(result)
+
                 self.root.after(0, lambda: self.update_status("Listo."))
+                if warning_msgs:
+                    warning_text = "\n\n".join(warning_msgs)
+                    self.root.after(0, lambda t=warning_text: messagebox.showwarning("Avisos", t))
                 if result_msg:
                     self.root.after(0, lambda m=result_msg: messagebox.showinfo("Corrección", m))
             except Exception as exc:  # noqa: BLE001 - surfaced to the user
@@ -1078,8 +1110,22 @@ class ExamApp:
                 last_name_col=cols["last_name_col"], email_col=cols["email_col"],
                 temp_image_dir=temp_image_dir,
             )
-            self._grad_api().grade_from_images(cfg)
-            return f"Corrección OCR completada. Resultados en:\n{out}"
+            api = self._grad_api()
+            api.grade_from_images(cfg)
+
+            warning_msgs: List[str] = []
+            incidents_df = api.results.get("ocr_incidents")
+            if isinstance(incidents_df, pd.DataFrame) and not incidents_df.empty:
+                warning_msgs.append(
+                    "Se detectaron incidencias durante el OCR "
+                    f"({len(incidents_df)} fila(s)).\n"
+                    f"Revisa: {os.path.join(out, 'incidencias.xlsx')}"
+                )
+
+            return {
+                "info": f"Corrección OCR completada. Resultados en:\n{out}",
+                "warnings": warning_msgs,
+            }
 
         self._grad_run_async("Corrigiendo (OCR de hojas, puede tardar)…", work)
 
@@ -1147,15 +1193,67 @@ class ExamApp:
             messagebox.showerror("Faltan datos", "Necesitas las notas de teoría (Moodle) y la carpeta de salida.")
             return
         ocr_grades = self.grad_ocr_grades_var.get().strip() or os.path.join(out, "calificaciones_manuscritos.xlsx")
+        append_unmatched_students = bool(self.grad_append_unmatched_var.get())
 
         def work():
             cfg = OCRIntegrationConfig(
                 general_xlsx_path=theory, ocr_xlsx_path=ocr_grades,
                 output_path="teoria_integrada.xlsx", output_dir=out,
                 enrollment_paths=self._grad_enrollment_list(),
+                append_unmatched_students=append_unmatched_students,
             )
-            self._grad_api().integrate_ocr_grades(cfg)
-            return f"Notas integradas en:\n{out}"
+            api = self._grad_api()
+            api.integrate_ocr_grades(cfg)
+
+            warning_msgs: List[str] = []
+            integration_summary = api.results.get("ocr_integration_summary")
+            if isinstance(integration_summary, dict):
+                removed_summary_rows = int(integration_summary.get("general_summary_rows_removed", 0) or 0)
+                if removed_summary_rows > 0:
+                    warning_msgs.append(
+                        "Se eliminaron automáticamente "
+                        f"{removed_summary_rows} fila(s) de promedio/resumen "
+                        "en las notas de teoría antes de integrar OCR."
+                    )
+                blocked_missing_identity = int(integration_summary.get("blocked_missing_identity", 0) or 0)
+                blocked_unmatched = int(integration_summary.get("blocked_unmatched", 0) or 0)
+                blocked_missing_target = int(integration_summary.get("blocked_missing_target", 0) or 0)
+                blocked_missing_grade = int(integration_summary.get("blocked_missing_grade", 0) or 0)
+                blocked_total = blocked_missing_identity + blocked_unmatched + blocked_missing_target + blocked_missing_grade
+                if blocked_total > 0:
+                    parts = []
+                    if blocked_missing_identity:
+                        parts.append(f"- Sin identidad (ID o nombre+apellidos): {blocked_missing_identity}")
+                    if blocked_unmatched:
+                        parts.append(f"- Alumno no encontrado en teoría: {blocked_unmatched}")
+                    if blocked_missing_target:
+                        parts.append(f"- Sin columna destino en teoría: {blocked_missing_target}")
+                    if blocked_missing_grade:
+                        parts.append(f"- Sin nota OCR válida: {blocked_missing_grade}")
+                    incidents_path = str(api.results.get("ocr_integration_incidents_path") or os.path.join(out, "incidencias_integracion_ocr.xlsx"))
+                    warning_msgs.append(
+                        "Durante la integración se bloquearon filas OCR:\n"
+                        + "\n".join(parts)
+                        + f"\nRevisa: {incidents_path}"
+                    )
+
+            ocr_incidents_path = os.path.join(out, "incidencias.xlsx")
+            if os.path.exists(ocr_incidents_path):
+                try:
+                    ocr_incidents_df = pd.read_excel(ocr_incidents_path)
+                except Exception:
+                    ocr_incidents_df = None
+                if isinstance(ocr_incidents_df, pd.DataFrame) and not ocr_incidents_df.empty:
+                    warning_msgs.append(
+                        "Hay incidencias OCR pendientes de revisar "
+                        f"({len(ocr_incidents_df)} fila(s)).\n"
+                        f"Revisa: {ocr_incidents_path}"
+                    )
+
+            return {
+                "info": f"Notas integradas en:\n{out}",
+                "warnings": warning_msgs,
+            }
 
         self._grad_run_async("Integrando notas OCR en teoría…", work)
 
@@ -1271,6 +1369,7 @@ class ExamApp:
             "attendance_header_row": self.grad_att_header_var.get(),
             "compare_existing": self.grad_cmp_existing_var.get(),
             "compare_new": self.grad_cmp_new_var.get(),
+            "append_unmatched_ocr": bool(self.grad_append_unmatched_var.get()),
             "columns": self._grad_columns(),
         }
 
@@ -1323,6 +1422,14 @@ class ExamApp:
         for key, var in setters.items():
             if gi.get(key):
                 var.set(str(gi[key]))
+
+        append_unmatched_raw = gi.get("append_unmatched_ocr", None)
+        if append_unmatched_raw is not None:
+            if isinstance(append_unmatched_raw, str):
+                parsed_bool = append_unmatched_raw.strip().lower() in {"1", "true", "yes", "si", "sí"}
+            else:
+                parsed_bool = bool(append_unmatched_raw)
+            self.grad_append_unmatched_var.set(parsed_bool)
 
         columns = gi.get("columns") or {}
         col_setters = {
@@ -1392,6 +1499,7 @@ class ExamApp:
 
         def worker():
             try:
+                warning_msgs: List[str] = []
                 self.root.after(0, lambda: self.update_status("Corrigiendo… fusionando matriculados."))
                 work = os.path.join(out_dir, "_intermedios")
                 os.makedirs(work, exist_ok=True)
@@ -1412,15 +1520,59 @@ class ExamApp:
                     prompt_missing_type=False, interactive_review=False,
                 )
                 incidencias = pd.read_excel(os.path.join(work, "incidencias.xlsx"))
+                if not incidencias.empty:
+                    warning_msgs.append(
+                        "Se detectaron incidencias durante el OCR "
+                        f"({len(incidencias)} fila(s)).\n"
+                        f"Revisa: {os.path.join(out_dir, 'incidencias_identificacion_respuestas.xlsx')}"
+                    )
                 incidencias.to_excel(
                     os.path.join(out_dir, "incidencias_identificacion_respuestas.xlsx"), index=False)
 
                 self.root.after(0, lambda: self.update_status("Corrigiendo… integrando notas OCR en teoría."))
-                integrated = OcrGradeIntegrator(
+                ocr_integrator = OcrGradeIntegrator(
                     general_xlsx_path=theory,
                     ocr_xlsx_path=os.path.join(work, "calificaciones_manuscritos.xlsx"),
                     enrollment_paths=enrollment,
-                ).integrate(os.path.join(work, "teoria_integrada.xlsx"))
+                    append_unmatched_students=bool(self.grad_append_unmatched_var.get()),
+                )
+                integrated = ocr_integrator.integrate(os.path.join(work, "teoria_integrada.xlsx"))
+
+                integration_incidents_path = None
+                integration_incidents_df = getattr(ocr_integrator, "last_integration_incidents_df", None)
+                if isinstance(integration_incidents_df, pd.DataFrame) and not integration_incidents_df.empty:
+                    integration_incidents_path = os.path.join(out_dir, "incidencias_integracion_ocr.xlsx")
+                    integration_incidents_df.to_excel(integration_incidents_path, index=False)
+
+                integration_summary = dict(getattr(ocr_integrator, "last_integration_summary", {}) or {})
+                removed_summary_rows = int(integration_summary.get("general_summary_rows_removed", 0) or 0)
+                if removed_summary_rows > 0:
+                    warning_msgs.append(
+                        "Se eliminaron automáticamente "
+                        f"{removed_summary_rows} fila(s) de promedio/resumen "
+                        "en las notas de teoría antes de integrar OCR."
+                    )
+                blocked_missing_identity = int(integration_summary.get("blocked_missing_identity", 0) or 0)
+                blocked_unmatched = int(integration_summary.get("blocked_unmatched", 0) or 0)
+                blocked_missing_target = int(integration_summary.get("blocked_missing_target", 0) or 0)
+                blocked_missing_grade = int(integration_summary.get("blocked_missing_grade", 0) or 0)
+                blocked_total = blocked_missing_identity + blocked_unmatched + blocked_missing_target + blocked_missing_grade
+                if blocked_total > 0:
+                    parts = []
+                    if blocked_missing_identity:
+                        parts.append(f"- Sin identidad (ID o nombre+apellidos): {blocked_missing_identity}")
+                    if blocked_unmatched:
+                        parts.append(f"- Alumno no encontrado en teoría: {blocked_unmatched}")
+                    if blocked_missing_target:
+                        parts.append(f"- Sin columna destino en teoría: {blocked_missing_target}")
+                    if blocked_missing_grade:
+                        parts.append(f"- Sin nota OCR válida: {blocked_missing_grade}")
+                    extra_path = integration_incidents_path or os.path.join(out_dir, "incidencias_integracion_ocr.xlsx")
+                    warning_msgs.append(
+                        "Durante la integración se bloquearon filas OCR:\n"
+                        + "\n".join(parts)
+                        + f"\nRevisa: {extra_path}"
+                    )
 
                 self.root.after(0, lambda: self.update_status("Corrigiendo… asistencias y cuestionarios."))
                 justif_result = AbsenceJustificationManager(
@@ -1452,7 +1604,12 @@ class ExamApp:
                        "\n\n- incidencias_identificacion_respuestas.xlsx"
                        "\n- cuestionarios_clase_y_punto_extra.xlsx"
                        "\n- calificaciones_examen_teoria.xlsx")
+                if integration_incidents_path:
+                    msg += "\n- incidencias_integracion_ocr.xlsx"
                 self.root.after(0, lambda: self.update_status("Corrección completada."))
+                if warning_msgs:
+                    warning_text = "\n\n".join(warning_msgs)
+                    self.root.after(0, lambda t=warning_text: messagebox.showwarning("Avisos", t))
                 self.root.after(0, lambda: messagebox.showinfo("Corrección", msg))
                 try:
                     os.startfile(out_dir)  # type: ignore[attr-defined]

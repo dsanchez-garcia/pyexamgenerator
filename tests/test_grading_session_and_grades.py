@@ -7,7 +7,7 @@ from pyexamgenerator.grading.attendance import AbsenceJustificationManager
 from pyexamgenerator.grading.integrations import MoodleGradeIntegrator
 from pyexamgenerator.grading.graders import ExamGrader
 from pyexamgenerator.grading.comparison import ResultComparator
-from pyexamgenerator.grading.api import ExamCorrectionAPI, ComparisonConfig
+from pyexamgenerator.grading.api import ExamCorrectionAPI, ComparisonConfig, OCRIntegrationConfig
 
 
 # --- Session persistence -----------------------------------------------------------------------
@@ -242,6 +242,45 @@ def test_result_comparator_overwrite_merges_new_values_and_rows(tmp_path):
     assert "Mia" in by_name  # kept (only in old)
     assert "Zoe" in by_name   # appended (only in new)
     assert len(merged) == 4
+
+
+def test_integrate_ocr_api_exposes_and_exports_integration_incidents(tmp_path):
+    general = tmp_path / "teoria.xlsx"
+    ocr = tmp_path / "ocr.xlsx"
+    pd.DataFrame([
+        {"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "6,00", "P. 1 /0,40": "0,40"},
+        {"Número de ID": "", "Nombre": "", "Apellido(s)": "Promedio general", "Calificación/10,00": "6,00", "P. 1 /0,40": "0,40"},
+    ]).to_excel(general, index=False)
+    pd.DataFrame([
+        {
+            "Imagen": "img_unmatched.jpg",
+            "Tipo_Examen": "A",
+            "Nombre": "Zoe",
+            "Apellido(s)": "Mar",
+            "ID_Oficial": "999",
+            "Calificacion/10,00": "5,33",
+        },
+    ]).to_excel(ocr, index=False)
+
+    api = ExamCorrectionAPI(default_output_dir=str(tmp_path))
+    result = api.integrate_ocr_grades(OCRIntegrationConfig(
+        general_xlsx_path=str(general),
+        ocr_xlsx_path=str(ocr),
+        output_path="teoria_integrada.xlsx",
+        output_dir=str(tmp_path),
+        append_unmatched_students=False,
+    ))
+
+    assert len(result) == 1
+    summary = api.results.get("ocr_integration_summary")
+    assert isinstance(summary, dict)
+    assert summary["general_summary_rows_removed"] == 1
+    assert summary["blocked_unmatched"] == 1
+    incidents = api.results.get("ocr_integration_incidents")
+    assert isinstance(incidents, pd.DataFrame)
+    assert len(incidents) == 1
+    assert incidents["Tipo"].iloc[0] == "UNMATCHED_STUDENT"
+    assert (tmp_path / "incidencias_integracion_ocr.xlsx").exists()
 
 
 def test_compare_results_api_in_place_overwrites_existing_file(tmp_path):

@@ -285,8 +285,13 @@ class MoodleGradeIntegrator:
 
         return df.rename(columns=rename_map)
 
+    @staticmethod
+    def _read_excel_as_text(file_path: str, sheet_name=0) -> pd.DataFrame:
+        # Avoid pandas dtype inference (e.g. IDs like 001234 -> 1234).
+        return pd.read_excel(file_path, sheet_name=sheet_name, dtype=object, keep_default_na=False)
+
     def _load_file(self, file_path: str) -> pd.DataFrame:
-        df = pd.read_excel(file_path, sheet_name=self.sheet)
+        df = self._read_excel_as_text(file_path, sheet_name=self.sheet)
 
         if self._is_exam_totals_format(df):
             df = self._normalize_exam_totals_file(df, file_path)
@@ -386,6 +391,7 @@ class OcrGradeIntegrator:
         ocr_xlsx_path: Optional[str] = None,
         enrollment_paths: Optional[Sequence[str]] = None,
         enrollment_sheet: int = 0,
+        append_unmatched_students: bool = True,
         **legacy_kwargs,
     ) -> None:
         if general_xlsx_path is None:
@@ -401,6 +407,11 @@ class OcrGradeIntegrator:
         self.ocr_xlsx_path = ocr_xlsx_path
         self.enrollment_paths = [str(p).strip() for p in (enrollment_paths or []) if str(p).strip()]
         self.enrollment_sheet = int(enrollment_sheet)
+        self.append_unmatched_students = bool(append_unmatched_students)
+
+        # Expuestos tras cada integración para que la GUI/API puedan avisar de incidencias.
+        self.last_integration_summary: Dict[str, int] = {}
+        self.last_integration_incidents_df = pd.DataFrame(columns=self._incident_columns())
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -430,7 +441,147 @@ class OcrGradeIntegrator:
     def _normalize_id(value) -> str:
         if pd.isna(value):
             return ""
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            if value.is_integer():
+                return str(int(value))
+            text = str(value).strip()
+            return text
+
+        text = str(value).strip()
+        if not text:
+            return ""
+
+        lowered = text.lower()
+        if lowered in {"nan", "none", "<na>"}:
+            return ""
+
+        # Excel/pandas may surface integer-like IDs as e.g. "12345.0".
+        if re.fullmatch(r"[-+]?\d+\.0+", text):
+            return text.split(".", 1)[0]
+
+        # Keep textual IDs as-is so leading zeros are preserved.
+        return text
+
+    @staticmethod
+    def _clean_text(value) -> str:
+        if pd.isna(value):
+            return ""
         return str(value).strip()
+
+    @classmethod
+    def _contains_summary_word(cls, text: str) -> bool:
+        normalized = cls._normalize(text)
+        markers = ("promedio", "media", "resumen", "total", "general")
+        return any(marker in normalized for marker in markers)
+
+    def _is_general_summary_row(
+        self,
+        row: pd.Series,
+        *,
+        id_col: Optional[str],
+        first_name_col: Optional[str],
+        last_name_col: Optional[str],
+    ) -> bool:
+        id_value = "" if id_col is None else row.get(id_col, "")
+        first_name = "" if first_name_col is None else self._clean_text(row.get(first_name_col, ""))
+        last_name = "" if last_name_col is None else self._clean_text(row.get(last_name_col, ""))
+
+        combined_text = f"{self._normalize_id(id_value)} {first_name} {last_name}".strip()
+        if not self._contains_summary_word(combined_text):
+            return False
+
+        if self._is_empty(id_value):
+            return True
+        return re.search(r"\d", str(id_value)) is None
+
+    def _drop_general_summary_rows(
+        self,
+        general_df: pd.DataFrame,
+        *,
+        id_col: Optional[str],
+        first_name_col: Optional[str],
+        last_name_col: Optional[str],
+    ) -> Tuple[pd.DataFrame, int]:
+        if general_df.empty:
+            return general_df.copy(), 0
+
+        summary_mask = general_df.apply(
+            lambda row: self._is_general_summary_row(
+                row,
+                id_col=id_col,
+                first_name_col=first_name_col,
+                last_name_col=last_name_col,
+            ),
+            axis=1,
+        )
+        dropped_count = int(summary_mask.sum())
+        cleaned_df = general_df.loc[~summary_mask].copy()
+        return cleaned_df, dropped_count
+
+    @staticmethod
+    def _new_integration_summary(total_ocr_rows: int) -> Dict[str, int]:
+        return {
+            "ocr_rows_total": int(total_ocr_rows),
+            "rows_matched": 0,
+            "rows_updated": 0,
+            "rows_appended_unmatched": 0,
+            "general_summary_rows_removed": 0,
+            "blocked_missing_identity": 0,
+            "blocked_unmatched": 0,
+            "blocked_missing_target": 0,
+            "blocked_missing_grade": 0,
+        }
+
+    @staticmethod
+    def _incident_columns() -> List[str]:
+        return [
+            "Fila_OCR",
+            "Imagen",
+            "Tipo",
+            "Severidad",
+            "Detalle",
+            "ID_OCR",
+            "Nombre_OCR",
+            "Apellido_OCR",
+            "Tipo_Examen",
+        ]
+
+    def _build_integration_incident(
+        self,
+        ocr_row: pd.Series,
+        row_index: int,
+        incident_type: str,
+        detail: str,
+        *,
+        ocr_id_col: Optional[str],
+        ocr_first_name_col: Optional[str],
+        ocr_last_name_col: Optional[str],
+        ocr_exam_type_col: Optional[str],
+        ocr_image_col: Optional[str],
+        severity: str = "alta",
+    ) -> Dict[str, str]:
+        return {
+            "Fila_OCR": int(row_index),
+            "Imagen": "" if ocr_image_col is None else self._clean_text(ocr_row.get(ocr_image_col, "")),
+            "Tipo": incident_type,
+            "Severidad": severity,
+            "Detalle": str(detail),
+            "ID_OCR": "" if ocr_id_col is None else self._normalize_id(ocr_row.get(ocr_id_col, "")),
+            "Nombre_OCR": "" if ocr_first_name_col is None else self._clean_text(ocr_row.get(ocr_first_name_col, "")),
+            "Apellido_OCR": "" if ocr_last_name_col is None else self._clean_text(ocr_row.get(ocr_last_name_col, "")),
+            "Tipo_Examen": "" if ocr_exam_type_col is None else self._clean_text(ocr_row.get(ocr_exam_type_col, "")),
+        }
+
+    def _set_last_integration_report(self, summary: Dict[str, int], incidents: List[Dict[str, str]]) -> None:
+        self.last_integration_summary = {str(k): int(v) for k, v in summary.items()}
+        self.last_integration_incidents_df = pd.DataFrame(incidents, columns=self._incident_columns())
+
+    @staticmethod
+    def _read_excel_as_text(file_path: str, sheet_name=0) -> pd.DataFrame:
+        # Preserve text-like identifiers (e.g. IDs with leading zeros).
+        return pd.read_excel(file_path, sheet_name=sheet_name, dtype=object, keep_default_na=False)
 
     @staticmethod
     def _best_grade_from_quiz_columns(row: pd.Series, quiz_columns: List[Tuple[str, str, str]]) -> Tuple[object, str, str]:
@@ -563,7 +714,12 @@ class OcrGradeIntegrator:
         ocr_cols = list(ocr_df.columns)
 
         general_id_col = self._find_column(general_cols, ["numerodeid", "nmerodeid", "id", "nombredeusuario"])
+        general_first_name_col = self._find_column(general_cols, ["nombre", "firstname"])
+        general_last_name_col = self._find_column(general_cols, ["apellidos", "apellido", "apellidosynombre", "lastname"])
         ocr_id_col = self._find_column(ocr_cols, ["numerodeid", "nmerodeid", "idoficial", "id"])
+        ocr_first_name_col = self._find_column(ocr_cols, ["nombre", "firstname"])
+        ocr_last_name_col = self._find_column(ocr_cols, ["apellidos", "apellido", "lastname"])
+        ocr_image_col = self._find_column(ocr_cols, ["imagen", "image", "archivo"])
         exam_type_col = self._find_exam_type_col(ocr_cols)
         total_grade_col = self._find_total_grade_col(ocr_cols)
         ocr_group_col = self._find_column(ocr_cols, ["grupoprincipal", "tipogrupo", "grupo"])
@@ -571,6 +727,19 @@ class OcrGradeIntegrator:
             raise ValueError(
                 "OCR file must include exam type and total grade columns (e.g. Tipo_Examen and Calificacion/10,00)."
             )
+
+        summary = self._new_integration_summary(len(ocr_df))
+        incidents: List[Dict[str, str]] = []
+
+        general_df, dropped_summary_rows = self._drop_general_summary_rows(
+            general_df,
+            id_col=general_id_col,
+            first_name_col=general_first_name_col,
+            last_name_col=general_last_name_col,
+        )
+        if dropped_summary_rows > 0:
+            summary["general_summary_rows_removed"] += dropped_summary_rows
+            general_cols = list(general_df.columns)
 
         quizzes_by_group_type: Dict[Tuple[str, str], str] = {}
         quiz_columns_meta: List[Tuple[str, str, str]] = []
@@ -595,11 +764,31 @@ class OcrGradeIntegrator:
                 if key and key not in index_by_id:
                     index_by_id[key] = idx
 
-        for _, ocr_row in ocr_df.iterrows():
+        for ocr_index, ocr_row in ocr_df.iterrows():
             target_idx: Optional[int] = None
 
+            row_id = self._normalize_id(ocr_row.get(ocr_id_col, "")) if ocr_id_col else ""
+            first_name = "" if ocr_first_name_col is None else self._clean_text(ocr_row.get(ocr_first_name_col, ""))
+            last_name = "" if ocr_last_name_col is None else self._clean_text(ocr_row.get(ocr_last_name_col, ""))
+            has_identity = bool(row_id) or bool(first_name and last_name)
+            if not has_identity:
+                summary["blocked_missing_identity"] += 1
+                incidents.append(
+                    self._build_integration_incident(
+                        ocr_row,
+                        int(ocr_index),
+                        "MISSING_IDENTITY",
+                        "Fila OCR sin ID oficial y sin nombre+apellidos; no se integra.",
+                        ocr_id_col=ocr_id_col,
+                        ocr_first_name_col=ocr_first_name_col,
+                        ocr_last_name_col=ocr_last_name_col,
+                        ocr_exam_type_col=exam_type_col,
+                        ocr_image_col=ocr_image_col,
+                    )
+                )
+                continue
+
             if general_id_col and ocr_id_col:
-                row_id = self._normalize_id(ocr_row.get(ocr_id_col, ""))
                 if row_id and row_id in index_by_id:
                     target_idx = index_by_id[row_id]
 
@@ -610,7 +799,23 @@ class OcrGradeIntegrator:
                         break
 
             if target_idx is None:
+                summary["blocked_unmatched"] += 1
+                incidents.append(
+                    self._build_integration_incident(
+                        ocr_row,
+                        int(ocr_index),
+                        "UNMATCHED_STUDENT",
+                        "No se encontró alumno en teoría para esta fila OCR.",
+                        ocr_id_col=ocr_id_col,
+                        ocr_first_name_col=ocr_first_name_col,
+                        ocr_last_name_col=ocr_last_name_col,
+                        ocr_exam_type_col=exam_type_col,
+                        ocr_image_col=ocr_image_col,
+                    )
+                )
                 continue
+
+            summary["rows_matched"] += 1
 
             exam_type = str(ocr_row.get(exam_type_col, "")).strip().upper()
             ocr_group_hint = str(ocr_row.get(ocr_group_col, "")).strip() if ocr_group_col else ""
@@ -623,12 +828,42 @@ class OcrGradeIntegrator:
                 ocr_group_hint=ocr_group_hint,
             )
             if not target_col:
+                summary["blocked_missing_target"] += 1
+                incidents.append(
+                    self._build_integration_incident(
+                        ocr_row,
+                        int(ocr_index),
+                        "MISSING_TARGET_COLUMN",
+                        f"No se encontró columna destino para Tipo_Examen='{exam_type or '-'}'.",
+                        ocr_id_col=ocr_id_col,
+                        ocr_first_name_col=ocr_first_name_col,
+                        ocr_last_name_col=ocr_last_name_col,
+                        ocr_exam_type_col=exam_type_col,
+                        ocr_image_col=ocr_image_col,
+                    )
+                )
                 continue
 
             grade_value = self._to_float_grade(ocr_row.get(total_grade_col, ""))
             if pd.isna(grade_value):
+                summary["blocked_missing_grade"] += 1
+                incidents.append(
+                    self._build_integration_incident(
+                        ocr_row,
+                        int(ocr_index),
+                        "MISSING_GRADE",
+                        "La fila OCR no tiene nota total válida; no se integra.",
+                        ocr_id_col=ocr_id_col,
+                        ocr_first_name_col=ocr_first_name_col,
+                        ocr_last_name_col=ocr_last_name_col,
+                        ocr_exam_type_col=exam_type_col,
+                        ocr_image_col=ocr_image_col,
+                        severity="media",
+                    )
+                )
                 continue
             out_df.at[target_idx, target_col] = grade_value
+            summary["rows_updated"] += 1
 
         for col in quizzes_by_group_type.values():
             out_df[col] = pd.to_numeric(out_df[col].apply(self._to_float_grade), errors="coerce")
@@ -644,7 +879,7 @@ class OcrGradeIntegrator:
             best_grade, best_group, best_exam_type = self._best_grade_from_quiz_columns(row, quiz_columns_meta)
             normalized_rows.append(
                 {
-                    "Número de ID": "" if id_source_col is None else str(row.get(id_source_col, "")).strip(),
+                    "Número de ID": "" if id_source_col is None else self._normalize_id(row.get(id_source_col, "")),
                     "Nombre": "" if first_name_source_col is None else str(row.get(first_name_source_col, "")).strip(),
                     "Apellido(s)": "" if last_name_source_col is None else str(row.get(last_name_source_col, "")).strip(),
                     "Dirección de correo": "" if email_source_col is None else str(row.get(email_source_col, "")).strip(),
@@ -658,6 +893,7 @@ class OcrGradeIntegrator:
         normalized_df = pd.DataFrame(normalized_rows)
         normalized_df = normalized_df.sort_values(["Apellido(s)", "Nombre"], na_position="last")
         normalized_df.to_excel(output_path, index=False)
+        self._set_last_integration_report(summary, incidents)
         return normalized_df
 
     def integrate(self, output_path: str, output_dir: Optional[str] = None) -> pd.DataFrame:
@@ -666,8 +902,12 @@ class OcrGradeIntegrator:
             out_dir_path.mkdir(parents=True, exist_ok=True)
             output_path = str(out_dir_path / Path(output_path).name)
 
-        general_df = pd.read_excel(self.general_xlsx_path)
-        ocr_df = pd.read_excel(self.ocr_xlsx_path)
+        # Cada ejecución refresca su propio reporte para evitar arrastrar estado anterior.
+        self.last_integration_summary = {}
+        self.last_integration_incidents_df = pd.DataFrame(columns=self._incident_columns())
+
+        general_df = self._read_excel_as_text(self.general_xlsx_path)
+        ocr_df = self._read_excel_as_text(self.ocr_xlsx_path)
 
         if self._looks_like_quiz_totals_format(list(general_df.columns)):
             return self._integrate_quiz_totals_format(general_df, ocr_df, output_path)
@@ -676,10 +916,29 @@ class OcrGradeIntegrator:
         ocr_cols = list(ocr_df.columns)
 
         general_id_col = self._find_column(general_cols, ["numerodeid", "nmerodeid", "id"])
+        general_first_name_col = self._find_column(general_cols, ["nombre", "firstname"])
+        general_last_name_col = self._find_column(general_cols, ["apellidos", "apellido", "lastname"])
         ocr_id_col = self._find_column(ocr_cols, ["numerodeid", "nmerodeid", "idoficial", "id"])
+        ocr_first_name_col = self._find_column(ocr_cols, ["nombre", "firstname"])
+        ocr_last_name_col = self._find_column(ocr_cols, ["apellidos", "apellido", "lastname"])
+        ocr_exam_type_col = self._find_exam_type_col(ocr_cols)
+        ocr_image_col = self._find_column(ocr_cols, ["imagen", "image", "archivo"])
 
         general_group_col = self._find_column(general_cols, ["tipogrupo", "tipo"])
         ocr_group_col = self._find_column(ocr_cols, ["tipoexamen", "tipogrupo", "tipo"])
+
+        summary = self._new_integration_summary(len(ocr_df))
+        incidents: List[Dict[str, str]] = []
+
+        general_df, dropped_summary_rows = self._drop_general_summary_rows(
+            general_df,
+            id_col=general_id_col,
+            first_name_col=general_first_name_col,
+            last_name_col=general_last_name_col,
+        )
+        if dropped_summary_rows > 0:
+            summary["general_summary_rows_removed"] += dropped_summary_rows
+            general_cols = list(general_df.columns)
 
         grade_cols_general = [
             c for c in general_cols
@@ -698,11 +957,31 @@ class OcrGradeIntegrator:
                 if key and key not in index_by_id:
                     index_by_id[key] = idx
 
-        for _, ocr_row in ocr_df.iterrows():
+        for ocr_index, ocr_row in ocr_df.iterrows():
             target_idx: Optional[int] = None
 
+            row_id = self._normalize_id(ocr_row.get(ocr_id_col, "")) if ocr_id_col else ""
+            first_name = "" if ocr_first_name_col is None else self._clean_text(ocr_row.get(ocr_first_name_col, ""))
+            last_name = "" if ocr_last_name_col is None else self._clean_text(ocr_row.get(ocr_last_name_col, ""))
+            has_identity = bool(row_id) or bool(first_name and last_name)
+            if not has_identity:
+                summary["blocked_missing_identity"] += 1
+                incidents.append(
+                    self._build_integration_incident(
+                        ocr_row,
+                        int(ocr_index),
+                        "MISSING_IDENTITY",
+                        "Fila OCR sin ID oficial y sin nombre+apellidos; no se integra.",
+                        ocr_id_col=ocr_id_col,
+                        ocr_first_name_col=ocr_first_name_col,
+                        ocr_last_name_col=ocr_last_name_col,
+                        ocr_exam_type_col=ocr_exam_type_col,
+                        ocr_image_col=ocr_image_col,
+                    )
+                )
+                continue
+
             if general_id_col and ocr_id_col:
-                row_id = self._normalize_id(ocr_row.get(ocr_id_col, ""))
                 if row_id and row_id in index_by_id:
                     target_idx = index_by_id[row_id]
 
@@ -713,6 +992,23 @@ class OcrGradeIntegrator:
                         break
 
             if target_idx is None:
+                if not self.append_unmatched_students:
+                    summary["blocked_unmatched"] += 1
+                    incidents.append(
+                        self._build_integration_incident(
+                            ocr_row,
+                            int(ocr_index),
+                            "UNMATCHED_STUDENT",
+                            "No se encontró alumno en teoría para esta fila OCR.",
+                            ocr_id_col=ocr_id_col,
+                            ocr_first_name_col=ocr_first_name_col,
+                            ocr_last_name_col=ocr_last_name_col,
+                            ocr_exam_type_col=ocr_exam_type_col,
+                            ocr_image_col=ocr_image_col,
+                        )
+                    )
+                    continue
+
                 new_row = {c: "" for c in general_cols}
 
                 for c in shared_cols:
@@ -733,13 +1029,20 @@ class OcrGradeIntegrator:
                                 new_row[general_col] = self._to_float_grade(value)
                             break
 
+                if general_id_col and ocr_id_col and self._is_empty(new_row.get(general_id_col, "")):
+                    new_row[general_id_col] = row_id
+
                 if general_group_col and ocr_group_col and self._is_empty(new_row.get(general_group_col, "")):
                     group_value = ocr_row.get(ocr_group_col, "")
                     if not self._is_empty(group_value):
                         new_row[general_group_col] = group_value
 
                 out_df = pd.concat([out_df, pd.DataFrame([new_row])], ignore_index=True)
+                summary["rows_appended_unmatched"] += 1
                 continue
+
+            summary["rows_matched"] += 1
+            row_updated = False
 
             for c in shared_cols:
                 value = ocr_row.get(c, "")
@@ -747,6 +1050,7 @@ class OcrGradeIntegrator:
                     if c in grade_cols_set:
                         value = self._to_float_grade(value)
                     out_df.at[target_idx, c] = value
+                    row_updated = True
 
             for general_col in grade_cols_general:
                 if general_col in ocr_cols:
@@ -757,17 +1061,23 @@ class OcrGradeIntegrator:
                         value = ocr_row.get(ocr_col, "")
                         if not self._is_empty(value):
                             out_df.at[target_idx, general_col] = self._to_float_grade(value)
+                            row_updated = True
                         break
 
             if general_group_col and ocr_group_col:
                 group_value = ocr_row.get(ocr_group_col, "")
                 if not self._is_empty(group_value):
                     out_df.at[target_idx, general_group_col] = group_value
+                    row_updated = True
+
+            if row_updated:
+                summary["rows_updated"] += 1
 
         out_df = out_df.reindex(columns=general_cols)
         for c in grade_cols_general:
             out_df[c] = pd.to_numeric(out_df[c].apply(self._to_float_grade), errors="coerce")
         out_df.to_excel(output_path, index=False)
+        self._set_last_integration_report(summary, incidents)
         return out_df
 
 

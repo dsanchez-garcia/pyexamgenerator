@@ -8,6 +8,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 ## [Unreleased]
 
 ### Añadido
+- **Modo unión/estricto en integración OCR (GUI + API):** la sección de integración en la pestaña **Corregir Exámenes** incorpora un check para elegir entre **unir** (añadir alumnos OCR no presentes en teoría) o **modo estricto** (bloquear no emparejados). La preferencia se guarda/carga en la sesión de corrección (`append_unmatched_ocr`) y se propaga a `OCRIntegrationConfig.append_unmatched_students`.
+- **Reporte de incidencias de integración OCR:** `OcrGradeIntegrator` expone `last_integration_summary` y `last_integration_incidents_df`, `ExamCorrectionAPI.integrate_ocr_grades(...)` guarda el resumen en `results["ocr_integration_summary"]` y exporta `incidencias_integracion_ocr.xlsx` cuando hay filas bloqueadas.
+- **Cobertura de pruebas para integración OCR y preservación de ID:** se añaden casos en `tests/test_grading_unit.py` y `tests/test_grading_session_and_grades.py` para validar modo unión/estricto, eliminación de filas resumen, exportación de incidencias y conservación de IDs con ceros iniciales.
 - **Popups copiables en la GUI:** los cuadros `showinfo`, `showwarning` y `showerror` ahora se muestran con texto seleccionable/copiable (botón **"Copiar"** y atajo `Ctrl+C`), útil para pegar errores completos en incidencias o soporte.
 - **Tabla para tipos forzados por imagen (OCR):** en **Corregir Exámenes**, además del campo de texto `imagen=tipo`, ahora se puede abrir una tabla con columnas **Imagen / Tipo asignado / Ruta** para asignar el tipo por fila desde el botón **"Asignar tipos en tabla..."**.
 - **Generar XML Moodle desde un examen XLSX existente:** Nuevo método `ExamGenerator.generate_moodle_xml_from_existing_exam_xlsx(...)` para convertir directamente un `*_completo.xlsx` en XML de Moodle sin volver a generar el examen completo.
@@ -53,6 +56,7 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Prueba de integración** usando el fixture real `prueba_error/examen_CSP_Q-PA_25-26.xlsx` para verificar coherencia entre tabla de respuestas en DOCX y preguntas en XML.
 
 ### Cambiado
+- **Modo unión por defecto en integración OCR:** `OCRIntegrationConfig.append_unmatched_students` pasa a `True` por defecto para reflejar el flujo habitual (teoría Moodle + manuscritos OCR), añadiendo filas OCR no presentes en teoría salvo que se active explícitamente el modo estricto.
 - **Penalización Moodle con decimales en GUI:** El campo de penalización ahora admite valores decimales (con coma o punto), tanto en la generación normal de exámenes como en la conversión de XLSX existente a XML.
 - **Ubicación de la conversión XLSX→XML:** La opción de generar XML desde un `*_completo.xlsx` se mueve a la pestaña **Generar Exámenes** para centralizar el flujo de exportación a Moodle.
 - **Enunciados navegables en Word:** Los enunciados de pregunta de los DOCX generados se escriben como `Heading 2`, manteniendo el aspecto compacto de fuente normal en negrita, para que aparezcan en el panel de navegación de Word.
@@ -67,6 +71,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Arreglado
+- **Limpieza automática de filas de promedio/resumen antes de integrar OCR:** `OcrGradeIntegrator` elimina filas no pertenecientes a alumnos (p. ej. `Promedio general`) en el xlsx general, tanto en formato clásico como en formato de totales de cuestionario, y lo refleja en el contador `general_summary_rows_removed`.
+- **Conservación de IDs con ceros iniciales en integraciones de notas:** la lectura de Excel evita la inferencia que perdía ceros a la izquierda (`001234 -> 1234`) y `_normalize_id` mantiene el valor textual del identificador en las salidas integradas.
+- **Avisos de incidencias más claros en GUI:** al corregir OCR o integrar teoría+OCR, la interfaz muestra avisos específicos cuando hay incidencias OCR, filas bloqueadas en integración o filas resumen eliminadas automáticamente.
 - **Ultimo recurso OCR con carpeta temporal configurable:** cuando fallan `cv2.imread(...)` y el fallback `np.fromfile + cv2.imdecode`, `AnswerSheetExtractor` copia la imagen a una carpeta temporal configurable y reintenta desde ahi; por defecto usa `~/Desktop/pyexamgenerator_temp` y limpia las copias al terminar. La GUI de **Corregir Exámenes** añade el campo **"Carpeta temp OCR (fallback)"**.
 - **Tipo de examen único en OCR:** si el OCR no detecta el tipo en una hoja, pero solo hay una plantilla XML cargada (por ejemplo, solo `A`), `ImageExamGrader` usa automáticamente ese único tipo en lugar de fallar con *"Could not determine exam type"*.
 - **Tipos forzados por nombre o ruta en OCR:** `ImageExamGrader` ahora acepta claves de `forced_type_by_image` tanto por nombre de archivo como por ruta completa (normalizando barras y mayúsculas/minúsculas), lo que evita colisiones cuando hay imágenes con el mismo nombre en carpetas distintas.

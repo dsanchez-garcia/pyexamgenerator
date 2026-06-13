@@ -81,6 +81,7 @@ class OCRIntegrationConfig:
     output_dir: Optional[str] = None
     enrollment_paths: Sequence[str] = field(default_factory=tuple)
     enrollment_sheet: int = 0
+    append_unmatched_students: bool = True
 
 
 @dataclass
@@ -464,15 +465,49 @@ class ExamCorrectionAPI:
             ocr_xlsx_path=cfg.ocr_xlsx_path,
             enrollment_paths=list(cfg.enrollment_paths),
             enrollment_sheet=cfg.enrollment_sheet,
+            append_unmatched_students=cfg.append_unmatched_students,
         )
         result_df = integrator.integrate(cfg.output_path, output_dir=self._resolve_output_dir(cfg.output_dir))
         self._export_step_dataframe(export_state, "ocr_integrated", result_df)
+
+        integration_summary = dict(getattr(integrator, "last_integration_summary", {}) or {})
+        integration_incidents_df = getattr(integrator, "last_integration_incidents_df", None)
+        incidents_output_path: Optional[str] = None
+        if isinstance(integration_incidents_df, pd.DataFrame):
+            self.results["ocr_integration_incidents"] = integration_incidents_df
+            if not integration_incidents_df.empty:
+                resolved_incidents_path = self._resolve_output_path("incidencias_integracion_ocr.xlsx", cfg.output_dir)
+                incidents_output_path = resolved_incidents_path
+                integration_incidents_df.to_excel(resolved_incidents_path, index=False)
+                self.results["ocr_integration_incidents_path"] = incidents_output_path
+                self._export_step_dataframe(export_state, "ocr_integration_incidents", integration_incidents_df)
+        self.results["ocr_integration_summary"] = integration_summary
+
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
-        self._finalize_step_export(export_state, {"output_path": output_path})
+        outputs: Dict[str, object] = {"output_path": output_path}
+        if incidents_output_path:
+            outputs["incidents_path"] = incidents_output_path
+        self._finalize_step_export(export_state, outputs)
         self.results["integrated_theory"] = result_df
+
+        summary_payload = {"rows": int(len(result_df))}
+        for key in (
+            "ocr_rows_total",
+            "rows_matched",
+            "rows_updated",
+            "rows_appended_unmatched",
+            "general_summary_rows_removed",
+            "blocked_missing_identity",
+            "blocked_unmatched",
+            "blocked_missing_target",
+            "blocked_missing_grade",
+        ):
+            if key in integration_summary:
+                summary_payload[key] = int(integration_summary.get(key, 0) or 0)
+
         self.session.record_workflow(
             "integrate_ocr_grades", config=cfg, outputs={"output_path": output_path},
-            summary={"rows": int(len(result_df))},
+            summary=summary_payload,
         )
         return result_df
 
