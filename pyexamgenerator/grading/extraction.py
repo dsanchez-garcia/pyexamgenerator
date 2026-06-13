@@ -2,6 +2,8 @@ import argparse
 import difflib
 import os
 import re
+import shutil
+import tempfile
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -76,6 +78,7 @@ class AnswerSheetExtractor:
         aggressive_min_top_vs_second: float = 1.10,
         id_col: str = "Número de ID",
         forced_student_by_image: Optional[Dict[str, str]] = None,
+        temp_image_dir: Optional[str] = None,
     ) -> None:
         self.ocr = RapidOCR()
         self._ocr_backend = _RAPIDOCR_BACKEND
@@ -89,6 +92,7 @@ class AnswerSheetExtractor:
         self.aggressive_min_gap_ratio = float(aggressive_min_gap_ratio)
         self.aggressive_min_top_vs_second = float(aggressive_min_top_vs_second)
         self.id_col = id_col
+        self.temp_image_dir = self._resolve_temp_image_dir(temp_image_dir)
         # Identificación manual del alumno por imagen: {nombre_de_imagen: "Número de ID" o nombre oficial}.
         # Se usa para hojas cuyo nombre manuscrito el OCR no puede leer (incidencia MISSING_ID).
         self.forced_student_by_image: Dict[str, str] = {
@@ -649,8 +653,52 @@ class AnswerSheetExtractor:
             return None
         return cv2.imdecode(raw, cv2.IMREAD_GRAYSCALE)
 
-    def process_image(self, image_path: str) -> SheetResult:
+    @staticmethod
+    def _default_temp_image_dir() -> str:
+        return str(Path.home() / "Desktop" / "pyexamgenerator_temp")
+
+    @classmethod
+    def _resolve_temp_image_dir(cls, temp_image_dir: Optional[str]) -> str:
+        candidate = str(temp_image_dir).strip() if temp_image_dir else ""
+        base = candidate or cls._default_temp_image_dir()
+        return str(Path(base).expanduser())
+
+    @staticmethod
+    def _safe_temp_copy_name(image_path: str) -> str:
+        src = Path(image_path)
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "_", src.stem).strip("._") or "image"
+        suffix = src.suffix or ".img"
+        return f"{stem}{suffix}"
+
+    def _load_grayscale_image_from_temp_copy(self, image_path: str) -> Optional[np.ndarray]:
+        source = Path(image_path)
+        if not source.exists():
+            return None
+
+        temp_root = Path(getattr(self, "temp_image_dir", self._default_temp_image_dir())).expanduser()
+        try:
+            temp_root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+
+        temp_name = self._safe_temp_copy_name(image_path)
+        try:
+            # Ultimo recurso: copiar a una ruta temporal "limpia" y reintentar la lectura.
+            with tempfile.TemporaryDirectory(prefix="sheet_", dir=str(temp_root)) as tmp_dir:
+                temp_path = Path(tmp_dir) / temp_name
+                shutil.copy2(str(source), str(temp_path))
+                return self._load_grayscale_image(str(temp_path))
+        except Exception:
+            return None
+
+    def _load_grayscale_image_with_fallback(self, image_path: str) -> Optional[np.ndarray]:
         image_gray = self._load_grayscale_image(image_path)
+        if image_gray is not None:
+            return image_gray
+        return self._load_grayscale_image_from_temp_copy(image_path)
+
+    def process_image(self, image_path: str) -> SheetResult:
+        image_gray = self._load_grayscale_image_with_fallback(image_path)
         if image_gray is None:
             raise FileNotFoundError(f"Could not read image: {image_path}")
 
@@ -839,6 +887,7 @@ class ImageExamGrader:
         min_mark_ratio: float = 0.17,
         min_gap: float = 0.05,
         debug_dir: Optional[str] = None,
+        temp_image_dir: Optional[str] = None,
         aggressive_recovery: bool = False,
         aggressive_min_ratio: float = 0.11,
         aggressive_min_gap_ratio: float = 0.25,
@@ -887,6 +936,7 @@ class ImageExamGrader:
             aggressive_min_top_vs_second=aggressive_min_top_vs_second,
             id_col=id_col,
             forced_student_by_image=forced_student_by_image,
+            temp_image_dir=temp_image_dir,
         )
 
         self.questions_by_exam_type = self._load_xmls_by_exam_type(self.xml_paths)
@@ -923,6 +973,10 @@ class ImageExamGrader:
             }
         return out
 
+    @staticmethod
+    def _normalize_forced_lookup_key(value: str) -> str:
+        return str(value).strip().replace("\\", "/").lower()
+
     def _resolve_exam_type(
         self,
         sheet: SheetResult,
@@ -930,8 +984,18 @@ class ImageExamGrader:
         prompt_if_missing: bool,
     ) -> str:
         image_name = Path(sheet.image).name
-        if image_name in forced_type_by_image:
-            exam_type = forced_type_by_image[image_name].upper()
+        normalized_forced: Dict[str, str] = {}
+        for key, value in (forced_type_by_image or {}).items():
+            key_raw = str(key).strip()
+            value_raw = str(value).strip().upper()
+            if not key_raw or not value_raw:
+                continue
+            normalized_forced[self._normalize_forced_lookup_key(key_raw)] = value_raw
+
+        for lookup in (image_name, str(sheet.image)):
+            exam_type = normalized_forced.get(self._normalize_forced_lookup_key(lookup))
+            if not exam_type:
+                continue
             if exam_type not in self.questions_by_exam_type:
                 raise ValueError(f"Forced exam type unavailable for {image_name}: {exam_type}")
             return exam_type
@@ -940,6 +1004,12 @@ class ImageExamGrader:
             exam_type = str(sheet.exam_type).strip().upper()
             if exam_type in self.questions_by_exam_type:
                 return exam_type
+
+        # Si solo hay una plantilla cargada, no hace falta bloquear la corrección por tipo faltante.
+        if len(self.available_exam_types) == 1:
+            only_type = self.available_exam_types[0]
+            if only_type in self.questions_by_exam_type:
+                return only_type
 
         if not prompt_if_missing:
             raise ValueError(
@@ -1436,6 +1506,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--no-open-image", action="store_true", help="Do not auto-open the image during interactive review")
     parser.add_argument("--output-dir", default=None, help="Directory where all outputs are generated")
     parser.add_argument("--debug-dir", default=None)
+    parser.add_argument(
+        "--temp-image-dir",
+        default=None,
+        help="Fallback temp directory for OCR image copies (default: ~/Desktop/pyexamgenerator_temp)",
+    )
     parser.add_argument("--min-mark-ratio", type=float, default=0.17)
     parser.add_argument("--min-gap", type=float, default=0.05)
     parser.add_argument(
@@ -1463,6 +1538,7 @@ def main() -> None:
         min_mark_ratio=args.min_mark_ratio,
         min_gap=args.min_gap,
         debug_dir=args.debug_dir,
+        temp_image_dir=args.temp_image_dir,
     )
 
     answers_df, grades_df, audit_df = grader.grade_from_images(

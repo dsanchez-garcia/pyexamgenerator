@@ -45,6 +45,7 @@ class ImageGradingConfig:
     forced_student_by_image: Dict[str, str] = field(default_factory=dict)
     prompt_missing_type: bool = True
     debug_dir: Optional[str] = None
+    temp_image_dir: Optional[str] = None
     min_mark_ratio: float = 0.17
     min_gap: float = 0.05
     aggressive_recovery: bool = False
@@ -356,6 +357,7 @@ class ExamCorrectionAPI:
             aggressive_min_gap_ratio=cfg.aggressive_min_gap_ratio,
             aggressive_min_top_vs_second=cfg.aggressive_min_top_vs_second,
             debug_dir=cfg.debug_dir,
+            temp_image_dir=cfg.temp_image_dir,
             enrollment_sheet=cfg.enrollment_sheet,
             last_name_col=cfg.last_name_col,
             first_name_col=cfg.first_name_col,

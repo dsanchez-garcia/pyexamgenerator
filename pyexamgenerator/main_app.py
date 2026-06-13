@@ -125,6 +125,7 @@ class ExamApp:
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
+        self._install_copyable_messageboxes()
 
         self.question_generator = None
         self.exam_generator = ExamGenerator()
@@ -234,6 +235,78 @@ class ExamApp:
         help_menu.add_command(label="Configurar API Key (Ayuda)...", command=self.open_api_key_help)
         help_menu.add_separator()
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
+
+    def _install_copyable_messageboxes(self) -> None:
+        """Replace standard info/warning/error popups with copyable dialogs."""
+
+        def _build_handler(kind: str):
+            def _handler(title=None, message=None, **kwargs):
+                return self._show_copyable_messagebox(kind=kind, title=title, message=message, **kwargs)
+
+            return _handler
+
+        messagebox.showinfo = _build_handler("info")
+        messagebox.showwarning = _build_handler("warning")
+        messagebox.showerror = _build_handler("error")
+
+    def _show_copyable_messagebox(self, kind: str, title: Optional[str], message: Optional[str], **kwargs):
+        parent = kwargs.get("parent") or self.root
+        detail = kwargs.get("detail")
+        text = "" if message is None else str(message)
+        if detail:
+            text = f"{text}\n\n{detail}" if text else str(detail)
+
+        icon = {"info": "[i]", "warning": "[!]", "error": "[x]"}.get(kind, "[*]")
+        dialog_title = str(title or "Mensaje")
+        top = tk.Toplevel(parent)
+        top.title(dialog_title)
+        top.transient(parent)
+        top.grab_set()
+        top.resizable(True, True)
+        top.minsize(480, 220)
+
+        body = ttk.Frame(top, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=f"{icon} {dialog_title}", anchor="w").pack(fill="x", pady=(0, 6))
+
+        txt = scrolledtext.ScrolledText(body, wrap=tk.WORD, height=10)
+        txt.pack(fill="both", expand=True)
+        txt.insert("1.0", text or "")
+        txt.configure(state=tk.DISABLED)
+
+        def copy_text(event=None):
+            try:
+                selected = txt.get("sel.first", "sel.last")
+            except tk.TclError:
+                selected = text or ""
+            top.clipboard_clear()
+            top.clipboard_append(selected)
+            return "break"
+
+        def close_dialog(event=None):
+            top.destroy()
+            return "break"
+
+        txt.bind("<Control-c>", copy_text)
+        txt.bind("<Control-C>", copy_text)
+        top.bind("<Escape>", close_dialog)
+
+        btns = ttk.Frame(body)
+        btns.pack(fill="x", pady=(8, 0))
+        ttk.Button(btns, text="Copiar", command=copy_text).pack(side="left")
+        ttk.Button(btns, text="Cerrar", command=close_dialog).pack(side="right")
+
+        top.protocol("WM_DELETE_WINDOW", close_dialog)
+        top.update_idletasks()
+        try:
+            x = parent.winfo_rootx() + max(0, (parent.winfo_width() - top.winfo_width()) // 2)
+            y = parent.winfo_rooty() + max(0, (parent.winfo_height() - top.winfo_height()) // 2)
+            top.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+        txt.focus_set()
+        top.wait_window()
+        return "ok"
 
     def open_api_key_help(self):
         """Opens the Google AI documentation for setting up API key environment variables."""
@@ -541,6 +614,7 @@ class ExamApp:
         self.grad_sched_sheet_var = tk.StringVar(value="0")
         self.grad_att_header_var = tk.StringVar(value="3")
         self.grad_forced_var = tk.StringVar()
+        self.grad_ocr_temp_dir_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Desktop", "pyexamgenerator_temp"))
         self.grad_ocr_grades_var = tk.StringVar()
         self.grad_integrated_var = tk.StringVar()
         self.grad_attquiz_var = tk.StringVar()
@@ -619,6 +693,13 @@ class ExamApp:
                  "Fotos/escaneos de las hojas de respuestas (para OCR).", multiple=True)
         file_row(grade_sec, "Tipos forzados (opcional):", self.grad_forced_var,
                  "Forzar el tipo por imagen si el OCR no lo detecta. Formato: imagen.jpg=1A, otra.jpg=1B")
+        forced_table_row = ttk.Frame(grade_sec)
+        forced_table_row.pack(fill='x', padx=4, pady=(0, 2))
+        ttk.Label(forced_table_row, text="", width=28, anchor='w').pack(side='left')
+        ttk.Button(forced_table_row, text="Asignar tipos en tabla...", command=self._grad_open_forced_type_table).pack(side='left')
+        ttk.Label(forced_table_row, text="(Imagen | Tipo | Ruta)").pack(side='left', padx=8)
+        file_row(grade_sec, "Carpeta temp OCR (fallback):", self.grad_ocr_temp_dir_var,
+                 "Ultimo recurso de lectura: copia temporal de imágenes (se limpia al terminar).", directory=True)
         file_row(grade_sec, "Respuestas Moodle (xlsx):", self.grad_answers_var,
                  "Alternativa al OCR: respuestas ya digitalizadas en un xlsx (corrección desde Excel).")
         btns_grade = ttk.Frame(grade_sec)
@@ -775,14 +856,161 @@ class ExamApp:
             "message_col": self.grad_message_col_var.get().strip() or "MENSAJE",
         }
 
-    def _grad_parse_forced(self) -> dict:
-        forced = {}
-        for item in self.grad_forced_var.get().split(","):
-            item = item.strip()
-            if "=" in item:
-                name, value = item.split("=", 1)
-                forced[name.strip()] = value.strip().upper()
+    def _grad_image_paths(self) -> List[str]:
+        return [p.strip() for p in self.grad_images_var.get().split(";") if p.strip()]
+
+    @staticmethod
+    def _grad_parse_forced_text(raw_text: str) -> Dict[str, str]:
+        forced: Dict[str, str] = {}
+        normalized = str(raw_text or "").replace("\n", ";").replace(",", ";")
+        for item in normalized.split(";"):
+            chunk = item.strip()
+            if not chunk or "=" not in chunk:
+                continue
+            name, value = chunk.split("=", 1)
+            key = name.strip()
+            exam_type = value.strip().upper()
+            if key and exam_type:
+                forced[key] = exam_type
         return forced
+
+    def _grad_parse_forced(self) -> dict:
+        return self._grad_parse_forced_text(self.grad_forced_var.get())
+
+    def _grad_open_forced_type_table(self) -> None:
+        image_paths = self._grad_image_paths()
+        if not image_paths:
+            messagebox.showwarning("Sin imágenes", "Selecciona primero una o más imágenes manuscritas.")
+            return
+
+        current_forced = self._grad_parse_forced()
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Tipos forzados por imagen")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.minsize(860, 360)
+
+        wrapper = ttk.Frame(dialog, padding=10)
+        wrapper.pack(fill="both", expand=True)
+
+        ttk.Label(
+            wrapper,
+            text=(
+                "Edita el tipo por imagen. Puedes escribir en la caja y aplicar a la selección "
+                "o hacer doble clic en la columna 'Tipo asignado'."
+            ),
+            justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+
+        table_wrap = ttk.Frame(wrapper)
+        table_wrap.pack(fill="both", expand=True)
+
+        cols = ("image_name", "exam_type", "image_path")
+        tree = ttk.Treeview(table_wrap, columns=cols, show="headings", selectmode="extended")
+        tree.heading("image_name", text="Imagen")
+        tree.heading("exam_type", text="Tipo asignado")
+        tree.heading("image_path", text="Ruta")
+        tree.column("image_name", width=210, stretch=False)
+        tree.column("exam_type", width=120, anchor="center", stretch=False)
+        tree.column("image_path", width=620, stretch=True)
+
+        yscroll = ttk.Scrollbar(table_wrap, orient="vertical", command=tree.yview)
+        xscroll = ttk.Scrollbar(table_wrap, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll.grid(row=1, column=0, sticky="ew")
+        table_wrap.rowconfigure(0, weight=1)
+        table_wrap.columnconfigure(0, weight=1)
+
+        for path in image_paths:
+            name = os.path.basename(path)
+            forced_type = (
+                current_forced.get(path)
+                or current_forced.get(path.replace("\\", "/"))
+                or current_forced.get(name)
+                or ""
+            )
+            tree.insert("", "end", values=(name, forced_type, path))
+
+        controls = ttk.Frame(wrapper)
+        controls.pack(fill="x", pady=(8, 0))
+        ttk.Label(controls, text="Tipo:").pack(side="left")
+        type_var = tk.StringVar()
+        type_entry = ttk.Entry(controls, textvariable=type_var, width=12)
+        type_entry.pack(side="left", padx=(4, 8))
+
+        def apply_selected() -> None:
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("Sin selección", "Selecciona al menos una fila en la tabla.")
+                return
+            forced_type = type_var.get().strip().upper()
+            if not forced_type:
+                messagebox.showwarning("Tipo vacío", "Indica un tipo de examen (por ejemplo: A, 1A o 2B).")
+                return
+            for iid in selected:
+                tree.set(iid, "exam_type", forced_type)
+
+        def clear_selected() -> None:
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("Sin selección", "Selecciona al menos una fila en la tabla.")
+                return
+            for iid in selected:
+                tree.set(iid, "exam_type", "")
+
+        def edit_type_cell(event) -> None:
+            if tree.identify("region", event.x, event.y) != "cell":
+                return
+            if tree.identify_column(event.x) != "#2":
+                return
+            iid = tree.identify_row(event.y)
+            if not iid:
+                return
+            image_name = tree.set(iid, "image_name")
+            current = tree.set(iid, "exam_type")
+            new_value = simpledialog.askstring(
+                "Tipo de examen",
+                f"Tipo para '{image_name}':",
+                initialvalue=current,
+                parent=dialog,
+            )
+            if new_value is None:
+                return
+            tree.set(iid, "exam_type", new_value.strip().upper())
+
+        def save_and_close() -> None:
+            rows = [tree.item(iid, "values") for iid in tree.get_children("")]
+            name_counts: Dict[str, int] = {}
+            for row in rows:
+                image_name = str(row[0]).strip()
+                forced_type = str(row[1]).strip()
+                if forced_type:
+                    name_counts[image_name] = name_counts.get(image_name, 0) + 1
+
+            parts: List[str] = []
+            for row in rows:
+                image_name = str(row[0]).strip()
+                forced_type = str(row[1]).strip().upper()
+                image_path = str(row[2]).strip()
+                if not forced_type:
+                    continue
+                # Si hay imágenes con el mismo nombre, usar ruta completa para desambiguar.
+                key = image_path if name_counts.get(image_name, 0) > 1 else image_name
+                parts.append(f"{key}={forced_type}")
+
+            self.grad_forced_var.set("; ".join(parts))
+            dialog.destroy()
+
+        ttk.Button(controls, text="Aplicar a selección", command=apply_selected).pack(side="left")
+        ttk.Button(controls, text="Limpiar selección", command=clear_selected).pack(side="left", padx=(6, 0))
+        ttk.Button(controls, text="Guardar", command=save_and_close).pack(side="right")
+        ttk.Button(controls, text="Cancelar", command=dialog.destroy).pack(side="right", padx=(0, 6))
+
+        tree.bind("<Double-1>", edit_type_cell)
+        type_entry.focus_set()
 
     def _grad_parse_final_files(self) -> list:
         sources = []
@@ -834,6 +1062,7 @@ class ExamApp:
             return
         cols = self._grad_columns()
         forced = self._grad_parse_forced()
+        temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
 
         def work():
             matric = self._grad_merged_enrollment(out)
@@ -847,6 +1076,7 @@ class ExamApp:
                 aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
                 id_col=cols["id_col"], first_name_col=cols["first_name_col"],
                 last_name_col=cols["last_name_col"], email_col=cols["email_col"],
+                temp_image_dir=temp_image_dir,
             )
             self._grad_api().grade_from_images(cfg)
             return f"Corrección OCR completada. Resultados en:\n{out}"
@@ -1028,6 +1258,7 @@ class ExamApp:
             "enrollment": self.grad_enrollment_var.get(),
             "xmls": self.grad_xmls_var.get(),
             "images": self.grad_images_var.get(),
+            "forced_types": self.grad_forced_var.get(),
             "answers": self.grad_answers_var.get(),
             "theory": self.grad_theory_var.get(),
             "attendance": self.grad_attendance_var.get(),
@@ -1035,6 +1266,7 @@ class ExamApp:
             "justifications": self.grad_justif_var.get(),
             "quizzes": self.grad_quizzes_var.get(),
             "output_dir": self.grad_out_var.get(),
+            "ocr_temp_dir": self.grad_ocr_temp_dir_var.get(),
             "schedule_sheet": self.grad_sched_sheet_var.get(),
             "attendance_header_row": self.grad_att_header_var.get(),
             "compare_existing": self.grad_cmp_existing_var.get(),
@@ -1079,10 +1311,12 @@ class ExamApp:
         gi = session.grading_inputs or {}
         setters = {
             "enrollment": self.grad_enrollment_var, "xmls": self.grad_xmls_var,
-            "images": self.grad_images_var, "answers": self.grad_answers_var,
+            "images": self.grad_images_var, "forced_types": self.grad_forced_var,
+            "answers": self.grad_answers_var,
             "theory": self.grad_theory_var, "attendance": self.grad_attendance_var,
             "schedule": self.grad_schedule_var, "justifications": self.grad_justif_var,
             "quizzes": self.grad_quizzes_var, "output_dir": self.grad_out_var,
+            "ocr_temp_dir": self.grad_ocr_temp_dir_var,
             "schedule_sheet": self.grad_sched_sheet_var, "attendance_header_row": self.grad_att_header_var,
             "compare_existing": self.grad_cmp_existing_var, "compare_new": self.grad_cmp_new_var,
         }
@@ -1149,12 +1383,8 @@ class ExamApp:
         sheet_raw = self.grad_sched_sheet_var.get().strip()
         schedule_sheet = int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0)
 
-        forced = {}
-        for item in self.grad_forced_var.get().split(","):
-            item = item.strip()
-            if "=" in item:
-                name, value = item.split("=", 1)
-                forced[name.strip()] = value.strip().upper()
+        forced = self._grad_parse_forced()
+        temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
 
         pipeline_cols = self._grad_columns()
         header_raw = self.grad_att_header_var.get().strip()
@@ -1173,6 +1403,7 @@ class ExamApp:
                     xml_paths=xmls, enrollment_path=matric,
                     aggressive_recovery=True, aggressive_min_ratio=0.10,
                     aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
+                    temp_image_dir=temp_image_dir,
                 )
                 grader.grade_from_images(
                     image_paths=images, output_answers="respuestas.xlsx",

@@ -7,6 +7,7 @@ por tema). El OCR pesado (cv2/rapidocr) se prueba solo si el extra `[grading]` e
 import pandas as pd
 import pytest
 import numpy as np
+from types import SimpleNamespace
 
 from pyexamgenerator import grading
 from pyexamgenerator.grading import (
@@ -187,5 +188,71 @@ def test_answer_sheet_extractor_image_read_fallback_when_imread_fails(tmp_path, 
     loaded = AnswerSheetExtractor._load_grayscale_image(str(img_path))
     assert loaded is not None
     assert tuple(loaded.shape) == (12, 12)
+
+
+def test_answer_sheet_extractor_last_resort_temp_copy_fallback(tmp_path, monkeypatch):
+    if not grading.HAS_OCR:
+        pytest.skip("OCR extra no disponible")
+
+    cv2 = pytest.importorskip("cv2")
+    from pyexamgenerator.grading.extraction import AnswerSheetExtractor
+
+    img_path = tmp_path / "origen.jpg"
+    img = np.zeros((10, 10, 3), dtype=np.uint8)
+    ok, encoded = cv2.imencode(".jpg", img)
+    assert ok
+    encoded.tofile(str(img_path))
+
+    extractor = AnswerSheetExtractor.__new__(AnswerSheetExtractor)
+    temp_root = tmp_path / "pyexamgenerator_temp"
+    extractor.temp_image_dir = str(temp_root)
+
+    source_path = str(img_path)
+    real_fromfile = np.fromfile
+    monkeypatch.setattr(cv2, "imread", lambda *args, **kwargs: None)
+
+    def fake_fromfile(path, dtype=np.uint8):
+        if str(path) == source_path:
+            raise OSError("force temp-copy fallback")
+        return real_fromfile(path, dtype=dtype)
+
+    monkeypatch.setattr(np, "fromfile", fake_fromfile)
+
+    loaded = extractor._load_grayscale_image_with_fallback(source_path)
+    assert loaded is not None
+    assert tuple(loaded.shape) == (10, 10)
+    assert temp_root.exists()
+    assert list(temp_root.iterdir()) == []
+
+
+def test_image_exam_grader_defaults_single_available_type_when_missing():
+    if not grading.HAS_OCR:
+        pytest.skip("OCR extra no disponible")
+
+    from pyexamgenerator.grading.extraction import ImageExamGrader
+
+    grader = ImageExamGrader.__new__(ImageExamGrader)
+    grader.questions_by_exam_type = {"A": {}}
+    grader.available_exam_types = ["A"]
+
+    sheet = SimpleNamespace(image="20260612_112047.jpg", exam_type=None, answers={})
+    resolved = grader._resolve_exam_type(sheet, forced_type_by_image={}, prompt_if_missing=False)
+    assert resolved == "A"
+
+
+def test_image_exam_grader_accepts_forced_type_by_full_image_path():
+    if not grading.HAS_OCR:
+        pytest.skip("OCR extra no disponible")
+
+    from pyexamgenerator.grading.extraction import ImageExamGrader
+
+    grader = ImageExamGrader.__new__(ImageExamGrader)
+    grader.questions_by_exam_type = {"A": {}, "B": {}}
+    grader.available_exam_types = ["A", "B"]
+
+    sheet = SimpleNamespace(image="D:/tmp/20260612_112047.jpg", exam_type=None, answers={})
+    forced = {"D:\\TMP\\20260612_112047.jpg": "b"}
+    resolved = grader._resolve_exam_type(sheet, forced_type_by_image=forced, prompt_if_missing=False)
+    assert resolved == "B"
 
 

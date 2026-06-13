@@ -8,6 +8,8 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 ## [Unreleased]
 
 ### Añadido
+- **Popups copiables en la GUI:** los cuadros `showinfo`, `showwarning` y `showerror` ahora se muestran con texto seleccionable/copiable (botón **"Copiar"** y atajo `Ctrl+C`), útil para pegar errores completos en incidencias o soporte.
+- **Tabla para tipos forzados por imagen (OCR):** en **Corregir Exámenes**, además del campo de texto `imagen=tipo`, ahora se puede abrir una tabla con columnas **Imagen / Tipo asignado / Ruta** para asignar el tipo por fila desde el botón **"Asignar tipos en tabla..."**.
 - **Generar XML Moodle desde un examen XLSX existente:** Nuevo método `ExamGenerator.generate_moodle_xml_from_existing_exam_xlsx(...)` para convertir directamente un `*_completo.xlsx` en XML de Moodle sin volver a generar el examen completo.
 - **Conversión XLSX→XML en la pestaña Generar Exámenes:** La GUI añade la sección **"Generar Moodle XML desde XLSX de Examen"** (selección de `*_completo.xlsx`, ruta XML de salida opcional, penalización, texto extra de categoría y modo de XML no blanco).
 - **Alerta por preguntas muy usadas al generar exámenes:** La pestaña **Generar Exámenes** avisa, por defecto, cuando alguna pregunta seleccionada supera 3 usos en `Veces usada en examen`; el umbral es configurable, la alerta se puede desactivar y la configuración se guarda/carga con la plantilla de la pestaña.
@@ -65,6 +67,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Modo de entrada configurable para generación:** La pestaña **Generar Preguntas** permite elegir entre `text` (extracción de texto de PDF) e `image` (análisis visual multimodal con Gemini).
 
 ### Arreglado
+- **Ultimo recurso OCR con carpeta temporal configurable:** cuando fallan `cv2.imread(...)` y el fallback `np.fromfile + cv2.imdecode`, `AnswerSheetExtractor` copia la imagen a una carpeta temporal configurable y reintenta desde ahi; por defecto usa `~/Desktop/pyexamgenerator_temp` y limpia las copias al terminar. La GUI de **Corregir Exámenes** añade el campo **"Carpeta temp OCR (fallback)"**.
+- **Tipo de examen único en OCR:** si el OCR no detecta el tipo en una hoja, pero solo hay una plantilla XML cargada (por ejemplo, solo `A`), `ImageExamGrader` usa automáticamente ese único tipo en lugar de fallar con *"Could not determine exam type"*.
+- **Tipos forzados por nombre o ruta en OCR:** `ImageExamGrader` ahora acepta claves de `forced_type_by_image` tanto por nombre de archivo como por ruta completa (normalizando barras y mayúsculas/minúsculas), lo que evita colisiones cuando hay imágenes con el mismo nombre en carpetas distintas.
 - **Lectura de imágenes OCR en rutas Windows con Unicode:** `AnswerSheetExtractor` añade un fallback `np.fromfile + cv2.imdecode` cuando `cv2.imread(...)` falla, evitando errores *"Could not read image"* en rutas con acentos/caracteres especiales (p. ej. carpetas de OneDrive).
 - **Tipos de examen con letra sola (`A`, `B`) en corrección:** la inferencia del tipo desde XML y el parseo de columnas Moodle en integración (`Cuestionario:..._Tipo A (Real)`) aceptan ahora tanto formatos `A/B` como `1A/1B`.
 - **Fracciones de penalización compatibles con Moodle:** Al exportar XML, las penalizaciones se ajustan automáticamente a opciones válidas de Moodle (p. ej., `-33` se normaliza a `-33.3333333`) para evitar omisión de preguntas al importar.
