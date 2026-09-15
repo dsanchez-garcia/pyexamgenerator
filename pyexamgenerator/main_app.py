@@ -16,7 +16,7 @@
 
 import tkinter as tk
 import webbrowser
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 import pandas as pd
 from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededError, ServiceOverloadedError
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
@@ -25,6 +25,8 @@ from pyexamgenerator.tooltip import ToolTip
 from docx import Document
 import os
 import json
+import shutil
+import threading
 from ttkwidgets.frames import ScrolledFrame
 from google import genai
 
@@ -123,6 +125,7 @@ class ExamApp:
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
+        self._install_copyable_messageboxes()
 
         self.question_generator = None
         self.exam_generator = ExamGenerator()
@@ -155,9 +158,14 @@ class ExamApp:
         self.xml_cat_additional_text = tk.StringVar(value="Prueba GUI")
         self.export_moodle = tk.BooleanVar(value=False)
         self.update_excel = tk.BooleanVar(value=False)
+        self.usage_alert_enabled_var = tk.BooleanVar(value=True)
+        self.usage_alert_threshold_var = tk.StringVar(value="3")
         self.num_columns_var = tk.StringVar(value="3")
         self.selection_method_var = tk.StringVar(value="diccionario")
+        self.total_questions_var = tk.StringVar(value="20")
+        self.total_distribution_var = tk.StringVar(value="equitativo")
         self.gen_exams_output_dir_var = tk.StringVar()
+        self.gen_session_output_var = tk.StringVar()
 
         # --- Variables for the "Generate Questions" tab ---
         self.pdf_files_var = tk.StringVar()
@@ -169,14 +177,18 @@ class ExamApp:
         self.selected_model_var = tk.StringVar(value='')
 
         self.existing_bank_for_gen_path = tk.StringVar()
+        self.input_mode_var = tk.StringVar(value="text")
         self.process_by_pages_var = tk.BooleanVar(value=False)
         self.pages_per_chunk_var = tk.StringVar(value="1")
+        self.total_chunks_var = tk.StringVar(value="")
+        self.chunking_mode_var = tk.StringVar(value="pages")
         self.max_attempts_var = tk.StringVar(value="3")
         self.print_raw_gemini_answer_var = tk.BooleanVar(value=False)
         self.use_similarity_filter_var = tk.BooleanVar(value=True)
         self.similarity_threshold_var = tk.StringVar(value="0.8")
         self.bank_in_prompt_scope_var = tk.StringVar(value="mismo_tema")
         self.prompt_example_content_var = tk.StringVar(value="solo_enunciados")
+        self.include_similar_questions_in_prompt_var = tk.BooleanVar(value=True)
 
         self.question_bank_manager = QuestionBankManager()
 
@@ -184,10 +196,27 @@ class ExamApp:
         self.existing_bank_path = tk.StringVar()
         self.reviewed_add_path = tk.StringVar()
         self.add_questions_filter_var = tk.StringVar(value="todas")
+        self.update_bank_path_var = tk.StringVar()
+        # Lista de exámenes con los que actualizar el banco; cada entrada es {"path", "label"}.
+        self.update_exam_specs: List[Dict[str, str]] = []
+        # Configuración para derivar la etiqueta a partir del nombre del archivo del examen.
+        self.update_label_delimiter_var = tk.StringVar(value="_")
+        self.update_label_parts_var = tk.StringVar(value="")
         self.revised_xlsx_output_dir_var = tk.StringVar()
         self.revised_docx_path_var = tk.StringVar()
         self.new_xlsx_filename_var = tk.StringVar()
+        self.existing_exam_xlsx_for_xml_var = tk.StringVar()
+        self.existing_exam_xml_output_var = tk.StringVar()
+        self.existing_exam_xml_penalty_var = tk.StringVar(value="-25")
+        self.existing_exam_xml_cat_text_var = tk.StringVar(value="")
+        self.existing_exam_xml_use_answer_text_var = tk.BooleanVar(value=False)
         self.duplicate_check_var = tk.StringVar(value="pregunta_unica")
+        self.xml_use_answer_text_var = tk.BooleanVar(value=False)
+        self.template_docx_path_var = tk.StringVar(value="")
+        # Unificación de varios bancos en uno definitivo.
+        self.unify_duplicate_check_var = tk.StringVar(value="pregunta_respuestas")
+        self.unify_banks_display_var = tk.StringVar(value="")
+        self.unify_bank_paths: list = []
 
         # Añadimos variables para gestionar el tooltip de la tabla de modelos
         self.tree_tooltip = None
@@ -196,6 +225,7 @@ class ExamApp:
         self.create_question_tab()
         self.create_manage_bank_tab()
         self.create_exam_tab()
+        self.create_grading_tab()
 
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
@@ -205,6 +235,78 @@ class ExamApp:
         help_menu.add_command(label="Configurar API Key (Ayuda)...", command=self.open_api_key_help)
         help_menu.add_separator()
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
+
+    def _install_copyable_messageboxes(self) -> None:
+        """Replace standard info/warning/error popups with copyable dialogs."""
+
+        def _build_handler(kind: str):
+            def _handler(title=None, message=None, **kwargs):
+                return self._show_copyable_messagebox(kind=kind, title=title, message=message, **kwargs)
+
+            return _handler
+
+        messagebox.showinfo = _build_handler("info")
+        messagebox.showwarning = _build_handler("warning")
+        messagebox.showerror = _build_handler("error")
+
+    def _show_copyable_messagebox(self, kind: str, title: Optional[str], message: Optional[str], **kwargs):
+        parent = kwargs.get("parent") or self.root
+        detail = kwargs.get("detail")
+        text = "" if message is None else str(message)
+        if detail:
+            text = f"{text}\n\n{detail}" if text else str(detail)
+
+        icon = {"info": "[i]", "warning": "[!]", "error": "[x]"}.get(kind, "[*]")
+        dialog_title = str(title or "Mensaje")
+        top = tk.Toplevel(parent)
+        top.title(dialog_title)
+        top.transient(parent)
+        top.grab_set()
+        top.resizable(True, True)
+        top.minsize(480, 220)
+
+        body = ttk.Frame(top, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=f"{icon} {dialog_title}", anchor="w").pack(fill="x", pady=(0, 6))
+
+        txt = scrolledtext.ScrolledText(body, wrap=tk.WORD, height=10)
+        txt.pack(fill="both", expand=True)
+        txt.insert("1.0", text or "")
+        txt.configure(state=tk.DISABLED)
+
+        def copy_text(event=None):
+            try:
+                selected = txt.get("sel.first", "sel.last")
+            except tk.TclError:
+                selected = text or ""
+            top.clipboard_clear()
+            top.clipboard_append(selected)
+            return "break"
+
+        def close_dialog(event=None):
+            top.destroy()
+            return "break"
+
+        txt.bind("<Control-c>", copy_text)
+        txt.bind("<Control-C>", copy_text)
+        top.bind("<Escape>", close_dialog)
+
+        btns = ttk.Frame(body)
+        btns.pack(fill="x", pady=(8, 0))
+        ttk.Button(btns, text="Copiar", command=copy_text).pack(side="left")
+        ttk.Button(btns, text="Cerrar", command=close_dialog).pack(side="right")
+
+        top.protocol("WM_DELETE_WINDOW", close_dialog)
+        top.update_idletasks()
+        try:
+            x = parent.winfo_rootx() + max(0, (parent.winfo_width() - top.winfo_width()) // 2)
+            y = parent.winfo_rooty() + max(0, (parent.winfo_height() - top.winfo_height()) // 2)
+            top.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+        txt.focus_set()
+        top.wait_window()
+        return "ok"
 
     def open_api_key_help(self):
         """Opens the Google AI documentation for setting up API key environment variables."""
@@ -467,14 +569,1071 @@ class ExamApp:
         """
         self.status_text.set(message)
 
+    def create_grading_tab(self) -> None:
+        """Crea la pestaña 'Corregir Exámenes' dividida en secciones independientes, cada una con su botón.
+
+        Secciones: datos comunes + mapeo de columnas, corregir examen(es) (OCR o respuestas Moodle),
+        asistencia + justificaciones (opcional), integrar notas, punto extra, nota final ponderada y
+        sesión (guardar/cargar). Se mantiene además un botón de 'Pipeline completo'.
+        """
+        grading_tab = ttk.Frame(self.notebook)
+        self.notebook.add(grading_tab, text='Corregir Exámenes')
+
+        canvas = tk.Canvas(grading_tab)
+        scrollbar = ttk.Scrollbar(grading_tab, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        inner = ttk.Frame(canvas)
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+
+        intro = ttk.Label(
+            inner,
+            text=("Corrige exámenes de teoría por pasos independientes: corregir (OCR de hojas\n"
+                  "manuscritas o desde respuestas Moodle), asistencia + justificaciones (opcional),\n"
+                  "integrar notas, punto extra y nota final ponderada. Cada sección tiene su botón.\n"
+                  "El OCR requiere el extra:  pip install pyexamgenerator[grading]"),
+            justify='left',
+        )
+        intro.pack(anchor='w', padx=10, pady=8)
+
+        # --- Shared input/output variables ---
+        self.grad_enrollment_var = tk.StringVar()
+        self.grad_xmls_var = tk.StringVar()
+        self.grad_images_var = tk.StringVar()
+        self.grad_answers_var = tk.StringVar()
+        self.grad_theory_var = tk.StringVar()
+        self.grad_attendance_var = tk.StringVar()
+        self.grad_schedule_var = tk.StringVar()
+        self.grad_justif_var = tk.StringVar()
+        self.grad_quizzes_var = tk.StringVar()
+        self.grad_out_var = tk.StringVar()
+        self.grad_sched_sheet_var = tk.StringVar(value="0")
+        self.grad_att_header_var = tk.StringVar(value="3")
+        self.grad_forced_var = tk.StringVar()
+        self.grad_ocr_temp_dir_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Desktop", "pyexamgenerator_temp"))
+        self.grad_ocr_grades_var = tk.StringVar()
+        self.grad_integrated_var = tk.StringVar()
+        self.grad_attquiz_var = tk.StringVar()
+        self.grad_append_unmatched_var = tk.BooleanVar(value=True)
+        # Column mapping (defaults match the historical hard-coded names).
+        self.grad_id_col_var = tk.StringVar(value="Número de ID")
+        self.grad_first_col_var = tk.StringVar(value="Nombre")
+        self.grad_last_col_var = tk.StringVar(value="Apellido(s)")
+        self.grad_email_col_var = tk.StringVar(value="Dirección de correo")
+        self.grad_total_col_var = tk.StringVar(value="Calificación/10,00")
+        self.grad_sender_col_var = tk.StringVar(value="REMITENTE")
+        self.grad_subject_col_var = tk.StringVar(value="ASUNTO")
+        self.grad_message_col_var = tk.StringVar(value="MENSAJE")
+        # Final grade.
+        self.grad_final_mode_var = tk.StringVar(value="by_file")
+        self.grad_final_files_var = tk.StringVar()
+        self.grad_final_source_var = tk.StringVar()
+        self.grad_final_weights_var = tk.StringVar()
+        self.grad_final_cap_var = tk.BooleanVar(value=True)
+        # Compare / overwrite results.
+        self.grad_cmp_existing_var = tk.StringVar()
+        self.grad_cmp_new_var = tk.StringVar()
+        self.grad_cmp_value_cols_var = tk.StringVar()
+        self.grad_cmp_addnew_var = tk.BooleanVar(value=True)
+        self.grad_cmp_inplace_var = tk.BooleanVar(value=False)
+        # Session.
+        self.grad_session_path_var = tk.StringVar()
+
+        def file_row(parent, label, var, tip, multiple=False, directory=False):
+            rowf = ttk.Frame(parent)
+            rowf.pack(fill='x', padx=4, pady=2)
+            lbl = ttk.Label(rowf, text=label, width=28, anchor='w')
+            lbl.pack(side='left')
+            ToolTip(lbl, text=tip)
+            ttk.Entry(rowf, textvariable=var).pack(side='left', fill='x', expand=True, padx=4)
+            ttk.Button(rowf, text="…", width=3,
+                       command=lambda: self._grad_pick(var, multiple, directory)).pack(side='left')
+
+        def text_row(parent, label, var, tip, width=24):
+            rowf = ttk.Frame(parent)
+            rowf.pack(fill='x', padx=4, pady=1)
+            lbl = ttk.Label(rowf, text=label, width=28, anchor='w')
+            lbl.pack(side='left')
+            ToolTip(lbl, text=tip)
+            ttk.Entry(rowf, textvariable=var, width=width).pack(side='left', padx=4)
+
+        # --- Section: common data + column mapping ---
+        common = ttk.LabelFrame(inner, text="Datos comunes")
+        common.pack(fill='x', padx=8, pady=6)
+        file_row(common, "Matriculados (1+):", self.grad_enrollment_var,
+                 "Listados de matrícula (GIM, GITI-GIE-GIEI…). Puedes elegir varios.", multiple=True)
+        file_row(common, "Plantillas Moodle XML (1+):", self.grad_xmls_var,
+                 "XML de Moodle con las respuestas correctas (tipos 1A, 1B…).", multiple=True)
+        file_row(common, "Carpeta de salida:", self.grad_out_var,
+                 "Carpeta donde se guardan los resultados de cada sección.", directory=True)
+
+        cols = ttk.LabelFrame(inner, text="Mapeo de columnas (nombres en tus xlsx)")
+        cols.pack(fill='x', padx=8, pady=6)
+        ToolTip(cols, text="Define el nombre de las columnas de tus ficheros si no coinciden con los valores por defecto.")
+        colgrid = ttk.Frame(cols)
+        colgrid.pack(fill='x')
+        left_cols = ttk.Frame(colgrid); left_cols.pack(side='left', fill='x', expand=True)
+        right_cols = ttk.Frame(colgrid); right_cols.pack(side='left', fill='x', expand=True)
+        text_row(left_cols, "Nº de ID:", self.grad_id_col_var, "Columna del identificador del alumno.")
+        text_row(left_cols, "Nombre:", self.grad_first_col_var, "Columna del nombre.")
+        text_row(left_cols, "Apellidos:", self.grad_last_col_var, "Columna de los apellidos.")
+        text_row(left_cols, "Correo:", self.grad_email_col_var, "Columna del correo electrónico.")
+        text_row(right_cols, "Nota total:", self.grad_total_col_var, "Columna de la calificación total (Moodle).")
+        text_row(right_cols, "Remitente (justif.):", self.grad_sender_col_var, "Columna del remitente en justificaciones.")
+        text_row(right_cols, "Asunto (justif.):", self.grad_subject_col_var, "Columna del asunto del correo.")
+        text_row(right_cols, "Mensaje (justif.):", self.grad_message_col_var, "Columna del cuerpo del correo.")
+
+        # --- Section: grade exams ---
+        grade_sec = ttk.LabelFrame(inner, text="1. Corregir examen(es)")
+        grade_sec.pack(fill='x', padx=8, pady=6)
+        file_row(grade_sec, "Imágenes manuscritas (1+):", self.grad_images_var,
+                 "Fotos/escaneos de las hojas de respuestas (para OCR).", multiple=True)
+        file_row(grade_sec, "Tipos forzados (opcional):", self.grad_forced_var,
+                 "Forzar el tipo por imagen si el OCR no lo detecta. Formato: imagen.jpg=1A, otra.jpg=1B")
+        forced_table_row = ttk.Frame(grade_sec)
+        forced_table_row.pack(fill='x', padx=4, pady=(0, 2))
+        ttk.Label(forced_table_row, text="", width=28, anchor='w').pack(side='left')
+        ttk.Button(forced_table_row, text="Asignar tipos en tabla...", command=self._grad_open_forced_type_table).pack(side='left')
+        ttk.Label(forced_table_row, text="(Imagen | Tipo | Ruta)").pack(side='left', padx=8)
+        file_row(grade_sec, "Carpeta temp OCR (fallback):", self.grad_ocr_temp_dir_var,
+                 "Ultimo recurso de lectura: copia temporal de imágenes (se limpia al terminar).", directory=True)
+        file_row(grade_sec, "Respuestas Moodle (xlsx):", self.grad_answers_var,
+                 "Alternativa al OCR: respuestas ya digitalizadas en un xlsx (corrección desde Excel).")
+        btns_grade = ttk.Frame(grade_sec)
+        btns_grade.pack(fill='x', pady=4)
+        ttk.Button(btns_grade, text="Corregir desde imágenes (OCR)", command=self.grade_exams_from_images).pack(side='left', padx=4)
+        ttk.Button(btns_grade, text="Corregir desde respuestas (xlsx)", command=self.grade_exams_from_answers).pack(side='left', padx=4)
+
+        # --- Section: attendance + justifications (optional) ---
+        att_sec = ttk.LabelFrame(inner, text="2. Asistencia + justificaciones (opcional)")
+        att_sec.pack(fill='x', padx=8, pady=6)
+        ToolTip(att_sec, text="Paso independiente: la asistencia se computa aparte y solo se usa para cruzar/descartar. No es obligatorio.")
+        file_row(att_sec, "Asistencias:", self.grad_attendance_var, "Excel de asistencias de Moodle.")
+        file_row(att_sec, "Horario:", self.grad_schedule_var, "Excel de horario para cruzar fechas/temas (opcional).")
+        file_row(att_sec, "Justificaciones de faltas:", self.grad_justif_var,
+                 "Excel con las justificaciones (columna del remitente arriba).")
+        file_row(att_sec, "Cuestionarios de clase:", self.grad_quizzes_var,
+                 "Excel de calificaciones de cuestionarios de clase (opcional).")
+        text_row(att_sec, "Hoja del horario:", self.grad_sched_sheet_var, "Nombre de la hoja del horario, o índice (0 = primera).")
+        text_row(att_sec, "Fila de cabecera asist.:", self.grad_att_header_var, "Fila (0-based) con los encabezados en el Excel de asistencias.")
+        ttk.Button(att_sec, text="Analizar asistencia / justificaciones", command=self.run_attendance_analysis).pack(pady=4)
+
+        # --- Section: integrate grades ---
+        integ_sec = ttk.LabelFrame(inner, text="3. Integrar notas (Moodle + OCR)")
+        integ_sec.pack(fill='x', padx=8, pady=6)
+        file_row(integ_sec, "Notas de teoría (Moodle):", self.grad_theory_var,
+                 "Excel de calificaciones de teoría exportado de Moodle.")
+        file_row(integ_sec, "Notas OCR (xlsx):", self.grad_ocr_grades_var,
+                 "Notas manuscritas a integrar. Vacío = '<salida>/calificaciones_manuscritos.xlsx'.")
+        append_unmatched_chk = ttk.Checkbutton(
+            integ_sec,
+            text="Añadir alumnos OCR que no estén en teoría (modo unión)",
+            variable=self.grad_append_unmatched_var,
+        )
+        append_unmatched_chk.pack(anchor="w", padx=6, pady=(0, 4))
+        ToolTip(
+            append_unmatched_chk,
+            text=(
+                "Activado (recomendado): une teoría+OCR añadiendo filas OCR no presentes en teoría.\n"
+                "Desactivado: modo estricto, bloquea esas filas y las registra en incidencias."
+            ),
+        )
+        ttk.Button(integ_sec, text="Integrar notas", command=self.run_integrate_grades).pack(pady=4)
+
+        # --- Section: theory bonus ---
+        bonus_sec = ttk.LabelFrame(inner, text="4. Punto extra / teoría")
+        bonus_sec.pack(fill='x', padx=8, pady=6)
+        file_row(bonus_sec, "Teoría integrada (xlsx):", self.grad_integrated_var,
+                 "Notas de teoría ya integradas. Vacío = '<salida>/teoria_integrada.xlsx'.")
+        file_row(bonus_sec, "Asistencia+cuestionarios:", self.grad_attquiz_var,
+                 "Tabla asistencia+cuestionarios. Vacío = '<salida>/asistencias_con_cuestionarios.xlsx'.")
+        ttk.Button(bonus_sec, text="Aplicar punto extra", command=self.run_apply_bonus).pack(pady=4)
+
+        # --- Section: weighted final grade ---
+        final_sec = ttk.LabelFrame(inner, text="5. Nota final ponderada")
+        final_sec.pack(fill='x', padx=8, pady=6)
+        mode_row = ttk.Frame(final_sec); mode_row.pack(fill='x', padx=4, pady=2)
+        ttk.Label(mode_row, text="Modo:", width=28, anchor='w').pack(side='left')
+        ttk.Radiobutton(mode_row, text="Por fichero", variable=self.grad_final_mode_var, value="by_file").pack(side='left', padx=4)
+        ttk.Radiobutton(mode_row, text="Por columnas", variable=self.grad_final_mode_var, value="by_column").pack(side='left', padx=4)
+        ttk.Checkbutton(mode_row, text="Tope 10", variable=self.grad_final_cap_var).pack(side='left', padx=12)
+        files_row = ttk.Frame(final_sec); files_row.pack(fill='x', padx=4, pady=2)
+        lbl_ff = ttk.Label(files_row, text="Ficheros|peso[|etiqueta]:", width=28, anchor='w'); lbl_ff.pack(side='left')
+        ToolTip(lbl_ff, text="Modo por fichero. Separa con ';' y usa '|'. Ej: C:/teoria.xlsx|0.6|Teoria ; C:/practicas.xlsx|0.4|Practicas")
+        ttk.Entry(files_row, textvariable=self.grad_final_files_var).pack(side='left', fill='x', expand=True, padx=4)
+        ttk.Button(files_row, text="+", width=3, command=self._grad_add_final_file).pack(side='left')
+        file_row(final_sec, "Fichero (por columnas):", self.grad_final_source_var,
+                 "Modo por columnas: xlsx único cuyas columnas se ponderan.")
+        wrow = ttk.Frame(final_sec); wrow.pack(fill='x', padx=4, pady=2)
+        lbl_w = ttk.Label(wrow, text="Columnas|peso:", width=28, anchor='w'); lbl_w.pack(side='left')
+        ToolTip(lbl_w, text="Modo por columnas. Separa con ';' y usa '|'. Ej: Teoria|0.6 ; Practicas|0.4")
+        ttk.Entry(wrow, textvariable=self.grad_final_weights_var).pack(side='left', fill='x', expand=True, padx=4)
+        ttk.Button(final_sec, text="Calcular nota final", command=self.run_final_grade).pack(pady=4)
+
+        # --- Section: compare / overwrite results ---
+        cmp_sec = ttk.LabelFrame(inner, text="6. Comparar / sobrescribir resultados")
+        cmp_sec.pack(fill='x', padx=8, pady=6)
+        ToolTip(cmp_sec, text="Compara unas calificaciones o asistencias con una versión previa y, opcionalmente, combina sobrescribiendo con los valores nuevos.")
+        file_row(cmp_sec, "Fichero existente (xlsx):", self.grad_cmp_existing_var,
+                 "Resultados previos (calificaciones o asistencias) con los que comparar.")
+        file_row(cmp_sec, "Fichero nuevo (xlsx):", self.grad_cmp_new_var,
+                 "Resultados recién calculados que se comparan con los previos.")
+        text_row(cmp_sec, "Columnas a comparar:", self.grad_cmp_value_cols_var,
+                 "Opcional: columnas separadas por coma. Vacío = todas las columnas comunes (no identificativas).", width=36)
+        cmp_opts = ttk.Frame(cmp_sec); cmp_opts.pack(fill='x', padx=4, pady=2)
+        ttk.Checkbutton(cmp_opts, text="Añadir alumnos nuevos al combinar", variable=self.grad_cmp_addnew_var).pack(side='left', padx=4)
+        ttk.Checkbutton(cmp_opts, text="Reemplazar el fichero existente", variable=self.grad_cmp_inplace_var).pack(side='left', padx=12)
+        cmp_btns = ttk.Frame(cmp_sec); cmp_btns.pack(fill='x', pady=4)
+        ttk.Button(cmp_btns, text="Comparar (solo informe)", command=lambda: self.run_compare_results(False)).pack(side='left', padx=4)
+        ttk.Button(cmp_btns, text="Comparar y combinar (sobrescribir)", command=lambda: self.run_compare_results(True)).pack(side='left', padx=4)
+
+        # --- Section: session ---
+        sess_sec = ttk.LabelFrame(inner, text="Sesión (retomar más tarde)")
+        sess_sec.pack(fill='x', padx=8, pady=6)
+        file_row(sess_sec, "Archivo de sesión:", self.grad_session_path_var,
+                 "Ruta base de la sesión (.pkl/.json). Cargar rellena rutas y columnas.")
+        sess_btns = ttk.Frame(sess_sec); sess_btns.pack(fill='x', pady=4)
+        ttk.Button(sess_btns, text="Guardar sesión", command=self.save_grading_session).pack(side='left', padx=4)
+        ttk.Button(sess_btns, text="Cargar sesión", command=self.load_grading_session).pack(side='left', padx=4)
+
+        # --- Full pipeline (all-in-one, as before) ---
+        run_btn = ttk.Button(inner, text="Pipeline completo (todo de una pasada)", command=self.run_grading)
+        run_btn.pack(pady=12)
+
+    def _grad_pick(self, var: tk.StringVar, multiple: bool = False, directory: bool = False) -> None:
+        """Abre el diálogo adecuado y guarda la(s) ruta(s) en `var` (varias separadas por ';')."""
+        if directory:
+            path = filedialog.askdirectory()
+            if path:
+                var.set(path)
+        elif multiple:
+            paths = filedialog.askopenfilenames()
+            if paths:
+                var.set(";".join(paths))
+        else:
+            path = filedialog.askopenfilename()
+            if path:
+                var.set(path)
+
+    # --- Helpers shared by the grading sections ---
+    def _grad_run_async(self, status_msg: str, work_fn) -> None:
+        """Runs ``work_fn`` in a background thread, updating the status bar and reporting result/errors.
+
+        ``work_fn`` may return either:
+        - a string (success info), or
+        - a dict like {"info": "...", "warnings": ["...", ...]}.
+        """
+        def worker():
+            try:
+                self.root.after(0, lambda: self.update_status(status_msg))
+                result = work_fn()
+
+                result_msg = ""
+                warning_msgs: List[str] = []
+                if isinstance(result, dict):
+                    result_msg = str(result.get("info", "") or "").strip()
+                    raw_warnings = result.get("warnings", [])
+                    if isinstance(raw_warnings, str):
+                        raw_warnings = [raw_warnings]
+                    if isinstance(raw_warnings, (list, tuple)):
+                        warning_msgs = [str(msg).strip() for msg in raw_warnings if str(msg).strip()]
+                elif result:
+                    result_msg = str(result)
+
+                self.root.after(0, lambda: self.update_status("Listo."))
+                if warning_msgs:
+                    warning_text = "\n\n".join(warning_msgs)
+                    self.root.after(0, lambda t=warning_text: messagebox.showwarning("Avisos", t))
+                if result_msg:
+                    self.root.after(0, lambda m=result_msg: messagebox.showinfo("Corrección", m))
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                err = str(exc)
+                self.root.after(0, lambda: self.update_status("Error en la corrección."))
+                self.root.after(0, lambda e=err: messagebox.showerror("Error", e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _grad_api(self):
+        from pyexamgenerator.grading import ExamCorrectionAPI
+        out = self.grad_out_var.get().strip() or None
+        return ExamCorrectionAPI(default_output_dir=out)
+
+    def _grad_enrollment_list(self):
+        return [p for p in self.grad_enrollment_var.get().split(";") if p.strip()]
+
+    def _grad_merged_enrollment(self, out_dir: str) -> str:
+        """Merges the selected enrollment files into ``<out_dir>/matriculados.xlsx`` and returns its path."""
+        from pyexamgenerator.grading import EnrollmentMerger
+        paths = self._grad_enrollment_list()
+        if not paths:
+            raise ValueError("Selecciona al menos un fichero de matriculados.")
+        os.makedirs(out_dir, exist_ok=True)
+        merged = os.path.join(out_dir, "matriculados.xlsx")
+        EnrollmentMerger(paths).export(merged)
+        return merged
+
+    def _grad_columns(self) -> dict:
+        return {
+            "id_col": self.grad_id_col_var.get().strip() or "Número de ID",
+            "first_name_col": self.grad_first_col_var.get().strip() or "Nombre",
+            "last_name_col": self.grad_last_col_var.get().strip() or "Apellido(s)",
+            "email_col": self.grad_email_col_var.get().strip() or "Dirección de correo",
+            "total_grade_col": self.grad_total_col_var.get().strip() or "Calificación/10,00",
+            "sender_col": self.grad_sender_col_var.get().strip() or "REMITENTE",
+            "subject_col": self.grad_subject_col_var.get().strip() or "ASUNTO",
+            "message_col": self.grad_message_col_var.get().strip() or "MENSAJE",
+        }
+
+    def _grad_image_paths(self) -> List[str]:
+        return [p.strip() for p in self.grad_images_var.get().split(";") if p.strip()]
+
+    @staticmethod
+    def _grad_parse_forced_text(raw_text: str) -> Dict[str, str]:
+        forced: Dict[str, str] = {}
+        normalized = str(raw_text or "").replace("\n", ";").replace(",", ";")
+        for item in normalized.split(";"):
+            chunk = item.strip()
+            if not chunk or "=" not in chunk:
+                continue
+            name, value = chunk.split("=", 1)
+            key = name.strip()
+            exam_type = value.strip().upper()
+            if key and exam_type:
+                forced[key] = exam_type
+        return forced
+
+    def _grad_parse_forced(self) -> dict:
+        return self._grad_parse_forced_text(self.grad_forced_var.get())
+
+    def _grad_open_forced_type_table(self) -> None:
+        image_paths = self._grad_image_paths()
+        if not image_paths:
+            messagebox.showwarning("Sin imágenes", "Selecciona primero una o más imágenes manuscritas.")
+            return
+
+        current_forced = self._grad_parse_forced()
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Tipos forzados por imagen")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.minsize(860, 360)
+
+        wrapper = ttk.Frame(dialog, padding=10)
+        wrapper.pack(fill="both", expand=True)
+
+        ttk.Label(
+            wrapper,
+            text=(
+                "Edita el tipo por imagen. Puedes escribir en la caja y aplicar a la selección "
+                "o hacer doble clic en la columna 'Tipo asignado'."
+            ),
+            justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+
+        table_wrap = ttk.Frame(wrapper)
+        table_wrap.pack(fill="both", expand=True)
+
+        cols = ("image_name", "exam_type", "image_path")
+        tree = ttk.Treeview(table_wrap, columns=cols, show="headings", selectmode="extended")
+        tree.heading("image_name", text="Imagen")
+        tree.heading("exam_type", text="Tipo asignado")
+        tree.heading("image_path", text="Ruta")
+        tree.column("image_name", width=210, stretch=False)
+        tree.column("exam_type", width=120, anchor="center", stretch=False)
+        tree.column("image_path", width=620, stretch=True)
+
+        yscroll = ttk.Scrollbar(table_wrap, orient="vertical", command=tree.yview)
+        xscroll = ttk.Scrollbar(table_wrap, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll.grid(row=1, column=0, sticky="ew")
+        table_wrap.rowconfigure(0, weight=1)
+        table_wrap.columnconfigure(0, weight=1)
+
+        for path in image_paths:
+            name = os.path.basename(path)
+            forced_type = (
+                current_forced.get(path)
+                or current_forced.get(path.replace("\\", "/"))
+                or current_forced.get(name)
+                or ""
+            )
+            tree.insert("", "end", values=(name, forced_type, path))
+
+        controls = ttk.Frame(wrapper)
+        controls.pack(fill="x", pady=(8, 0))
+        ttk.Label(controls, text="Tipo:").pack(side="left")
+        type_var = tk.StringVar()
+        type_entry = ttk.Entry(controls, textvariable=type_var, width=12)
+        type_entry.pack(side="left", padx=(4, 8))
+
+        def apply_selected() -> None:
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("Sin selección", "Selecciona al menos una fila en la tabla.")
+                return
+            forced_type = type_var.get().strip().upper()
+            if not forced_type:
+                messagebox.showwarning("Tipo vacío", "Indica un tipo de examen (por ejemplo: A, 1A o 2B).")
+                return
+            for iid in selected:
+                tree.set(iid, "exam_type", forced_type)
+
+        def clear_selected() -> None:
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("Sin selección", "Selecciona al menos una fila en la tabla.")
+                return
+            for iid in selected:
+                tree.set(iid, "exam_type", "")
+
+        def edit_type_cell(event) -> None:
+            if tree.identify("region", event.x, event.y) != "cell":
+                return
+            if tree.identify_column(event.x) != "#2":
+                return
+            iid = tree.identify_row(event.y)
+            if not iid:
+                return
+            image_name = tree.set(iid, "image_name")
+            current = tree.set(iid, "exam_type")
+            new_value = simpledialog.askstring(
+                "Tipo de examen",
+                f"Tipo para '{image_name}':",
+                initialvalue=current,
+                parent=dialog,
+            )
+            if new_value is None:
+                return
+            tree.set(iid, "exam_type", new_value.strip().upper())
+
+        def save_and_close() -> None:
+            rows = [tree.item(iid, "values") for iid in tree.get_children("")]
+            name_counts: Dict[str, int] = {}
+            for row in rows:
+                image_name = str(row[0]).strip()
+                forced_type = str(row[1]).strip()
+                if forced_type:
+                    name_counts[image_name] = name_counts.get(image_name, 0) + 1
+
+            parts: List[str] = []
+            for row in rows:
+                image_name = str(row[0]).strip()
+                forced_type = str(row[1]).strip().upper()
+                image_path = str(row[2]).strip()
+                if not forced_type:
+                    continue
+                # Si hay imágenes con el mismo nombre, usar ruta completa para desambiguar.
+                key = image_path if name_counts.get(image_name, 0) > 1 else image_name
+                parts.append(f"{key}={forced_type}")
+
+            self.grad_forced_var.set("; ".join(parts))
+            dialog.destroy()
+
+        ttk.Button(controls, text="Aplicar a selección", command=apply_selected).pack(side="left")
+        ttk.Button(controls, text="Limpiar selección", command=clear_selected).pack(side="left", padx=(6, 0))
+        ttk.Button(controls, text="Guardar", command=save_and_close).pack(side="right")
+        ttk.Button(controls, text="Cancelar", command=dialog.destroy).pack(side="right", padx=(0, 6))
+
+        tree.bind("<Double-1>", edit_type_cell)
+        type_entry.focus_set()
+
+    def _grad_parse_final_files(self) -> list:
+        sources = []
+        for item in self.grad_final_files_var.get().replace("\n", ";").split(";"):
+            item = item.strip()
+            if not item:
+                continue
+            parts = [p.strip() for p in item.split("|")]
+            source = {"path": parts[0]}
+            if len(parts) > 1 and parts[1]:
+                source["weight"] = float(parts[1].replace(",", "."))
+            if len(parts) > 2 and parts[2]:
+                source["label"] = parts[2]
+            sources.append(source)
+        return sources
+
+    def _grad_parse_weights(self) -> dict:
+        weights = {}
+        for item in self.grad_final_weights_var.get().replace("\n", ";").split(";"):
+            item = item.strip()
+            if not item or "|" not in item:
+                continue
+            col, weight = item.rsplit("|", 1)
+            weights[col.strip()] = float(weight.strip().replace(",", "."))
+        return weights
+
+    def _grad_add_final_file(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Añadir examen para la nota final",
+            filetypes=[("Archivos Excel", "*.xlsx;*.xls")],
+        )
+        if not path:
+            return
+        current = self.grad_final_files_var.get().strip()
+        entry = f"{path}|1.0"
+        self.grad_final_files_var.set(f"{current} ; {entry}" if current else entry)
+
+    def grade_exams_from_images(self) -> None:
+        """Section 1a: OCR of handwritten answer sheets into a grades XLSX."""
+        from pyexamgenerator.grading import HAS_OCR, ImageGradingConfig
+        xmls = [p for p in self.grad_xmls_var.get().split(";") if p.strip()]
+        images = [p for p in self.grad_images_var.get().split(";") if p.strip()]
+        out = self.grad_out_var.get().strip()
+        if not (self._grad_enrollment_list() and xmls and images and out):
+            messagebox.showerror("Faltan datos", "Necesitas matriculados, plantillas XML, imágenes y carpeta de salida.")
+            return
+        if not HAS_OCR:
+            messagebox.showerror("OCR no disponible", "El OCR requiere el extra:\n\npip install pyexamgenerator[grading]")
+            return
+        cols = self._grad_columns()
+        forced = self._grad_parse_forced()
+        temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
+
+        def work():
+            matric = self._grad_merged_enrollment(out)
+            cfg = ImageGradingConfig(
+                xml_paths=xmls, image_paths=images, enrollment_path=matric,
+                enrollment_paths=self._grad_enrollment_list(),
+                output_answers="respuestas.xlsx", output_grades="calificaciones_manuscritos.xlsx",
+                output_incidents="incidencias.xlsx", output_dir=out,
+                forced_type_by_image=forced, prompt_missing_type=False, interactive_review=False,
+                aggressive_recovery=True, aggressive_min_ratio=0.10,
+                aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
+                id_col=cols["id_col"], first_name_col=cols["first_name_col"],
+                last_name_col=cols["last_name_col"], email_col=cols["email_col"],
+                temp_image_dir=temp_image_dir,
+            )
+            api = self._grad_api()
+            api.grade_from_images(cfg)
+
+            warning_msgs: List[str] = []
+            incidents_df = api.results.get("ocr_incidents")
+            if isinstance(incidents_df, pd.DataFrame) and not incidents_df.empty:
+                warning_msgs.append(
+                    "Se detectaron incidencias durante el OCR "
+                    f"({len(incidents_df)} fila(s)).\n"
+                    f"Revisa: {os.path.join(out, 'incidencias.xlsx')}"
+                )
+
+            return {
+                "info": f"Corrección OCR completada. Resultados en:\n{out}",
+                "warnings": warning_msgs,
+            }
+
+        self._grad_run_async("Corrigiendo (OCR de hojas, puede tardar)…", work)
+
+    def grade_exams_from_answers(self) -> None:
+        """Section 1b: grade from an already-digitized Moodle answers XLSX."""
+        from pyexamgenerator.grading import ExcelGradingConfig
+        xmls = [p for p in self.grad_xmls_var.get().split(";") if p.strip()]
+        answers = self.grad_answers_var.get().strip()
+        out = self.grad_out_var.get().strip()
+        if not (self._grad_enrollment_list() and xmls and answers and out):
+            messagebox.showerror("Faltan datos", "Necesitas matriculados, una plantilla XML, el xlsx de respuestas y carpeta de salida.")
+            return
+        cols = self._grad_columns()
+
+        def work():
+            matric = self._grad_merged_enrollment(out)
+            cfg = ExcelGradingConfig(
+                exam_xml_path=xmls[0], answers_xlsx_path=answers, enrollment_xlsx_path=matric,
+                output_path="calificaciones_desde_respuestas.xlsx", output_dir=out,
+                last_name_col=cols["last_name_col"], first_name_col=cols["first_name_col"],
+                id_col=cols["id_col"], email_col=cols["email_col"],
+            )
+            self._grad_api().grade_from_excel(cfg)
+            return f"Corrección desde respuestas completada. Resultados en:\n{out}"
+
+        self._grad_run_async("Corrigiendo desde respuestas…", work)
+
+    def run_attendance_analysis(self) -> None:
+        """Section 2: attendance + justifications cross-check (optional, independent step)."""
+        from pyexamgenerator.grading import AbsenceJustificationConfig
+        attendance = self.grad_attendance_var.get().strip()
+        justif = self.grad_justif_var.get().strip()
+        out = self.grad_out_var.get().strip()
+        if not (self._grad_enrollment_list() and attendance and justif and out):
+            messagebox.showerror("Faltan datos", "Necesitas matriculados, asistencias, justificaciones y carpeta de salida.")
+            return
+        cols = self._grad_columns()
+        sheet_raw = self.grad_sched_sheet_var.get().strip()
+        schedule_sheet = int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0)
+        header_raw = self.grad_att_header_var.get().strip()
+        header_row = int(header_raw) if header_raw.lstrip("-").isdigit() else 3
+
+        def work():
+            matric = self._grad_merged_enrollment(out)
+            cfg = AbsenceJustificationConfig(
+                attendance_xlsx_path=attendance, justifications_xlsx_path=justif,
+                enrollment_xlsx_path=matric, schedule_xlsx_path=self.grad_schedule_var.get().strip() or None,
+                schedule_sheet=schedule_sheet, quizzes_xlsx_path=self.grad_quizzes_var.get().strip() or None,
+                output_dir=out, attendance_header_row=header_row,
+                sender_col=cols["sender_col"], subject_col=cols["subject_col"], message_col=cols["message_col"],
+                first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
+                id_col=cols["id_col"], email_col=cols["email_col"],
+            )
+            self._grad_api().process_absence_justifications(cfg)
+            return f"Asistencia/justificaciones analizadas. Resultados en:\n{out}"
+
+        self._grad_run_async("Analizando asistencia y justificaciones…", work)
+
+    def run_integrate_grades(self) -> None:
+        """Section 3: overlay OCR grades on the Moodle theory workbook."""
+        from pyexamgenerator.grading import OCRIntegrationConfig
+        theory = self.grad_theory_var.get().strip()
+        out = self.grad_out_var.get().strip()
+        if not (theory and out):
+            messagebox.showerror("Faltan datos", "Necesitas las notas de teoría (Moodle) y la carpeta de salida.")
+            return
+        ocr_grades = self.grad_ocr_grades_var.get().strip() or os.path.join(out, "calificaciones_manuscritos.xlsx")
+        append_unmatched_students = bool(self.grad_append_unmatched_var.get())
+
+        def work():
+            cfg = OCRIntegrationConfig(
+                general_xlsx_path=theory, ocr_xlsx_path=ocr_grades,
+                output_path="teoria_integrada.xlsx", output_dir=out,
+                enrollment_paths=self._grad_enrollment_list(),
+                append_unmatched_students=append_unmatched_students,
+            )
+            api = self._grad_api()
+            api.integrate_ocr_grades(cfg)
+
+            warning_msgs: List[str] = []
+            integration_summary = api.results.get("ocr_integration_summary")
+            if isinstance(integration_summary, dict):
+                removed_summary_rows = int(integration_summary.get("general_summary_rows_removed", 0) or 0)
+                if removed_summary_rows > 0:
+                    warning_msgs.append(
+                        "Se eliminaron automáticamente "
+                        f"{removed_summary_rows} fila(s) de promedio/resumen "
+                        "en las notas de teoría antes de integrar OCR."
+                    )
+                blocked_missing_identity = int(integration_summary.get("blocked_missing_identity", 0) or 0)
+                blocked_unmatched = int(integration_summary.get("blocked_unmatched", 0) or 0)
+                blocked_missing_target = int(integration_summary.get("blocked_missing_target", 0) or 0)
+                blocked_missing_grade = int(integration_summary.get("blocked_missing_grade", 0) or 0)
+                blocked_total = blocked_missing_identity + blocked_unmatched + blocked_missing_target + blocked_missing_grade
+                if blocked_total > 0:
+                    parts = []
+                    if blocked_missing_identity:
+                        parts.append(f"- Sin identidad (ID o nombre+apellidos): {blocked_missing_identity}")
+                    if blocked_unmatched:
+                        parts.append(f"- Alumno no encontrado en teoría: {blocked_unmatched}")
+                    if blocked_missing_target:
+                        parts.append(f"- Sin columna destino en teoría: {blocked_missing_target}")
+                    if blocked_missing_grade:
+                        parts.append(f"- Sin nota OCR válida: {blocked_missing_grade}")
+                    incidents_path = str(api.results.get("ocr_integration_incidents_path") or os.path.join(out, "incidencias_integracion_ocr.xlsx"))
+                    warning_msgs.append(
+                        "Durante la integración se bloquearon filas OCR:\n"
+                        + "\n".join(parts)
+                        + f"\nRevisa: {incidents_path}"
+                    )
+
+            ocr_incidents_path = os.path.join(out, "incidencias.xlsx")
+            if os.path.exists(ocr_incidents_path):
+                try:
+                    ocr_incidents_df = pd.read_excel(ocr_incidents_path)
+                except Exception:
+                    ocr_incidents_df = None
+                if isinstance(ocr_incidents_df, pd.DataFrame) and not ocr_incidents_df.empty:
+                    warning_msgs.append(
+                        "Hay incidencias OCR pendientes de revisar "
+                        f"({len(ocr_incidents_df)} fila(s)).\n"
+                        f"Revisa: {ocr_incidents_path}"
+                    )
+
+            return {
+                "info": f"Notas integradas en:\n{out}",
+                "warnings": warning_msgs,
+            }
+
+        self._grad_run_async("Integrando notas OCR en teoría…", work)
+
+    def run_apply_bonus(self) -> None:
+        """Section 4: apply the theory bonus point from attendance + quizzes."""
+        from pyexamgenerator.grading import TheoryBonusConfig
+        out = self.grad_out_var.get().strip()
+        if not out:
+            messagebox.showerror("Faltan datos", "Necesitas la carpeta de salida.")
+            return
+        integrated = self.grad_integrated_var.get().strip() or os.path.join(out, "teoria_integrada.xlsx")
+        attquiz = self.grad_attquiz_var.get().strip() or os.path.join(out, "asistencias_con_cuestionarios.xlsx")
+
+        def work():
+            cfg = TheoryBonusConfig(
+                theory_xlsx_path=integrated, attendance_quiz_xlsx_path=attquiz,
+                output_path="calificaciones_examen_teoria.xlsx", output_dir=out,
+                theory_grade_col=self.grad_total_col_var.get().strip() or None, cap_to_10=True,
+            )
+            self._grad_api().apply_theory_bonus(cfg)
+            return f"Punto extra aplicado. Resultados en:\n{out}"
+
+        self._grad_run_async("Aplicando punto extra…", work)
+
+    def run_final_grade(self) -> None:
+        """Section 5: weighted final grade (by file or by column)."""
+        from pyexamgenerator.grading import FinalGradeConfig
+        out = self.grad_out_var.get().strip()
+        if not out:
+            messagebox.showerror("Faltan datos", "Necesitas la carpeta de salida.")
+            return
+        mode = self.grad_final_mode_var.get()
+        cap = bool(self.grad_final_cap_var.get())
+        cols = self._grad_columns()
+
+        if mode == "by_column":
+            source = self.grad_final_source_var.get().strip()
+            weights = self._grad_parse_weights()
+            if not source or not weights:
+                messagebox.showerror("Faltan datos", "Indica el fichero y las columnas con su peso (Columna|peso ; …).")
+                return
+            cfg = FinalGradeConfig(mode="by_column", source_path=source, weights=weights,
+                                   output_path="calificaciones_finales_ponderadas.xlsx", output_dir=out, cap_to_10=cap)
+        else:
+            sources = self._grad_parse_final_files()
+            if not sources:
+                messagebox.showerror("Faltan datos", "Añade al menos un examen (Fichero|peso ; …).")
+                return
+            cfg = FinalGradeConfig(mode="by_file", sources=sources, output_path="calificaciones_finales_ponderadas.xlsx",
+                                   output_dir=out, cap_to_10=cap, id_col=cols["id_col"],
+                                   first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"])
+
+        def work():
+            self._grad_api().compute_final_grade(cfg)
+            return f"Nota final calculada en:\n{out}"
+
+        self._grad_run_async("Calculando nota final ponderada…", work)
+
+    def run_compare_results(self, overwrite: bool) -> None:
+        """Section 6: compare results against a previous version, optionally writing a merged file."""
+        from pyexamgenerator.grading import ComparisonConfig
+        existing = self.grad_cmp_existing_var.get().strip()
+        new = self.grad_cmp_new_var.get().strip()
+        out = self.grad_out_var.get().strip()
+        if not (existing and new and out):
+            messagebox.showerror("Faltan datos", "Necesitas el fichero existente, el fichero nuevo y la carpeta de salida.")
+            return
+        value_cols = [c.strip() for c in self.grad_cmp_value_cols_var.get().split(",") if c.strip()]
+        cols = self._grad_columns()
+        in_place = bool(self.grad_cmp_inplace_var.get()) and overwrite
+        add_new = bool(self.grad_cmp_addnew_var.get())
+
+        if in_place and not messagebox.askyesno(
+            "Confirmar sobrescritura",
+            f"Se sobrescribirá el fichero existente con los valores nuevos:\n{existing}\n\n¿Continuar?",
+        ):
+            return
+
+        def work():
+            cfg = ComparisonConfig(
+                existing_path=existing, new_path=new, value_cols=value_cols,
+                overwrite=overwrite, add_new_rows=add_new, merged_in_place=in_place,
+                report_output_path="comparacion_resultados.xlsx",
+                merged_output_path="resultados_combinados.xlsx", output_dir=out,
+                id_col=cols["id_col"], first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
+            )
+            result = self._grad_api().compare_results(cfg)
+            s = result.summary
+            message = (f"Comparación: {s['changed_cells']} celdas cambiadas en {s['changed_students']} alumno(s), "
+                       f"{s['added']} nuevo(s), {s['removed']} ausente(s).\nInforme en: {out}")
+            if overwrite:
+                target = existing if in_place else os.path.join(out, "resultados_combinados.xlsx")
+                message += f"\nFichero combinado: {target}"
+            return message
+
+        self._grad_run_async("Comparando resultados…", work)
+
+    def _grad_session_inputs(self) -> dict:
+        return {
+            "enrollment": self.grad_enrollment_var.get(),
+            "xmls": self.grad_xmls_var.get(),
+            "images": self.grad_images_var.get(),
+            "forced_types": self.grad_forced_var.get(),
+            "answers": self.grad_answers_var.get(),
+            "theory": self.grad_theory_var.get(),
+            "attendance": self.grad_attendance_var.get(),
+            "schedule": self.grad_schedule_var.get(),
+            "justifications": self.grad_justif_var.get(),
+            "quizzes": self.grad_quizzes_var.get(),
+            "output_dir": self.grad_out_var.get(),
+            "ocr_temp_dir": self.grad_ocr_temp_dir_var.get(),
+            "schedule_sheet": self.grad_sched_sheet_var.get(),
+            "attendance_header_row": self.grad_att_header_var.get(),
+            "compare_existing": self.grad_cmp_existing_var.get(),
+            "compare_new": self.grad_cmp_new_var.get(),
+            "append_unmatched_ocr": bool(self.grad_append_unmatched_var.get()),
+            "columns": self._grad_columns(),
+        }
+
+    def save_grading_session(self) -> None:
+        """Saves the current grading inputs/columns to a resumable session (.pkl + .json)."""
+        from pyexamgenerator.grading import GradingSession
+        path = self.grad_session_path_var.get().strip()
+        if not path:
+            path = filedialog.asksaveasfilename(
+                title="Guardar sesión de corrección", defaultextension=".json",
+                initialfile="sesion_correccion.json", filetypes=[("Sesión", "*.json *.pkl")])
+        if not path:
+            return
+        try:
+            session = GradingSession(name="sesion_correccion")
+            session.set_grading_inputs(**self._grad_session_inputs())
+            pkl_path, json_path = session.save(path)
+            self.grad_session_path_var.set(json_path)
+            messagebox.showinfo("Sesión", f"Sesión guardada en:\n{pkl_path}\n{json_path}")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Error", f"No se pudo guardar la sesión: {exc}")
+
+    def load_grading_session(self) -> None:
+        """Loads a session and fills the grading inputs/columns (incl. generated exam XML paths)."""
+        from pyexamgenerator.grading import GradingSession
+        path = self.grad_session_path_var.get().strip()
+        if not path:
+            path = filedialog.askopenfilename(
+                title="Cargar sesión de corrección", filetypes=[("Sesión", "*.json *.pkl"), ("Todos", "*.*")])
+        if not path:
+            return
+        try:
+            session = GradingSession.load(path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Error", f"No se pudo cargar la sesión: {exc}")
+            return
+
+        gi = session.grading_inputs or {}
+        setters = {
+            "enrollment": self.grad_enrollment_var, "xmls": self.grad_xmls_var,
+            "images": self.grad_images_var, "forced_types": self.grad_forced_var,
+            "answers": self.grad_answers_var,
+            "theory": self.grad_theory_var, "attendance": self.grad_attendance_var,
+            "schedule": self.grad_schedule_var, "justifications": self.grad_justif_var,
+            "quizzes": self.grad_quizzes_var, "output_dir": self.grad_out_var,
+            "ocr_temp_dir": self.grad_ocr_temp_dir_var,
+            "schedule_sheet": self.grad_sched_sheet_var, "attendance_header_row": self.grad_att_header_var,
+            "compare_existing": self.grad_cmp_existing_var, "compare_new": self.grad_cmp_new_var,
+        }
+        for key, var in setters.items():
+            if gi.get(key):
+                var.set(str(gi[key]))
+
+        append_unmatched_raw = gi.get("append_unmatched_ocr", None)
+        if append_unmatched_raw is not None:
+            if isinstance(append_unmatched_raw, str):
+                parsed_bool = append_unmatched_raw.strip().lower() in {"1", "true", "yes", "si", "sí"}
+            else:
+                parsed_bool = bool(append_unmatched_raw)
+            self.grad_append_unmatched_var.set(parsed_bool)
+
+        columns = gi.get("columns") or {}
+        col_setters = {
+            "id_col": self.grad_id_col_var, "first_name_col": self.grad_first_col_var,
+            "last_name_col": self.grad_last_col_var, "email_col": self.grad_email_col_var,
+            "total_grade_col": self.grad_total_col_var, "sender_col": self.grad_sender_col_var,
+            "subject_col": self.grad_subject_col_var, "message_col": self.grad_message_col_var,
+        }
+        for key, var in col_setters.items():
+            if columns.get(key):
+                var.set(str(columns[key]))
+
+        # Resume directly from generated exams: fill XML paths if the session recorded them.
+        xml_paths = session.generated_xml_paths()
+        if xml_paths:
+            self.grad_xmls_var.set(";".join(xml_paths))
+
+        self.grad_session_path_var.set(path)
+        messagebox.showinfo("Sesión", "Sesión cargada. Rutas y columnas restauradas.")
+
+    def run_grading(self) -> None:
+        """Lanza el pipeline de corrección en un hilo aparte para no congelar la interfaz.
+
+        Genera SOLO 3 tablas en la carpeta de salida (incidencias, cuestionarios+punto extra y
+        calificaciones de teoría); los ficheros intermedios van a `_intermedios/` y se borran.
+        """
+        from pyexamgenerator.grading import (
+            HAS_OCR, EnrollmentMerger, ImageExamGrader, OcrGradeIntegrator,
+            AbsenceJustificationManager, TheoryBonusApplier, TheoryTopicReporter,
+        )
+
+        enrollment = [p for p in self.grad_enrollment_var.get().split(";") if p]
+        xmls = [p for p in self.grad_xmls_var.get().split(";") if p]
+        images = [p for p in self.grad_images_var.get().split(";") if p]
+        theory = self.grad_theory_var.get().strip()
+        attendance = self.grad_attendance_var.get().strip()
+        schedule = self.grad_schedule_var.get().strip()
+        justif = self.grad_justif_var.get().strip()
+        quizzes = self.grad_quizzes_var.get().strip()
+        out_dir = self.grad_out_var.get().strip()
+
+        required = {
+            "Matriculados": enrollment, "Plantillas XML": xmls, "Imágenes": images,
+            "Notas de teoría": theory, "Asistencias": attendance, "Horario": schedule,
+            "Justificaciones": justif, "Cuestionarios": quizzes, "Carpeta de salida": out_dir,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            messagebox.showerror("Faltan datos", "Selecciona: " + ", ".join(missing))
+            return
+        if not HAS_OCR:
+            messagebox.showerror(
+                "OCR no disponible",
+                "El OCR de manuscritos requiere el extra:\n\npip install pyexamgenerator[grading]",
+            )
+            return
+
+        sheet_raw = self.grad_sched_sheet_var.get().strip()
+        schedule_sheet = int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0)
+
+        forced = self._grad_parse_forced()
+        temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
+
+        pipeline_cols = self._grad_columns()
+        header_raw = self.grad_att_header_var.get().strip()
+        pipeline_cols["attendance_header_row"] = int(header_raw) if header_raw.lstrip("-").isdigit() else 3
+
+        def worker():
+            try:
+                warning_msgs: List[str] = []
+                self.root.after(0, lambda: self.update_status("Corrigiendo… fusionando matriculados."))
+                work = os.path.join(out_dir, "_intermedios")
+                os.makedirs(work, exist_ok=True)
+                matric = os.path.join(work, "matriculados.xlsx")
+                EnrollmentMerger(enrollment).export(matric)
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… OCR de hojas (puede tardar)."))
+                grader = ImageExamGrader(
+                    xml_paths=xmls, enrollment_path=matric,
+                    aggressive_recovery=True, aggressive_min_ratio=0.10,
+                    aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
+                    temp_image_dir=temp_image_dir,
+                )
+                grader.grade_from_images(
+                    image_paths=images, output_answers="respuestas.xlsx",
+                    output_grades="calificaciones_manuscritos.xlsx", output_dir=work,
+                    output_incidents="incidencias.xlsx", forced_type_by_image=forced,
+                    prompt_missing_type=False, interactive_review=False,
+                )
+                incidencias = pd.read_excel(os.path.join(work, "incidencias.xlsx"))
+                if not incidencias.empty:
+                    warning_msgs.append(
+                        "Se detectaron incidencias durante el OCR "
+                        f"({len(incidencias)} fila(s)).\n"
+                        f"Revisa: {os.path.join(out_dir, 'incidencias_identificacion_respuestas.xlsx')}"
+                    )
+                incidencias.to_excel(
+                    os.path.join(out_dir, "incidencias_identificacion_respuestas.xlsx"), index=False)
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… integrando notas OCR en teoría."))
+                ocr_integrator = OcrGradeIntegrator(
+                    general_xlsx_path=theory,
+                    ocr_xlsx_path=os.path.join(work, "calificaciones_manuscritos.xlsx"),
+                    enrollment_paths=enrollment,
+                    append_unmatched_students=bool(self.grad_append_unmatched_var.get()),
+                )
+                integrated = ocr_integrator.integrate(os.path.join(work, "teoria_integrada.xlsx"))
+
+                integration_incidents_path = None
+                integration_incidents_df = getattr(ocr_integrator, "last_integration_incidents_df", None)
+                if isinstance(integration_incidents_df, pd.DataFrame) and not integration_incidents_df.empty:
+                    integration_incidents_path = os.path.join(out_dir, "incidencias_integracion_ocr.xlsx")
+                    integration_incidents_df.to_excel(integration_incidents_path, index=False)
+
+                integration_summary = dict(getattr(ocr_integrator, "last_integration_summary", {}) or {})
+                removed_summary_rows = int(integration_summary.get("general_summary_rows_removed", 0) or 0)
+                if removed_summary_rows > 0:
+                    warning_msgs.append(
+                        "Se eliminaron automáticamente "
+                        f"{removed_summary_rows} fila(s) de promedio/resumen "
+                        "en las notas de teoría antes de integrar OCR."
+                    )
+                blocked_missing_identity = int(integration_summary.get("blocked_missing_identity", 0) or 0)
+                blocked_unmatched = int(integration_summary.get("blocked_unmatched", 0) or 0)
+                blocked_missing_target = int(integration_summary.get("blocked_missing_target", 0) or 0)
+                blocked_missing_grade = int(integration_summary.get("blocked_missing_grade", 0) or 0)
+                blocked_total = blocked_missing_identity + blocked_unmatched + blocked_missing_target + blocked_missing_grade
+                if blocked_total > 0:
+                    parts = []
+                    if blocked_missing_identity:
+                        parts.append(f"- Sin identidad (ID o nombre+apellidos): {blocked_missing_identity}")
+                    if blocked_unmatched:
+                        parts.append(f"- Alumno no encontrado en teoría: {blocked_unmatched}")
+                    if blocked_missing_target:
+                        parts.append(f"- Sin columna destino en teoría: {blocked_missing_target}")
+                    if blocked_missing_grade:
+                        parts.append(f"- Sin nota OCR válida: {blocked_missing_grade}")
+                    extra_path = integration_incidents_path or os.path.join(out_dir, "incidencias_integracion_ocr.xlsx")
+                    warning_msgs.append(
+                        "Durante la integración se bloquearon filas OCR:\n"
+                        + "\n".join(parts)
+                        + f"\nRevisa: {extra_path}"
+                    )
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… asistencias y cuestionarios."))
+                justif_result = AbsenceJustificationManager(
+                    attendance_xlsx_path=attendance, justifications_xlsx_path=justif,
+                    enrollment_xlsx_path=matric, schedule_xlsx_path=schedule,
+                    schedule_sheet=schedule_sheet, quizzes_xlsx_path=quizzes,
+                    attendance_header_row=pipeline_cols["attendance_header_row"],
+                    sender_col=pipeline_cols["sender_col"],
+                    subject_col=pipeline_cols["subject_col"],
+                    message_col=pipeline_cols["message_col"],
+                    first_name_col=pipeline_cols["first_name_col"],
+                    last_name_col=pipeline_cols["last_name_col"],
+                    id_col=pipeline_cols["id_col"],
+                    email_col=pipeline_cols["email_col"],
+                    justification_mode="extremo",
+                ).analyze()
+                attendance_quiz = justif_result.attendance_quiz_df
+
+                self.root.after(0, lambda: self.update_status("Corrigiendo… aplicando punto extra."))
+                TheoryBonusApplier(integrated, attendance_quiz, cap_to_10=True).apply(
+                    os.path.join(out_dir, "calificaciones_examen_teoria.xlsx"))
+
+                _, quiz_report = TheoryTopicReporter(attendance_quiz).build()
+                quiz_report.to_excel(
+                    os.path.join(out_dir, "cuestionarios_clase_y_punto_extra.xlsx"), index=False)
+
+                shutil.rmtree(work, ignore_errors=True)
+                msg = ("Corrección completada. Tablas generadas en:\n" + out_dir +
+                       "\n\n- incidencias_identificacion_respuestas.xlsx"
+                       "\n- cuestionarios_clase_y_punto_extra.xlsx"
+                       "\n- calificaciones_examen_teoria.xlsx")
+                if integration_incidents_path:
+                    msg += "\n- incidencias_integracion_ocr.xlsx"
+                self.root.after(0, lambda: self.update_status("Corrección completada."))
+                if warning_msgs:
+                    warning_text = "\n\n".join(warning_msgs)
+                    self.root.after(0, lambda t=warning_text: messagebox.showwarning("Avisos", t))
+                self.root.after(0, lambda: messagebox.showinfo("Corrección", msg))
+                try:
+                    os.startfile(out_dir)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            except Exception as exc:
+                err = str(exc)
+                self.root.after(0, lambda: self.update_status("Error en la corrección."))
+                self.root.after(0, lambda: messagebox.showerror("Error", err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def toggle_pages_per_chunk_entry(self):
         """
         Enables or disables the 'pages per chunk' entry based on the checkbox state.
         """
         if self.process_by_pages_var.get():
             self.pages_per_chunk_entry.config(state='normal')
+            self.total_chunks_entry.config(state='normal')
+            self.chunking_mode_combo.config(state='readonly')
         else:
             self.pages_per_chunk_entry.config(state='disabled')
+            self.total_chunks_entry.config(state='disabled')
+            self.chunking_mode_combo.config(state='disabled')
 
     def create_question_tab(self) -> None:
         """
@@ -489,16 +1648,32 @@ class ExamApp:
         canvas_question.configure(yscrollcommand=scrollbar_question.set)
         scrollbar_question.pack(side="right", fill="y")
         canvas_question.pack(side="left", fill="both", expand=True)
-        canvas_question.bind("<MouseWheel>", lambda event: canvas_question.yview_scroll(int(-1 * (event.delta / 120)), "units"))
-        canvas_question.bind("<Button-4>", lambda event: canvas_question.yview_scroll(-1, "units"))
-        canvas_question.bind("<Button-5>", lambda event: canvas_question.yview_scroll(1, "units"))
+
+        def _on_question_mousewheel(event):
+            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
+            if delta_units == 0:
+                delta_units = -1 if event.delta > 0 else 1
+            canvas_question.yview_scroll(delta_units, "units")
+            return "break"
+
+        def _on_question_scroll_up(_event):
+            canvas_question.yview_scroll(-1, "units")
+            return "break"
+
+        def _on_question_scroll_down(_event):
+            canvas_question.yview_scroll(1, "units")
+            return "break"
+
+        def _bind_question_scroll_recursively(widget):
+            widget.bind("<MouseWheel>", _on_question_mousewheel)
+            widget.bind("<Button-4>", _on_question_scroll_up)
+            widget.bind("<Button-5>", _on_question_scroll_down)
+            for child in widget.winfo_children():
+                _bind_question_scroll_recursively(child)
 
         inner_frame_question = ttk.Frame(canvas_question)
         inner_frame_question.bind("<Configure>", lambda e: canvas_question.configure(scrollregion=canvas_question.bbox("all")))
         canvas_question.create_window((0, 0), window=inner_frame_question, anchor="nw")
-        inner_frame_question.bind("<MouseWheel>", lambda event: canvas_question.yview_scroll(int(-1 * (event.delta / 120)), "units"))
-        inner_frame_question.bind("<Button-4>", lambda event: canvas_question.yview_scroll(-1, "units"))
-        inner_frame_question.bind("<Button-5>", lambda event: canvas_question.yview_scroll(1, "units"))
 
         # --- Prompts and PDF section ---
         prompt_type_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar/Editar Tipo de Prompt")
@@ -540,17 +1715,30 @@ class ExamApp:
         self.update_custom_prompt_display()
         ToolTip(self.prompt_text_display, "Texto del prompt seleccionado. No editable directamente aquí.")
 
-        pdf_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar Archivos PDF")
+        pdf_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar Archivos Fuente")
         pdf_frame.pack(padx=10, pady=10, fill='x')
-        pdf_label = ttk.Label(pdf_frame, text="Archivos PDF:")
+        pdf_label = ttk.Label(pdf_frame, text="Archivos PDF/Imagen:")
         pdf_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(pdf_label, "Seleccione los archivos PDF desde los cuales se generarán las preguntas.")
+        ToolTip(pdf_label, "Seleccione PDFs o imágenes desde los cuales se generarán las preguntas.")
         self.pdf_entry = ttk.Entry(pdf_frame, width=50, textvariable=self.pdf_files_var)
         self.pdf_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(self.pdf_entry, "Rutas de los archivos PDF seleccionados (separados por comas).")
-        select_pdf_button = ttk.Button(pdf_frame, text="Seleccionar PDFs", command=self.select_pdf_files)
+        select_pdf_button = ttk.Button(pdf_frame, text="Seleccionar Archivos", command=self.select_pdf_files)
         select_pdf_button.grid(row=0, column=2, padx=5, pady=5)
-        ToolTip(select_pdf_button, "Abre un diálogo para seleccionar uno o más archivos PDF.")
+        ToolTip(select_pdf_button, "Abre un diálogo para seleccionar uno o más PDFs o imágenes.")
+
+        input_mode_label = ttk.Label(pdf_frame, text="Modo de entrada:")
+        input_mode_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(input_mode_label, "text: extrae texto del PDF; image: analiza contenido visual (imágenes o páginas renderizadas).")
+        input_mode_combo = ttk.Combobox(
+            pdf_frame,
+            textvariable=self.input_mode_var,
+            values=["text", "image"],
+            state='readonly',
+            width=12
+        )
+        input_mode_combo.grid(row=1, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(input_mode_combo, "Selecciona cómo Gemini debe interpretar los archivos fuente.")
         pdf_frame.columnconfigure(1, weight=1)
 
         # --- Generation configuration section ---
@@ -585,6 +1773,24 @@ class ExamApp:
         self.pages_per_chunk_entry = ttk.Entry(processing_frame, width=5, textvariable=self.pages_per_chunk_var, state='disabled')
         self.pages_per_chunk_entry.grid(row=0, column=2, padx=5, pady=5, sticky='w')
         ToolTip(self.pages_per_chunk_entry, "Introduzca el número de páginas para cada fragmento.")
+
+        total_chunks_label = ttk.Label(processing_frame, text="Fragmentos totales (opcional):")
+        total_chunks_label.grid(row=0, column=3, padx=5, pady=5, sticky='w')
+        ToolTip(total_chunks_label, "Si se indica, divide cada PDF en ese número total de fragmentos.")
+        self.total_chunks_entry = ttk.Entry(processing_frame, width=6, textvariable=self.total_chunks_var, state='disabled')
+        self.total_chunks_entry.grid(row=0, column=4, padx=5, pady=5, sticky='w')
+
+        chunking_mode_label = ttk.Label(processing_frame, text="Modo:")
+        chunking_mode_label.grid(row=0, column=5, padx=5, pady=5, sticky='w')
+        self.chunking_mode_combo = ttk.Combobox(
+            processing_frame,
+            textvariable=self.chunking_mode_var,
+            values=["pages", "text_length"],
+            state='disabled',
+            width=12
+        )
+        self.chunking_mode_combo.grid(row=0, column=6, padx=5, pady=5, sticky='w')
+        ToolTip(self.chunking_mode_combo, "pages: divide por páginas; text_length: divide por longitud de texto.")
 
         # Row 3: Max attempts per chunk
         max_attempts_label = ttk.Label(config_frame, text="Máx. intentos por fragmento:")
@@ -660,6 +1866,14 @@ class ExamApp:
                                                 value="enunciados_y_respuestas")
         enunciados_resp_radio.pack(anchor='w', padx=10, pady=2)
         ToolTip(enunciados_resp_radio, "En el prompt, las preguntas de ejemplo mostrarán su enunciado y sus opciones de respuesta.")
+
+        include_similar_check = ttk.Checkbutton(
+            prompt_inclusion_frame,
+            text="Incluir preguntas similares a evitar en prompt",
+            variable=self.include_similar_questions_in_prompt_var
+        )
+        include_similar_check.pack(anchor='w', padx=10, pady=(0, 5))
+        ToolTip(include_similar_check, "Desmarcar para no incluir ejemplos del banco existente dentro del prompt.")
 
         # Row 6: Model and API Key - Ahora con una tabla
         model_api_frame = ttk.LabelFrame(config_frame, text="Modelo y Clave API")
@@ -759,6 +1973,10 @@ class ExamApp:
 
         config_frame.columnconfigure(1, weight=1)
         inner_frame_question.columnconfigure(0, weight=1)
+
+        # Bind wheel events after creating all child widgets in this scrollable tab.
+        _bind_question_scroll_recursively(canvas_question)
+        _bind_question_scroll_recursively(inner_frame_question)
 
     def populate_models_table(self):
         """
@@ -966,12 +2184,17 @@ class ExamApp:
 
     def select_pdf_files(self) -> None:
         """
-        Opens a dialog for the user to select one or more PDF files.
+        Opens a dialog for the user to select one or more source files.
         The paths of the selected files are inserted into the corresponding entry widget.
         """
         file_paths = filedialog.askopenfilenames(
-            title="Seleccionar archivos PDF",
-            filetypes=(("Archivos PDF", "*.pdf"), ("Todos los archivos", "*.*"))
+            title="Seleccionar archivos fuente",
+            filetypes=(
+                ("Archivos soportados", "*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff"),
+                ("Archivos PDF", "*.pdf"),
+                ("Imágenes", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff"),
+                ("Todos los archivos", "*.*"),
+            )
         )
         self.pdf_entry.insert(tk.END, ",".join(file_paths))
 
@@ -1034,6 +2257,12 @@ class ExamApp:
             messagebox.showerror("Error", "Por favor, selecciona al menos un archivo PDF.")
             return
 
+        if self.input_mode_var.get() == "text":
+            non_pdf_paths = [path for path in pdf_paths if not path.lower().endswith('.pdf')]
+            if non_pdf_paths:
+                messagebox.showerror("Error", "En modo 'text' solo se permiten archivos PDF.")
+                return
+
         try:
             # Re-initialize the generator with the current model and API key.
             # This is important if the user changes the model or API key.
@@ -1048,6 +2277,7 @@ class ExamApp:
         existing_bank_path_for_gen = self.existing_bank_for_gen_path.get()
         bank_prompt_scope_value = self.bank_in_prompt_scope_var.get()
         prompt_example_content_value = self.prompt_example_content_var.get()
+        input_mode_value = self.input_mode_var.get() or "text"
         print_raw_gemini_answer_value = self.print_raw_gemini_answer_var.get()  # Get checkbox value.
 
         similarity_threshold_value = None
@@ -1065,6 +2295,8 @@ class ExamApp:
 
         process_by_pages_value = self.process_by_pages_var.get()
         pages_per_chunk_value = 1  # Default value if not processing by pages.
+        total_chunks_value = None
+        chunking_mode_value = self.chunking_mode_var.get() or "pages"
         if process_by_pages_value:
             try:
                 pages_per_chunk_value = int(self.pages_per_chunk_var.get())
@@ -1076,6 +2308,17 @@ class ExamApp:
                 messagebox.showerror("Error", "Las páginas por fragmento deben ser un número entero.")
                 self.update_status("Error en páginas por fragmento.")
                 return
+
+            total_chunks_raw = self.total_chunks_var.get().strip()
+            if total_chunks_raw:
+                try:
+                    total_chunks_value = int(total_chunks_raw)
+                    if total_chunks_value <= 0:
+                        messagebox.showerror("Error", "El número total de fragmentos debe ser un entero positivo.")
+                        return
+                except ValueError:
+                    messagebox.showerror("Error", "El número total de fragmentos debe ser un número entero.")
+                    return
 
         bank_prompt_scope_to_pass = bank_prompt_scope_value if existing_bank_path_for_gen else None
 
@@ -1096,7 +2339,11 @@ class ExamApp:
                 bank_prompt_scope=bank_prompt_scope_to_pass,
                 prompt_example_content_type=prompt_example_content_value,
                 print_raw_gemini_answer=print_raw_gemini_answer_value,
-                max_generation_attempts_per_chunk=max_attempts_value
+                max_generation_attempts_per_chunk=max_attempts_value,
+                total_chunks=total_chunks_value,
+                chunking_mode=chunking_mode_value,
+                include_similar_questions_in_prompt=self.include_similar_questions_in_prompt_var.get(),
+                input_mode=input_mode_value
             )
             if questions_df is not None and not questions_df.empty:
                 self.update_status(f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
@@ -1258,6 +2505,20 @@ class ExamApp:
         questions_per_topic_entry = ttk.Entry(questions_frame, textvariable=self.questions_per_topic)
         questions_per_topic_entry.grid(row=row_interno_questions + 1, column=1, padx=5, sticky='ew')
         ToolTip(questions_per_topic_entry, text="Diccionario con el formato Tema:Cantidad.")
+
+        total_radio = ttk.Radiobutton(questions_frame, text="Número total de preguntas:", variable=self.selection_method_var, value="total")
+        total_radio.grid(row=row_interno_questions + 2, column=0, sticky='w')
+        ToolTip(total_radio, text="Selecciona un número total de preguntas del banco y reparte ese total según el modo elegido.")
+        total_questions_entry = ttk.Entry(questions_frame, width=6, textvariable=self.total_questions_var)
+        total_questions_entry.grid(row=row_interno_questions + 2, column=1, padx=5, sticky='w')
+        ToolTip(total_questions_entry, text="Número total de preguntas que tendrá el examen.")
+
+        total_distribution_label = ttk.Label(questions_frame, text="Reparto del total:")
+        total_distribution_label.grid(row=row_interno_questions + 3, column=0, sticky='e', padx=5)
+        ToolTip(total_distribution_label, text="Cómo se reparte el número total de preguntas entre los temas.")
+        total_distribution_combo = ttk.Combobox(questions_frame, textvariable=self.total_distribution_var, values=["equitativo", "azar"], state='readonly', width=12)
+        total_distribution_combo.grid(row=row_interno_questions + 3, column=1, padx=5, sticky='w')
+        ToolTip(total_distribution_combo, text="equitativo: mismo número de preguntas por tema en la medida de lo posible (los primeros temas reciben una más si el total no es divisible). azar: se eligen del banco completo sin tener en cuenta el tema.")
         row += 1  # Increment the row for the next LabelFrame
 
         # 4. Selection method (spans 3 columns)
@@ -1271,6 +2532,20 @@ class ExamApp:
         ToolTip(method_combo,
                 text="azar: selecciona preguntas aleatoriamente. primeras: selecciona las primeras preguntas encontradas para el tema. menos usadas: selecciona las preguntas menos usadas.")
         row += 1  # Increment the row for the next LabelFrame
+
+        usage_alert_frame = ttk.LabelFrame(inner_frame_exam, text="Alerta de uso de preguntas")
+        usage_alert_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
+        usage_alert_check = ttk.Checkbutton(
+            usage_alert_frame,
+            text="Avisar si alguna pregunta supera este numero de usos:",
+            variable=self.usage_alert_enabled_var
+        )
+        usage_alert_check.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(usage_alert_check, text="Si esta activado, se mostrara una alerta antes de generar cuando alguna pregunta seleccionada tenga mas usos que el umbral indicado.")
+        usage_alert_entry = ttk.Entry(usage_alert_frame, width=5, textvariable=self.usage_alert_threshold_var)
+        usage_alert_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(usage_alert_entry, text="Umbral de usos. Por defecto 3; se avisa solo cuando el valor de 'Veces usada en examen' es mayor que este numero.")
+        row += 1
 
         # 5. Docx style (spans 3 columns)
         style_frame = ttk.LabelFrame(inner_frame_exam, text="Estilo del Documento")
@@ -1335,14 +2610,106 @@ class ExamApp:
         xml_cat_text_entry = ttk.Entry(moodle_frame, width=50, textvariable=self.xml_cat_additional_text)
         xml_cat_text_entry.grid(row=2, column=1, columnspan=2, padx=5, pady=5, sticky='ew')
         ToolTip(xml_cat_text_entry, text="Texto adicional para la categoría Moodle XML (opcional).")
+
+        xml_non_blank_check = ttk.Checkbutton(
+            moodle_frame,
+            text="XML no blanco (usar enunciado y respuestas completas)",
+            variable=self.xml_use_answer_text_var
+        )
+        xml_non_blank_check.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky='w')
+        ToolTip(xml_non_blank_check, text="Si se marca, el XML incluye enunciado y texto de respuestas en lugar de a/b/c/d.")
+
+        suggest_moodle_button = ttk.Button(moodle_frame, text="Sugerir nombres Moodle", command=self.show_moodle_suggestions)
+        suggest_moodle_button.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='w')
+        ToolTip(suggest_moodle_button, text="Muestra nombres de cuestionario y columnas recomendados para que el xlsx exportado de Moodle sea identificable por el corrector.")
         row += 1
 
-        # 7. Update excel file with usage (spans 3 columns)
+        # 7. Generate Moodle XML from an existing generated exam XLSX (spans 3 columns)
+        existing_xlsx_xml_frame = ttk.LabelFrame(inner_frame_exam, text="Generar Moodle XML desde XLSX de Examen")
+        existing_xlsx_xml_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
+        ToolTip(existing_xlsx_xml_frame, text="Convierte un archivo de examen ya generado (normalmente '*_completo.xlsx') en un XML de Moodle sin volver a generar el examen.")
+
+        xml_source_label = ttk.Label(existing_xlsx_xml_frame, text="XLSX del Examen:")
+        xml_source_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_source_label, text="Seleccione el archivo XLSX del examen (preferiblemente el que termina en '_completo.xlsx').")
+
+        xml_source_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xlsx_for_xml_var)
+        xml_source_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(xml_source_entry, text="Ruta del XLSX de examen desde el que se generará el XML.")
+
+        xml_source_button = ttk.Button(existing_xlsx_xml_frame, text="Seleccionar XLSX", command=self.select_existing_exam_xlsx_for_xml)
+        xml_source_button.grid(row=0, column=2, padx=5, pady=5)
+        ToolTip(xml_source_button, text="Abre un diálogo para seleccionar el XLSX del examen.")
+
+        xml_output_label = ttk.Label(existing_xlsx_xml_frame, text="XML de Salida (opcional):")
+        xml_output_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_output_label, text="Ruta del XML de salida. Si se deja vacía, se usará el mismo nombre base del XLSX.")
+
+        xml_output_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xml_output_var)
+        xml_output_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(xml_output_entry, text="Ruta de salida para el XML de Moodle.")
+
+        xml_output_button = ttk.Button(existing_xlsx_xml_frame, text="Seleccionar XML", command=self.select_existing_exam_xml_output)
+        xml_output_button.grid(row=1, column=2, padx=5, pady=5)
+        ToolTip(xml_output_button, text="Elegir dónde guardar el XML generado.")
+
+        xml_penalty_label = ttk.Label(existing_xlsx_xml_frame, text="Penalización (-%):")
+        xml_penalty_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_penalty_label, text="Penalización por respuesta incorrecta. Admite decimales (ej. -33.333333 para 4 opciones).")
+
+        xml_penalty_entry = ttk.Entry(existing_xlsx_xml_frame, width=10, textvariable=self.existing_exam_xml_penalty_var)
+        xml_penalty_entry.grid(row=2, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(xml_penalty_entry, text="Porcentaje de penalización para respuestas incorrectas en Moodle.")
+
+        xml_cat_extra_label = ttk.Label(existing_xlsx_xml_frame, text="Texto adicional categoría XML:")
+        xml_cat_extra_label.grid(row=3, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(xml_cat_extra_label, text="Texto opcional que se añadirá al nombre de categoría en Moodle.")
+
+        xml_cat_extra_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xml_cat_text_var)
+        xml_cat_extra_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(xml_cat_extra_entry, text="Texto adicional para la categoría Moodle (opcional).")
+
+        xml_full_text_check = ttk.Checkbutton(
+            existing_xlsx_xml_frame,
+            text="XML no blanco (usar enunciado y respuestas completas)",
+            variable=self.existing_exam_xml_use_answer_text_var
+        )
+        xml_full_text_check.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='w')
+        ToolTip(xml_full_text_check, text="Si se marca, el XML incluirá enunciados y respuestas completas en lugar de a/b/c/d.")
+
+        generate_xml_button = ttk.Button(
+            existing_xlsx_xml_frame,
+            text="Generar XML Moodle desde XLSX",
+            command=self.generate_moodle_xml_from_existing_xlsx_action
+        )
+        generate_xml_button.grid(row=5, column=0, columnspan=3, pady=10)
+        ToolTip(generate_xml_button, text="Genera el XML de Moodle a partir del XLSX seleccionado.")
+
+        existing_xlsx_xml_frame.columnconfigure(1, weight=1)
+        row += 1
+
+        # 8. Update excel file with usage (spans 3 columns)
         update_excel_frame = ttk.Frame(inner_frame_exam)
         update_excel_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
         update_excel_check = ttk.Checkbutton(update_excel_frame, text="Actualizar Archivo Excel con Uso", variable=self.update_excel)
         update_excel_check.pack(side='left', padx=5)
         ToolTip(update_excel_check, text="Marque para actualizar el archivo Excel indicando qué preguntas se han utilizado en el examen.")
+
+        exam_template_buttons = ttk.Frame(update_excel_frame)
+        exam_template_buttons.pack(side='right', padx=5)
+        ttk.Button(exam_template_buttons, text="Guardar Plantilla", command=self.save_exam_tab_template).pack(side='left', padx=2)
+        ttk.Button(exam_template_buttons, text="Cargar Plantilla", command=self.load_exam_tab_template).pack(side='left', padx=2)
+        ToolTip(exam_template_buttons, text="Guardar o cargar la configuración de la pestaña Generar Exámenes.")
+        row += 1
+
+        template_docx_frame = ttk.LabelFrame(inner_frame_exam, text="Plantilla DOCX (opcional)")
+        template_docx_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
+        template_docx_entry = ttk.Entry(template_docx_frame, textvariable=self.template_docx_path_var)
+        template_docx_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
+        ToolTip(template_docx_entry, "Ruta del archivo DOCX de plantilla. Placeholders soportados: {{subject}}, {{exam}}, {{course}}, {{exam_type}}")
+        template_docx_button = ttk.Button(template_docx_frame, text="Seleccionar Plantilla", command=self.select_template_docx_file)
+        template_docx_button.pack(side='left', padx=5, pady=5)
+        ToolTip(template_docx_button, "Seleccionar una plantilla DOCX base para el examen.")
         row += 1
 
         # Output path
@@ -1357,6 +2724,18 @@ class ExamApp:
         exam_output_dir_button = ttk.Button(exam_output_dir_frame, text="Seleccionar...", command=self.select_gen_exams_output_dir)
         exam_output_dir_button.pack(side='left', padx=5, pady=5)
         ToolTip(exam_output_dir_button, "Abrir diálogo para seleccionar el directorio de salida.")
+        row += 1
+
+        # Resumable grading session (optional)
+        session_frame = ttk.LabelFrame(inner_frame_exam, text="Sesión de corrección (opcional)")
+        session_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
+        ToolTip(session_frame, "Si indicas una ruta, se guardará una sesión (.pkl + .json) con las rutas de los exámenes generados para retomar la corrección sin volver a indicarlas.")
+        session_entry = ttk.Entry(session_frame, textvariable=self.gen_session_output_var)
+        session_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
+        ToolTip(session_entry, "Ruta base de la sesión (sin extensión, o con .json/.pkl).")
+        session_button = ttk.Button(session_frame, text="Seleccionar...", command=self.select_gen_session_output)
+        session_button.pack(side='left', padx=5, pady=5)
+        ToolTip(session_button, "Elegir dónde guardar la sesión de corrección.")
         row += 1
 
         # Generate Exams Button (spans the width)
@@ -1375,8 +2754,43 @@ class ExamApp:
         manage_bank_tab = ttk.Frame(self.notebook)
         self.notebook.add(manage_bank_tab, text='Gestionar Banco de Preguntas')
 
-        inner_frame_manage = ttk.Frame(manage_bank_tab)
-        inner_frame_manage.pack(padx=10, pady=10, fill='x')
+        # Canvas to enable vertical scrolling in this long tab.
+        canvas_manage = tk.Canvas(manage_bank_tab)
+        scrollbar_manage = ttk.Scrollbar(manage_bank_tab, orient="vertical", command=canvas_manage.yview)
+        canvas_manage.configure(yscrollcommand=scrollbar_manage.set)
+
+        scrollbar_manage.pack(side="right", fill="y")
+        canvas_manage.pack(side="left", fill="both", expand=True)
+
+        inner_frame_manage = ttk.Frame(canvas_manage)
+        inner_frame_manage.bind("<Configure>", lambda e: canvas_manage.configure(scrollregion=canvas_manage.bbox("all")))
+        manage_window_id = canvas_manage.create_window((0, 0), window=inner_frame_manage, anchor="nw")
+
+        # Keep the inner frame width synced with the visible canvas width.
+        canvas_manage.bind("<Configure>", lambda e: canvas_manage.itemconfigure(manage_window_id, width=e.width))
+
+        # Mouse wheel support (Windows/macOS + Linux) across the whole widget tree.
+        def _on_manage_mousewheel(event):
+            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
+            if delta_units == 0:
+                delta_units = -1 if event.delta > 0 else 1
+            canvas_manage.yview_scroll(delta_units, "units")
+            return "break"
+
+        def _on_manage_scroll_up(_event):
+            canvas_manage.yview_scroll(-1, "units")
+            return "break"
+
+        def _on_manage_scroll_down(_event):
+            canvas_manage.yview_scroll(1, "units")
+            return "break"
+
+        def _bind_manage_scroll_recursively(widget):
+            widget.bind("<MouseWheel>", _on_manage_mousewheel)
+            widget.bind("<Button-4>", _on_manage_scroll_up)
+            widget.bind("<Button-5>", _on_manage_scroll_down)
+            for child in widget.winfo_children():
+                _bind_manage_scroll_recursively(child)
 
         # --- Section to generate XLSX from a revised DOCX ---
         docx_xlsx_group = ttk.LabelFrame(inner_frame_manage, text="Generar XLSX desde DOCX revisado")
@@ -1421,6 +2835,7 @@ class ExamApp:
         ToolTip(xlsx_button, text="Guarda las preguntas revisadas en un nuevo archivo XLSX.")
 
         docx_xlsx_group.columnconfigure(1, weight=1)
+
 
         # --- Section to add questions from another bank ---
         add_from_bank_frame = ttk.LabelFrame(inner_frame_manage, text="Añadir Preguntas Existentes")
@@ -1481,6 +2896,196 @@ class ExamApp:
 
         add_from_bank_frame.columnconfigure(1, weight=1)
 
+        # --- Section to update the bank usage statistics from one or more already generated exams ---
+        update_with_exam_frame = ttk.LabelFrame(inner_frame_manage, text="Actualizar Banco con Exámenes Existentes")
+        update_with_exam_frame.pack(padx=5, pady=10, fill='x')
+        ToolTip(update_with_exam_frame, text="Marca como usadas en el banco las preguntas que aparecen en uno o varios exámenes ya generados (cada uno con su etiqueta) y recalcula 'Veces usada en examen'.")
+
+        update_bank_label = ttk.Label(update_with_exam_frame, text="Banco a Actualizar:")
+        update_bank_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(update_bank_label, text="Seleccione el archivo XLSX del banco de preguntas cuyas estadísticas de uso se actualizarán.")
+
+        update_bank_entry = ttk.Entry(update_with_exam_frame, width=40, textvariable=self.update_bank_path_var)
+        update_bank_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(update_bank_entry, text="Ruta del archivo XLSX del banco de preguntas.")
+
+        select_update_bank_button = ttk.Button(update_with_exam_frame, text="Seleccionar", command=self.select_update_bank_file)
+        select_update_bank_button.grid(row=0, column=2, padx=5, pady=5)
+        ToolTip(select_update_bank_button, text="Abre un diálogo para seleccionar el archivo XLSX del banco de preguntas.")
+
+        update_exams_label = ttk.Label(update_with_exam_frame, text="Exámenes a registrar:")
+        update_exams_label.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
+        ToolTip(update_exams_label, text="Lista de exámenes ya generados (normalmente los archivos '..._completo.xlsx'). Cada uno se registra con su propia etiqueta en una columna '<etiqueta>_uso'.")
+
+        # Tabla con los exámenes seleccionados, su etiqueta y la columna de uso resultante.
+        exams_tree_frame = ttk.Frame(update_with_exam_frame)
+        exams_tree_frame.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        self.update_exams_tree = ttk.Treeview(
+            exams_tree_frame, columns=('examen', 'etiqueta', 'columna'), show='headings', height=4
+        )
+        self.update_exams_tree.heading('examen', text='Examen (XLSX)')
+        self.update_exams_tree.heading('etiqueta', text='Etiqueta')
+        self.update_exams_tree.heading('columna', text='Columna en XLSX')
+        self.update_exams_tree.column('examen', width=220)
+        self.update_exams_tree.column('etiqueta', width=150)
+        self.update_exams_tree.column('columna', width=170)
+        self.update_exams_tree.grid(row=0, column=0, sticky='ew')
+        exams_tree_scroll = ttk.Scrollbar(exams_tree_frame, orient='vertical', command=self.update_exams_tree.yview)
+        self.update_exams_tree.configure(yscrollcommand=exams_tree_scroll.set)
+        exams_tree_scroll.grid(row=0, column=1, sticky='ns')
+        exams_tree_frame.columnconfigure(0, weight=1)
+        # Doble clic sobre una fila para editar su etiqueta.
+        self.update_exams_tree.bind('<Double-1>', self._on_update_exam_double_click)
+        ToolTip(self.update_exams_tree, text="Exámenes seleccionados, su etiqueta y la columna que se escribirá en el XLSX (sin tildes ni caracteres especiales). Haga doble clic en una fila para editar la etiqueta.")
+
+        exams_buttons_frame = ttk.Frame(update_with_exam_frame)
+        exams_buttons_frame.grid(row=1, column=2, padx=5, pady=5, sticky='n')
+
+        add_exam_button = ttk.Button(exams_buttons_frame, text="Añadir...", command=self.select_update_exam_files)
+        add_exam_button.pack(fill='x', pady=2)
+        ToolTip(add_exam_button, text="Abre un diálogo para añadir uno o varios archivos XLSX de examen. La etiqueta inicial se deriva del nombre del archivo según la configuración de 'Etiqueta automática'.")
+
+        edit_label_button = ttk.Button(exams_buttons_frame, text="Editar etiqueta", command=self.edit_update_exam_label)
+        edit_label_button.pack(fill='x', pady=2)
+        ToolTip(edit_label_button, text="Edita la etiqueta del examen seleccionado (nombre de la columna de uso).")
+
+        remove_exam_button = ttk.Button(exams_buttons_frame, text="Quitar", command=self.remove_update_exam)
+        remove_exam_button.pack(fill='x', pady=2)
+        ToolTip(remove_exam_button, text="Quita de la lista el examen seleccionado.")
+
+        clear_exams_button = ttk.Button(exams_buttons_frame, text="Limpiar", command=self.clear_update_exams)
+        clear_exams_button.pack(fill='x', pady=2)
+        ToolTip(clear_exams_button, text="Vacía la lista de exámenes.")
+
+        # --- Sub-sección: etiqueta automática derivada del nombre del archivo ---
+        auto_label_frame = ttk.LabelFrame(update_with_exam_frame, text="Etiqueta automática (desde el nombre del archivo)")
+        auto_label_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        ToolTip(auto_label_frame, text="Deriva la etiqueta partiendo el nombre del archivo por un delimitador y quedándote con las partes elegidas. Las tildes se eliminan al escribir la columna.")
+
+        delimiter_label = ttk.Label(auto_label_frame, text="Delimitador:")
+        delimiter_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        delimiter_entry = ttk.Entry(auto_label_frame, width=6, textvariable=self.update_label_delimiter_var)
+        delimiter_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        ToolTip(delimiter_entry, text="Carácter por el que se parte el nombre del archivo (por defecto '_').")
+
+        parts_label = ttk.Label(auto_label_frame, text="Partes a conservar:")
+        parts_label.grid(row=0, column=2, padx=5, pady=5, sticky='w')
+        parts_entry = ttk.Entry(auto_label_frame, width=20, textvariable=self.update_label_parts_var)
+        parts_entry.grid(row=0, column=3, padx=5, pady=5, sticky='ew')
+        ToolTip(parts_entry, text=(
+            "Índices (1 = primera parte) separados por comas; admite rangos 'a:b' (inclusive) e índices "
+            "negativos contados desde el final (-1 = última). Ejemplo: '2:3, -4:-2'. "
+            "Vacío = se usa el nombre completo del archivo."
+        ))
+
+        apply_label_button = ttk.Button(auto_label_frame, text="Aplicar a la lista", command=self.apply_auto_labels)
+        apply_label_button.grid(row=0, column=4, padx=5, pady=5, sticky='e')
+        ToolTip(apply_label_button, text="Recalcula la etiqueta de todos los exámenes de la lista con el delimitador y las partes indicados.")
+
+        auto_label_frame.columnconfigure(3, weight=1)
+
+        update_bank_button = ttk.Button(update_with_exam_frame, text="Actualizar Banco con Exámenes", command=self.update_bank_with_exams_action)
+        update_bank_button.grid(row=3, column=0, columnspan=3, pady=10)
+        ToolTip(update_bank_button, text="Empareja por enunciado las preguntas de cada examen con el banco, marca su uso en una columna por etiqueta y recalcula 'Veces usada en examen'.")
+
+        update_with_exam_frame.columnconfigure(1, weight=1)
+
+        # --- Section to unify several banks into one definitive bank ---
+        unify_frame = ttk.LabelFrame(inner_frame_manage, text="Unificar Bancos de Preguntas")
+        unify_frame.pack(padx=5, pady=10, fill='x')
+        ToolTip(unify_frame, text="Combina varios bancos en uno solo, eliminando duplicados según el criterio elegido. El primer banco tiene prioridad cuando una pregunta aparece en varios.")
+
+        unify_banks_label = ttk.Label(unify_frame, text="Bancos a Unificar:")
+        unify_banks_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(unify_banks_label, text="Seleccione dos o más archivos XLSX de bancos de preguntas a combinar.")
+
+        unify_banks_entry = ttk.Entry(unify_frame, width=40, textvariable=self.unify_banks_display_var, state='readonly')
+        unify_banks_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(unify_banks_entry, text="Archivos de bancos seleccionados (en orden de prioridad).")
+
+        select_unify_button = ttk.Button(unify_frame, text="Seleccionar...", command=self.select_unify_bank_files)
+        select_unify_button.grid(row=0, column=2, padx=5, pady=5)
+        ToolTip(select_unify_button, text="Abre un diálogo para seleccionar varios archivos XLSX de bancos a unificar.")
+
+        unify_criteria_frame = ttk.LabelFrame(unify_frame, text="Criterio de Duplicado")
+        unify_criteria_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        ToolTip(unify_criteria_frame, text="Seleccione cómo decidir si dos preguntas de bancos distintos son la misma.")
+
+        unify_statement_radio = ttk.Radiobutton(unify_criteria_frame, text="Solo enunciado", variable=self.unify_duplicate_check_var, value="pregunta_unica")
+        unify_statement_radio.pack(side='left', padx=10)
+        ToolTip(unify_statement_radio, text="Si el enunciado coincide se considera la misma pregunta (se conserva una). Las respuestas no se tienen en cuenta.")
+
+        unify_full_radio = ttk.Radiobutton(unify_criteria_frame, text="Enunciado y respuestas", variable=self.unify_duplicate_check_var, value="pregunta_respuestas")
+        unify_full_radio.pack(side='left', padx=10)
+        ToolTip(unify_full_radio, text="Solo es duplicado si coinciden el enunciado y el conjunto de respuestas (sin importar el orden). Mismo enunciado con respuestas distintas se conservan como preguntas diferentes.")
+
+        unify_button = ttk.Button(unify_frame, text="Unificar Bancos", command=self.unify_question_banks_action)
+        unify_button.grid(row=2, column=0, columnspan=3, pady=10)
+        ToolTip(unify_button, text="Combina los bancos seleccionados en uno solo sin duplicados y pregunta dónde guardarlo.")
+
+        unify_frame.columnconfigure(1, weight=1)
+
+        # Bind wheel events after creating all child widgets in the scrollable frame.
+        _bind_manage_scroll_recursively(canvas_manage)
+        _bind_manage_scroll_recursively(inner_frame_manage)
+
+    def select_unify_bank_files(self) -> None:
+        """Opens a dialog to select several question bank XLSX files to unify."""
+        filepaths = filedialog.askopenfilenames(
+            title="Seleccionar Bancos de Preguntas a Unificar",
+            filetypes=[("Archivos Excel", "*.xlsx")]
+        )
+        if filepaths:
+            self.unify_bank_paths = list(filepaths)
+            names = ", ".join(os.path.basename(p) for p in self.unify_bank_paths)
+            self.unify_banks_display_var.set(f"{len(self.unify_bank_paths)} bancos: {names}")
+
+    def unify_question_banks_action(self) -> None:
+        """Unifies the selected question banks into one, removing duplicates by the chosen criterion."""
+        if len(self.unify_bank_paths) < 2:
+            messagebox.showerror("Error", "Seleccione al menos dos bancos de preguntas para unificar.")
+            return
+
+        criterion = self.unify_duplicate_check_var.get()
+        try:
+            unified_df, stats = self.question_bank_manager.unify_question_banks(
+                self.unify_bank_paths,
+                output_path=None,
+                duplicate_criterion=criterion,
+                save=False,
+            )
+        except Exception as e:  # noqa: BLE001 - surface any error to the user.
+            messagebox.showerror("Error", f"No se pudieron unificar los bancos:\n{e}")
+            return
+
+        if unified_df is None:
+            messagebox.showerror("Error", "No se pudo leer ningún banco. Revise la consola para más detalles.")
+            return
+
+        save_path = filedialog.asksaveasfilename(
+            title="Guardar Banco Unificado Como...",
+            defaultextension=".xlsx",
+            initialdir=os.path.dirname(self.unify_bank_paths[0]),
+            initialfile="banco_unificado.xlsx",
+            filetypes=[("Archivos Excel", "*.xlsx")]
+        )
+        if not save_path:
+            return
+
+        filepath = self.question_bank_manager.save_dataframe_to_excel(unified_df, save_path, overwrite=True)
+        if filepath:
+            errors = stats.get("errors", [])
+            extra = f"\nBancos no leídos: {len(errors)}" if errors else ""
+            messagebox.showinfo(
+                "Éxito",
+                f"Banco unificado guardado en: {filepath}\n"
+                f"Preguntas únicas: {stats['unified']}\n"
+                f"Duplicados eliminados: {stats['duplicates_removed']} "
+                f"(de {stats['total_read']} leídas){extra}"
+            )
+        else:
+            messagebox.showerror("Error al guardar", "Error al guardar el banco unificado.")
+
     def select_revised_docx_file(self) -> None:
         """
         Opens a dialog to select a revised DOCX file.
@@ -1524,6 +3129,85 @@ class ExamApp:
             messagebox.showinfo("Guardado", f"Las preguntas revisadas se han guardado en: {saved_path}")
         else:
             messagebox.showerror("Error al Guardar", "Ocurrió un error al generar el archivo XLSX. Revise la consola para más detalles.")
+
+    @staticmethod
+    def _parse_penalty_value(raw_penalty: str, default: float = -25.0) -> float:
+        """Parses penalty values from UI entries, accepting comma or dot as decimal separator."""
+        cleaned = (raw_penalty or "").strip()
+        if not cleaned:
+            return default
+        return float(cleaned.replace(',', '.'))
+
+    def select_existing_exam_xlsx_for_xml(self) -> None:
+        """Opens a dialog to select an already generated exam XLSX file for XML export."""
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar Examen XLSX",
+            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+        )
+        if filepath:
+            self.existing_exam_xlsx_for_xml_var.set(filepath)
+            if not self.existing_exam_xml_output_var.get().strip():
+                xml_base = os.path.splitext(filepath)[0]
+                if xml_base.lower().endswith("_completo"):
+                    xml_base = xml_base[:-len("_completo")]
+                self.existing_exam_xml_output_var.set(f"{xml_base}.xml")
+
+    def select_existing_exam_xml_output(self) -> None:
+        """Opens a dialog to choose the output path of the generated Moodle XML."""
+        source_xlsx = self.existing_exam_xlsx_for_xml_var.get().strip()
+        initial_dir = os.path.dirname(source_xlsx) if source_xlsx else os.getcwd()
+        initial_file = "examen.xml"
+        if source_xlsx:
+            xml_base = os.path.splitext(os.path.basename(source_xlsx))[0]
+            if xml_base.lower().endswith("_completo"):
+                xml_base = xml_base[:-len("_completo")]
+            initial_file = f"{xml_base}.xml"
+
+        filepath = filedialog.asksaveasfilename(
+            title="Guardar Moodle XML como...",
+            defaultextension=".xml",
+            initialdir=initial_dir,
+            initialfile=initial_file,
+            filetypes=[("Archivos XML", "*.xml")]
+        )
+        if filepath:
+            self.existing_exam_xml_output_var.set(filepath)
+
+    def generate_moodle_xml_from_existing_xlsx_action(self) -> None:
+        """Generates Moodle XML from a selected existing exam XLSX file."""
+        exam_xlsx_path = self.existing_exam_xlsx_for_xml_var.get().strip()
+        xml_output_path = self.existing_exam_xml_output_var.get().strip() or None
+        xml_cat_additional_text = self.existing_exam_xml_cat_text_var.get().strip() or None
+        xml_use_answer_text = self.existing_exam_xml_use_answer_text_var.get()
+
+        if not exam_xlsx_path:
+            messagebox.showerror("Error", "Por favor, seleccione un archivo XLSX de examen.")
+            return
+        if not os.path.exists(exam_xlsx_path):
+            messagebox.showerror("Error", f"El archivo XLSX '{exam_xlsx_path}' no se encuentra.")
+            return
+
+        try:
+            penalty = self._parse_penalty_value(self.existing_exam_xml_penalty_var.get(), default=-25.0)
+        except ValueError:
+            messagebox.showerror("Error", "La penalización debe ser numérica (puede usar coma o punto decimal).")
+            return
+
+        self.update_status("Generando XML Moodle desde XLSX existente...")
+        try:
+            generated_xml_path = self.exam_generator.generate_moodle_xml_from_existing_exam_xlsx(
+                exam_xlsx_path=exam_xlsx_path,
+                xml_output_path=xml_output_path,
+                xml_cat_additional_text=xml_cat_additional_text,
+                penalty=penalty,
+                xml_use_answer_text=xml_use_answer_text,
+            )
+            self.existing_exam_xml_output_var.set(generated_xml_path)
+            self.update_status("XML Moodle generado.")
+            messagebox.showinfo("Éxito", f"Archivo XML generado correctamente en:\n{generated_xml_path}")
+        except Exception as e:
+            self.update_status(f"Error al generar XML Moodle: {e}")
+            messagebox.showerror("Error", f"No se pudo generar el XML de Moodle:\n{e}")
 
     def load_themes_for_selection(self) -> None:
         """
@@ -1630,6 +3314,10 @@ class ExamApp:
         xml_cat_additional_text = self.xml_cat_additional_text.get()
         export_moodle = self.export_moodle.get()
         update_excel = self.update_excel.get()
+        xml_use_answer_text = self.xml_use_answer_text_var.get()
+        template_docx_path = self.template_docx_path_var.get().strip() or None
+        usage_alert_enabled = self.usage_alert_enabled_var.get()
+        usage_alert_threshold_str = self.usage_alert_threshold_var.get().strip()
 
         if not os.path.exists(excel_path):
             messagebox.showerror("Error", f"El archivo Excel '{excel_path}' no se encuentra.")
@@ -1642,16 +3330,31 @@ class ExamApp:
             left_margin = float(left_margin_str) if left_margin_str else 0.5
             right_margin = float(right_margin_str) if right_margin_str else 0.5
             font_size = int(font_size_str) if font_size_str else 9
-            penalty = int(penalty_str) if penalty_str else -25
+            penalty = self._parse_penalty_value(penalty_str, default=-25.0)
+            usage_alert_threshold = int(usage_alert_threshold_str) if usage_alert_threshold_str else 3
+            if usage_alert_threshold < 0:
+                raise ValueError
         except ValueError:
-            messagebox.showerror("Error", "Por favor, introduce valores numéricos válidos para los márgenes, tamaño de fuente, número de exámenes y penalización.")
+            messagebox.showerror("Error", "Por favor, introduce valores numericos validos para los margenes, tamano de fuente, numero de examenes, penalizacion (admite decimales) y umbral de alerta.")
             return
 
         exam_name_list = [name.strip() for name in exam_names_str.split(',')] if exam_names_str else None
 
         questions_per_topic = {}
+        total_questions = None
+        total_distribution = self.total_distribution_var.get()
 
-        if selection_method_var == "diccionario":
+        if selection_method_var == "total":
+            total_questions_str = self.total_questions_var.get().strip()
+            try:
+                total_questions = int(total_questions_str)
+            except ValueError:
+                messagebox.showerror("Error", "Por favor, introduce un número entero válido para el 'Número total de preguntas'.")
+                return
+            if total_questions <= 0:
+                messagebox.showerror("Error", "El 'Número total de preguntas' debe ser mayor que 0.")
+                return
+        elif selection_method_var == "diccionario":
             if self.questions_per_topic.get():
                 try:
                     for item in self.questions_per_topic.get().split(','):
@@ -1699,6 +3402,12 @@ class ExamApp:
 
         output_dir_value = self.gen_exams_output_dir_var.get() or None
 
+        def confirm_usage_warning(_warning_df: pd.DataFrame, _threshold: int, message: str) -> bool:
+            return messagebox.askyesno(
+                "Alerta de uso de preguntas",
+                f"{message}\n\nDeseas continuar con la generacion?"
+            )
+
         self.update_status("Generando exámenes...")
         try:
             self.exam_generator.generate_exam_from_excel(
@@ -1707,6 +3416,8 @@ class ExamApp:
                 exam_names=exam_name_list,
                 questions_per_topic=questions_per_topic,
                 selection_method=selection_method,
+                total_questions=total_questions,
+                total_distribution=total_distribution,
                 subject=subject,
                 exam=exam_name,
                 course=course,
@@ -1719,9 +3430,19 @@ class ExamApp:
                 font_size=font_size,
                 xml_cat_additional_text=xml_cat_additional_text,
                 penalty=penalty,
+                xml_use_answer_text=xml_use_answer_text,
                 update_excel=update_excel,
-                answer_sheet_instructions=answer_sheet_instructions
+                answer_sheet_instructions=answer_sheet_instructions,
+                template_docx_path=template_docx_path,
+                session_output_path=(self.gen_session_output_var.get().strip() or None),
+                usage_warning_enabled=usage_alert_enabled,
+                usage_warning_threshold=usage_alert_threshold,
+                usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None
             )
+            if getattr(self.exam_generator, "generation_cancelled", False):
+                self.update_status("Generacion de examenes cancelada.")
+                messagebox.showinfo("Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
+                return
             self.update_status("Exámenes generados.")
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
 
@@ -1742,6 +3463,28 @@ class ExamApp:
             # Mantenemos un bloque genérico para cualquier otro error inesperado
             self.update_status(f"Error al generar exámenes: {e}")
             messagebox.showerror("Error", f"Ocurrió un error inesperado al generar los exámenes: {e}")
+
+    def show_moodle_suggestions(self) -> None:
+        """Shows recommended Moodle quiz names / columns so the exported xlsx is identifiable."""
+        exam = self.exam_name.get().strip() or "Examen"
+        exam_types = [name.strip() for name in self.exam_names.get().split(',') if name.strip()] or ["1A"]
+
+        lines = [
+            "Usa estos nombres al crear los cuestionarios en Moodle para que las columnas del",
+            "xlsx exportado sean reconocibles por el corrector (formato de tipo recomendado: 1A, 1B…).",
+            "",
+        ]
+        for exam_type in exam_types:
+            suggestion = ExamGenerator.suggest_moodle_config(exam=exam, exam_type=exam_type)
+            lines.append(f"Tipo «{exam_type}»:")
+            lines.append(f"   Nombre del cuestionario: {suggestion.get('exam_quiz_name', '')}")
+            lines.append(f"   Columna esperada en el xlsx: {suggestion.get('exam_grade_column', '')}")
+            lines.append("")
+
+        category = ExamGenerator.suggest_moodle_config(exam=exam, exam_type=exam_types[0]).get("category_name", "")
+        lines.append(f"Categoría Moodle sugerida: {category}")
+
+        messagebox.showinfo("Sugerencias de nombres Moodle", "\n".join(lines))
 
     def select_existing_bank_file(self) -> None:
         """
@@ -1827,6 +3570,189 @@ class ExamApp:
         else:
             messagebox.showinfo("Información", "No se encontraron preguntas nuevas para añadir.")
 
+    def select_update_bank_file(self) -> None:
+        """Opens a dialog to select the question bank XLSX whose usage will be updated."""
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar Banco de Preguntas a Actualizar",
+            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+        )
+        if filepath:
+            self.update_bank_path_var.set(filepath)
+
+    def _default_exam_label(self, exam_path: str) -> str:
+        """Default label for an exam, derived from its file name using the auto-label settings.
+
+        Splits the file name by the configured delimiter and keeps the chosen parts. With the parts
+        field empty it returns the whole file name (without extension).
+        """
+        delimiter = self.update_label_delimiter_var.get()
+        parts = self.update_label_parts_var.get().strip()
+        return self.question_bank_manager.label_from_filename(
+            exam_path,
+            delimiter=delimiter or None,
+            parts=parts or None,
+        )
+
+    def _refresh_update_exams_tree(self) -> None:
+        """Repopulates the exams Treeview from ``self.update_exam_specs`` (index used as item id).
+
+        Also shows the resulting usage column name (accents stripped) so the user sees exactly what
+        will be written to the bank XLSX.
+        """
+        self.update_exams_tree.delete(*self.update_exams_tree.get_children())
+        for index, spec in enumerate(self.update_exam_specs):
+            column_name = self.question_bank_manager._usage_column_name(spec["label"], spec["path"])
+            self.update_exams_tree.insert(
+                "", "end", iid=str(index),
+                values=(os.path.basename(spec["path"]), spec["label"], column_name)
+            )
+
+    def apply_auto_labels(self) -> None:
+        """Recomputes the label of every exam in the list from its file name using the auto-label settings."""
+        if not self.update_exam_specs:
+            messagebox.showinfo("Información", "No hay exámenes en la lista a los que aplicar la etiqueta.")
+            return
+        for spec in self.update_exam_specs:
+            spec["label"] = self._default_exam_label(spec["path"])
+        self._refresh_update_exams_tree()
+
+    def select_update_exam_files(self) -> None:
+        """Opens a dialog to add one or more generated exam XLSX files used to update the bank.
+
+        Each newly added exam gets a default label (its file name without extension), editable later.
+        Files already present in the list are not added twice.
+        """
+        filepaths = filedialog.askopenfilenames(
+            title="Seleccionar Exámenes Generados (XLSX)",
+            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+        )
+        if not filepaths:
+            return
+        existing_paths = {spec["path"] for spec in self.update_exam_specs}
+        for filepath in filepaths:
+            if filepath in existing_paths:
+                continue
+            self.update_exam_specs.append({"path": filepath, "label": self._default_exam_label(filepath)})
+            existing_paths.add(filepath)
+        self._refresh_update_exams_tree()
+
+    def _selected_update_exam_index(self) -> Optional[int]:
+        """Returns the index in ``self.update_exam_specs`` of the selected tree row, or None."""
+        selection = self.update_exams_tree.selection()
+        if not selection:
+            return None
+        try:
+            return int(selection[0])
+        except (ValueError, IndexError):
+            return None
+
+    def edit_update_exam_label(self) -> None:
+        """Edits the label of the selected exam (the name of its '<label>_uso' column)."""
+        index = self._selected_update_exam_index()
+        if index is None:
+            messagebox.showinfo("Información", "Seleccione un examen de la lista para editar su etiqueta.")
+            return
+        spec = self.update_exam_specs[index]
+        new_label = simpledialog.askstring(
+            "Editar Etiqueta",
+            f"Etiqueta para '{os.path.basename(spec['path'])}'\n"
+            f"(se usará como nombre de la columna de uso '<etiqueta>_uso'):",
+            initialvalue=spec["label"],
+            parent=self.root
+        )
+        if new_label is None:
+            return
+        new_label = new_label.strip()
+        spec["label"] = new_label or self._default_exam_label(spec["path"])
+        self._refresh_update_exams_tree()
+
+    def _on_update_exam_double_click(self, event) -> None:
+        """Double-clicking a row in the exams tree edits its label."""
+        if self.update_exams_tree.identify_row(event.y):
+            self.edit_update_exam_label()
+
+    def remove_update_exam(self) -> None:
+        """Removes the selected exam from the list."""
+        index = self._selected_update_exam_index()
+        if index is None:
+            messagebox.showinfo("Información", "Seleccione un examen de la lista para quitarlo.")
+            return
+        del self.update_exam_specs[index]
+        self._refresh_update_exams_tree()
+
+    def clear_update_exams(self) -> None:
+        """Empties the list of exams."""
+        self.update_exam_specs.clear()
+        self._refresh_update_exams_tree()
+
+    def update_bank_with_exams_action(self) -> None:
+        """
+        Updates the usage statistics of an existing question bank from one or more generated exams.
+        Each exam is matched back to the bank by statement and marked as used in its own
+        '<label>_uso' column; the aggregated 'Veces usada en examen' column is then recomputed.
+        """
+        bank_path = self.update_bank_path_var.get()
+
+        if not bank_path:
+            messagebox.showerror("Error", "Por favor, seleccione el banco de preguntas a actualizar.")
+            return
+        if not self.update_exam_specs:
+            messagebox.showerror("Error", "Añada al menos un examen para registrar su uso en el banco.")
+            return
+
+        exams = [{"path": spec["path"], "label": spec["label"]} for spec in self.update_exam_specs]
+        total_matched, df_updated, stats = self.question_bank_manager.update_bank_with_exams(
+            bank_path, exams
+        )
+
+        if total_matched == -1:
+            messagebox.showerror("Error", "Error al procesar los archivos. Revise la consola para más detalles.")
+            return
+
+        # Build a per-exam summary to show the user.
+        detail_lines = [
+            f"• {os.path.basename(exam['path'])} → '{exam['column']}': {exam['matched']} preguntas"
+            for exam in stats.get("exams", [])
+        ]
+        errors = stats.get("errors", [])
+        summary = "\n".join(detail_lines) if detail_lines else "Ningún examen pudo procesarse."
+        if errors:
+            summary += f"\n\nExámenes omitidos (no se pudieron leer): {len(errors)}"
+
+        if total_matched == 0:
+            messagebox.showinfo(
+                "Información",
+                f"No se emparejó ninguna pregunta de los exámenes con el banco. "
+                f"No se realizaron cambios.\n\n{summary}"
+            )
+            return
+
+        response = messagebox.askyesnocancel(
+            "Guardar Cambios",
+            f"Se registraron {total_matched} usos de preguntas en el banco:\n\n{summary}\n\n"
+            f"¿Desea guardar los cambios en el banco existente?",
+            default='yes'
+        )
+        if response is True:
+            filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, bank_path, overwrite=True)
+            if filepath:
+                messagebox.showinfo("Éxito", f"Banco actualizado con {total_matched} usos registrados: {filepath}")
+            else:
+                messagebox.showerror("Error al guardar", "Error al guardar el banco existente.")
+        elif response is False:
+            new_filepath = filedialog.asksaveasfilename(
+                title="Guardar Banco Actualizado Como...",
+                defaultextension=".xlsx",
+                initialdir=os.path.dirname(bank_path),
+                initialfile=f"{os.path.splitext(os.path.basename(bank_path))[0]}_actualizado.xlsx"
+            )
+            if new_filepath:
+                filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, new_filepath, overwrite=True)
+                if filepath:
+                    messagebox.showinfo("Éxito", f"Banco actualizado guardado en: {filepath}")
+                else:
+                    messagebox.showerror("Error al guardar", "Error al guardar el nuevo archivo.")
+
     def show_about_dialog(self):
         """Displays an 'About' dialog with program and license information."""
         about_text = (
@@ -1859,6 +3785,133 @@ class ExamApp:
         directory = filedialog.askdirectory(title="Seleccionar Directorio de Salida para Exámenes")
         if directory:
             self.gen_exams_output_dir_var.set(directory)
+
+    def select_gen_session_output(self) -> None:
+        """Opens a dialog to choose where to save the resumable grading session."""
+        filepath = filedialog.asksaveasfilename(
+            title="Guardar sesión de corrección",
+            defaultextension=".json",
+            initialfile="sesion_correccion.json",
+            filetypes=[("Sesión", "*.json *.pkl")],
+        )
+        if filepath:
+            self.gen_session_output_var.set(filepath)
+
+    def select_template_docx_file(self) -> None:
+        """Opens a dialog to select a DOCX template for exam generation."""
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar Plantilla DOCX",
+            filetypes=[("Archivos Word", "*.docx")]
+        )
+        if filepath:
+            self.template_docx_path_var.set(filepath)
+
+    @staticmethod
+    def _get_exam_template_config_paths() -> Tuple[str, str]:
+        local_path = os.path.join(os.getcwd(), "exam_generation_template.json")
+        appdata = os.getenv("APPDATA")
+        if appdata:
+            central_dir = os.path.join(appdata, "pyexamgenerator")
+            os.makedirs(central_dir, exist_ok=True)
+            central_path = os.path.join(central_dir, "exam_generation_template.json")
+        else:
+            central_path = local_path
+        return local_path, central_path
+
+    def save_exam_tab_template(self) -> None:
+        """Saves current exam-tab values to a JSON template (local first, then central fallback)."""
+        template_data = {
+            "subject": self.subject.get(),
+            "exam_name": self.exam_name.get(),
+            "course": self.course.get(),
+            "num_exams": self.num_exams.get(),
+            "exam_names": self.exam_names.get(),
+            "questions_per_topic": self.questions_per_topic.get(),
+            "num_questions_same_topic": self.num_questions_same_topic.get(),
+            "selection_method": self.selection_method.get(),
+            "selection_method_var": self.selection_method_var.get(),
+            "total_questions": self.total_questions_var.get(),
+            "total_distribution": self.total_distribution_var.get(),
+            "top_margin": self.top_margin.get(),
+            "bottom_margin": self.bottom_margin.get(),
+            "left_margin": self.left_margin.get(),
+            "right_margin": self.right_margin.get(),
+            "font_size": self.font_size.get(),
+            "answer_sheet_instructions": self.answer_sheet_instructions.get(),
+            "penalty": self.penalty.get(),
+            "xml_cat_additional_text": self.xml_cat_additional_text.get(),
+            "export_moodle": self.export_moodle.get(),
+            "update_excel": self.update_excel.get(),
+            "usage_alert_enabled": self.usage_alert_enabled_var.get(),
+            "usage_alert_threshold": self.usage_alert_threshold_var.get(),
+            "xml_use_answer_text": self.xml_use_answer_text_var.get(),
+            "template_docx_path": self.template_docx_path_var.get(),
+        }
+
+        local_path, central_path = self._get_exam_template_config_paths()
+        saved_path = None
+        for path in (local_path, central_path):
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(template_data, f, ensure_ascii=False, indent=2)
+                saved_path = path
+                break
+            except OSError:
+                continue
+
+        if saved_path:
+            messagebox.showinfo("Plantilla", f"Plantilla guardada en:\n{saved_path}")
+        else:
+            messagebox.showerror("Error", "No se pudo guardar la plantilla de exámenes.")
+
+    def load_exam_tab_template(self) -> None:
+        """Loads exam-tab values from local JSON first, then central fallback."""
+        local_path, central_path = self._get_exam_template_config_paths()
+        config = None
+        loaded_path = None
+
+        for path in (local_path, central_path):
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                loaded_path = path
+                break
+            except (OSError, json.JSONDecodeError):
+                continue
+
+        if not config:
+            messagebox.showwarning("Plantilla", "No se encontró plantilla de exámenes en ruta local ni central.")
+            return
+
+        self.subject.set(config.get("subject", self.subject.get()))
+        self.exam_name.set(config.get("exam_name", self.exam_name.get()))
+        self.course.set(config.get("course", self.course.get()))
+        self.num_exams.set(config.get("num_exams", self.num_exams.get()))
+        self.exam_names.set(config.get("exam_names", self.exam_names.get()))
+        self.questions_per_topic.set(config.get("questions_per_topic", self.questions_per_topic.get()))
+        self.num_questions_same_topic.set(config.get("num_questions_same_topic", self.num_questions_same_topic.get()))
+        self.selection_method.set(config.get("selection_method", self.selection_method.get()))
+        self.selection_method_var.set(config.get("selection_method_var", self.selection_method_var.get()))
+        self.total_questions_var.set(config.get("total_questions", self.total_questions_var.get()))
+        self.total_distribution_var.set(config.get("total_distribution", self.total_distribution_var.get()))
+        self.top_margin.set(config.get("top_margin", self.top_margin.get()))
+        self.bottom_margin.set(config.get("bottom_margin", self.bottom_margin.get()))
+        self.left_margin.set(config.get("left_margin", self.left_margin.get()))
+        self.right_margin.set(config.get("right_margin", self.right_margin.get()))
+        self.font_size.set(config.get("font_size", self.font_size.get()))
+        self.answer_sheet_instructions.set(config.get("answer_sheet_instructions", self.answer_sheet_instructions.get()))
+        self.penalty.set(config.get("penalty", self.penalty.get()))
+        self.xml_cat_additional_text.set(config.get("xml_cat_additional_text", self.xml_cat_additional_text.get()))
+        self.export_moodle.set(config.get("export_moodle", self.export_moodle.get()))
+        self.update_excel.set(config.get("update_excel", self.update_excel.get()))
+        self.usage_alert_enabled_var.set(config.get("usage_alert_enabled", self.usage_alert_enabled_var.get()))
+        self.usage_alert_threshold_var.set(config.get("usage_alert_threshold", self.usage_alert_threshold_var.get()))
+        self.xml_use_answer_text_var.set(config.get("xml_use_answer_text", self.xml_use_answer_text_var.get()))
+        self.template_docx_path_var.set(config.get("template_docx_path", self.template_docx_path_var.get()))
+
+        self.update_status(f"Plantilla cargada desde: {loaded_path}")
 
 def main():
     root = tk.Tk()

@@ -15,8 +15,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, Cm, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.enum.section import WD_SECTION
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, ns
 
 import pandas as pd
@@ -25,7 +27,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import os
-from typing import Optional, Tuple  # Importing Optional and Tuple for type hinting
+from typing import Callable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -48,6 +50,370 @@ class ExamGenerator:
         """
         # Added self.df attribute to persist the DataFrame between calls.
         self.df = None
+        # Records (one per generated exam type) with the paths of every output file, so a grading
+        # session can later be resumed directly from the generated exams.
+        self.generated_exams = []
+        self.last_usage_warning_questions = pd.DataFrame()
+        self.generation_cancelled = False
+
+    # Fraction percentages commonly accepted by Moodle for multichoice answers.
+    _MOODLE_GRADE_OPTIONS_PERCENT: Tuple[float, ...] = (
+        -100.0, -90.0, -83.3333333, -80.0, -75.0, -70.0, -66.6666667, -60.0,
+        -50.0, -40.0, -33.3333333, -30.0, -25.0, -20.0, -16.6666667,
+        -14.2857143, -12.5, -11.1111111, -10.0, -5.0, 0.0, 5.0, 10.0,
+        11.1111111, 12.5, 14.2857143, 16.6666667, 20.0, 25.0, 30.0,
+        33.3333333, 40.0, 50.0, 60.0, 66.6666667, 70.0, 75.0, 80.0,
+        83.3333333, 90.0, 100.0,
+    )
+
+    @staticmethod
+    def suggest_moodle_config(
+        exam: Optional[str] = None,
+        exam_type: Optional[str] = None,
+        group: Optional[str] = None,
+        topic: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Suggests Moodle quiz names / category so the exported grade columns are identifiable.
+
+        The grading subpackage parses two column conventions (the prefix ``Cuestionario:`` is added by
+        Moodle itself when exporting grades):
+
+        * Per exam type: ``Cuestionario:<nombre>_Tipo <1A> (Real)``.
+        * Per class quiz (topic + group):
+          ``Cuestionario:Cuestionario <tema> - <GIM|GITI-GIE-GIEI> (Real)``.
+
+        Args:
+            exam: Exam name (e.g. 'Parcial 1').
+            exam_type: Exam type/version in the form ``<n><LETTER>`` (e.g. '1A').
+            group: Macro-group (e.g. 'GIM', 'GITI-GIE-GIEI').
+            topic: Topic name for a class quiz (e.g. 'Tema 03').
+
+        Returns:
+            Dict[str, str]: Suggested names and the grade columns they will produce in Moodle.
+        """
+        suggestions: Dict[str, str] = {}
+
+        if exam_type:
+            base_parts = [p for p in [group, exam or "Examen"] if p]
+            base = " ".join(str(p).strip() for p in base_parts).strip()
+            quiz_name = f"{base}_Tipo {str(exam_type).strip().upper()} (Real)"
+            suggestions["exam_quiz_name"] = quiz_name
+            suggestions["exam_grade_column"] = f"Cuestionario:{quiz_name}"
+
+        if topic and group:
+            class_quiz_name = f"Cuestionario {str(topic).strip()} - {str(group).strip()} (Real)"
+            suggestions["class_quiz_name"] = class_quiz_name
+            suggestions["class_grade_column"] = f"Cuestionario:{class_quiz_name}"
+
+        category = "$course$/top/Examen"
+        if exam:
+            category += f" {exam} -"
+        if exam_type:
+            category += f" {exam_type} -"
+        suggestions["category_name"] = category.rstrip(" -")
+
+        return suggestions
+
+    @staticmethod
+    def _format_question_number(question_number: int) -> str:
+        """Formats question numbers using two digits (01, 02, ...)."""
+        return f"{int(question_number):02d}"
+
+    @classmethod
+    def _nearest_moodle_grade_option_percent(cls, fraction_percent: float) -> float:
+        """Snaps any percentage to the nearest Moodle-compatible fraction option."""
+        try:
+            numeric_value = float(fraction_percent)
+        except (TypeError, ValueError):
+            numeric_value = -25.0
+        return min(cls._MOODLE_GRADE_OPTIONS_PERCENT, key=lambda option: abs(option - numeric_value))
+
+    @staticmethod
+    def _format_fraction_percent_for_xml(fraction_percent: float) -> str:
+        """Formats a percentage so Moodle XML receives stable numeric strings."""
+        numeric_value = round(float(fraction_percent), 7)
+        if abs(numeric_value - int(numeric_value)) < 1e-7:
+            return str(int(numeric_value))
+        return f"{numeric_value:.7f}".rstrip('0').rstrip('.')
+
+    @staticmethod
+    def _infer_exam_metadata_from_generated_xlsx_name(exam_xlsx_path: str) -> Tuple[Optional[str], Optional[str]]:
+        """Best-effort extraction of exam and exam type from a generated ``*_completo.xlsx`` name."""
+        stem = os.path.splitext(os.path.basename(exam_xlsx_path))[0]
+        if stem.lower().endswith("_completo"):
+            stem = stem[:-len("_completo")]
+
+        parts = [part.strip() for part in stem.split("_") if part.strip()]
+        if len(parts) < 2:
+            return None, None
+
+        inferred_exam_type = parts[-1]
+        inferred_exam = None
+        if len(parts) >= 5 and re.fullmatch(r"\d{2}-\d{2}", parts[-2]):
+            inferred_exam = parts[-3]
+        return inferred_exam, inferred_exam_type
+
+    def _build_exam_variant_df(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        """Builds one exam variant with a canonical order reused by all outputs."""
+        exam_df_variant = source_df.sample(frac=1).reset_index(drop=True).copy()
+        exam_df_variant['Número de pregunta'] = range(1, len(exam_df_variant) + 1)
+        exam_df_variant['Texto respuesta correcta'] = exam_df_variant.apply(
+            lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"]
+            if pd.notnull(row['Respuesta correcta']) else None,
+            axis=1
+        )
+
+        def shuffle_row_answers(row):
+            answers = [row['Respuesta A'], row['Respuesta B'], row['Respuesta C'], row['Respuesta D']]
+            original_correct_answer = row['Texto respuesta correcta']
+            random.shuffle(answers)
+            new_correct_answer_letter = None
+            if original_correct_answer == answers[0]:
+                new_correct_answer_letter = 'a'
+            elif original_correct_answer == answers[1]:
+                new_correct_answer_letter = 'b'
+            elif original_correct_answer == answers[2]:
+                new_correct_answer_letter = 'c'
+            elif original_correct_answer == answers[3]:
+                new_correct_answer_letter = 'd'
+            return pd.Series([answers[0], answers[1], answers[2], answers[3], new_correct_answer_letter])
+
+        exam_df_variant[['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'Respuesta correcta']] = \
+            exam_df_variant.apply(shuffle_row_answers, axis=1)
+        exam_df_variant.drop(columns=['Texto respuesta correcta'], inplace=True)
+        return exam_df_variant
+
+    @staticmethod
+    def _generation_usage_column_name(exam: Optional[str], course: Optional[str]) -> str:
+        """Builds the usage column name used while generating exams."""
+        safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(exam or "examen")).strip('_') or "examen"
+        safe_course_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(course or "curso")).strip('_') or "curso"
+        return f'{safe_exam_name}_{safe_course_name}_uso'
+
+    @staticmethod
+    def _questions_over_usage_threshold(exam_df: pd.DataFrame, threshold: int) -> pd.DataFrame:
+        """Returns selected questions whose aggregate usage is strictly greater than threshold."""
+        usage_column = 'Veces usada en examen'
+        if exam_df is None or exam_df.empty or usage_column not in exam_df.columns:
+            return pd.DataFrame()
+
+        usage_counts = pd.to_numeric(exam_df[usage_column], errors='coerce').fillna(0)
+        warning_df = exam_df.loc[usage_counts > threshold].copy()
+        if warning_df.empty:
+            return pd.DataFrame()
+
+        question_number_column = 'N\u00famero de pregunta'
+        display_columns = [
+            col for col in [question_number_column, 'Tema', 'Pregunta', usage_column]
+            if col in warning_df.columns
+        ]
+        return warning_df.loc[:, display_columns].copy()
+
+    @staticmethod
+    def _format_usage_warning_message(warning_df: pd.DataFrame, threshold: int) -> str:
+        """Formats a concise warning for questions that have already been used often."""
+        lines = [
+            f"Hay {len(warning_df)} pregunta(s) seleccionada(s) usadas mas de {threshold} veces.",
+            "",
+        ]
+        max_rows = 12
+        question_number_column = 'N\u00famero de pregunta'
+        usage_column = 'Veces usada en examen'
+        for _, row in warning_df.head(max_rows).iterrows():
+            number = row.get(question_number_column, '')
+            topic = row.get('Tema', '')
+            statement = str(row.get('Pregunta', '')).strip()
+            usage = row.get(usage_column, '')
+            prefix_parts = []
+            if number != '':
+                prefix_parts.append(f"#{number}")
+            if topic != '':
+                prefix_parts.append(str(topic))
+            prefix = " - ".join(prefix_parts)
+            if prefix:
+                prefix += ": "
+            lines.append(f"- {prefix}{statement} ({usage} usos)")
+        if len(warning_df) > max_rows:
+            lines.append(f"- ... y {len(warning_df) - max_rows} mas.")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _style_question_heading(paragraph, font_size: int, font_name: Optional[str] = None) -> None:
+        """Keeps question headings compact while making them visible in Word navigation."""
+        paragraph.style = 'Heading 2'
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.keep_with_next = True
+        for run in paragraph.runs:
+            run.font.size = Pt(font_size)
+            run.font.bold = True
+            run.font.name = font_name or 'Calibri'
+            run.font.color.rgb = RGBColor(0, 0, 0)
+
+    def _add_question_block(
+            self,
+            document: Document,
+            row: pd.Series,
+            font_size: int,
+            include_solution: bool = False,
+            use_two_digits: bool = False
+    ) -> None:
+        """Adds a question as a Heading 2 paragraph plus normal paragraphs with answers/details."""
+        question_number_column = 'N\u00famero de pregunta'
+        pregunta_num = row[question_number_column]
+        formatted_pregunta_num = self._format_question_number(pregunta_num) if use_two_digits else str(int(pregunta_num))
+
+        question_paragraph = document.add_paragraph(style='Heading 2')
+        question_paragraph.add_run(f"Pregunta {formatted_pregunta_num}: ")
+        question_paragraph.add_run(str(row['Pregunta']))
+        normal_font_name = document.styles['Normal'].font.name or 'Calibri'
+        self._style_question_heading(question_paragraph, font_size, normal_font_name)
+
+        details_paragraph = document.add_paragraph()
+        details_paragraph.paragraph_format.space_before = Pt(0)
+        details_paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"d) {row['Respuesta D']}").font.size = Pt(font_size)
+        if include_solution:
+            details_paragraph.add_run(f"\nRespuesta correcta: {row['Respuesta correcta'].lower()}").font.size = Pt(font_size)
+            details_paragraph.add_run(f"\nTexto relevante: {row['Texto relevante']}").font.size = Pt(font_size)
+            details_paragraph.add_run(f"\nTema: {row['Tema']}").font.size = Pt(font_size)
+
+    @staticmethod
+    def _add_student_identification_header(
+            document: Document,
+            subject: Optional[str],
+            exam: Optional[str],
+            course: Optional[str],
+            exam_type_name: Optional[str],
+            font_size: int
+    ) -> None:
+        """Adds repeated student identification blanks to the student document header."""
+        section = document.sections[0]
+        header = section.header
+        header_paragraph = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        header_paragraph.text = f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name}"
+        header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        for run in header_paragraph.runs:
+            run.font.size = Pt(font_size)
+
+        available_width = section.page_width - section.left_margin - section.right_margin
+        table = header.add_table(rows=2, cols=4, width=available_width)
+        table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
+
+        labels = [["Nombre", "Apellidos"], ["DNI/NIE", "Firma"]]
+        label_width = Cm(2.1)
+        value_width = int((available_width - (label_width * 2)) / 2)
+        for row_idx, row_labels in enumerate(labels):
+            for pair_idx, label in enumerate(row_labels):
+                label_cell = table.cell(row_idx, pair_idx * 2)
+                value_cell = table.cell(row_idx, pair_idx * 2 + 1)
+                label_cell.text = label
+                label_cell.width = label_width
+                value_cell.width = value_width
+                for cell in (label_cell, value_cell):
+                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                    for paragraph in cell.paragraphs:
+                        for run in paragraph.runs:
+                            run.font.size = Pt(font_size)
+
+    @staticmethod
+    def _add_exam_usage_column_for_export(exam_df: pd.DataFrame, usage_column_name: str) -> pd.DataFrame:
+        """Returns the generated-exam XLSX dataframe with a final all-ones usage column."""
+        export_df = exam_df.copy()
+        export_df = export_df.loc[:, ~export_df.columns.str.contains('unnamed', case=False)]
+        if usage_column_name in export_df.columns:
+            export_df = export_df.drop(columns=[usage_column_name])
+        export_df[usage_column_name] = 1
+        return export_df
+
+    def _select_questions_by_topic(
+            self,
+            questions_per_topic: dict,
+            selection_method: str = "azar",
+            verbose: bool = False
+    ) -> pd.DataFrame:
+        """Selects questions from `self.acceptable_df` according to a per-topic quantity dictionary.
+
+        Args:
+            questions_per_topic (dict): Mapping of topic -> number of questions to take from that topic.
+            selection_method (str): How to pick questions inside each topic ('azar', 'primeras',
+                'menos usadas').
+            verbose (bool): If True, prints progress messages.
+
+        Returns:
+            pd.DataFrame: The concatenated selection (empty DataFrame with the same columns if nothing
+            was selected).
+
+        Raises:
+            ValueError: If a topic does not have enough 'Aceptable' questions for the requested quantity.
+        """
+        selected_questions = []
+        for topic, quantity in questions_per_topic.items():
+            if verbose:
+                print(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
+            topic_questions = self.acceptable_df[self.acceptable_df['Tema'] == topic]
+            # Per-topic check: raise a clear error if there are not enough questions for a topic.
+            if len(topic_questions) < quantity:
+                raise ValueError(
+                    f"No hay suficientes preguntas 'Aceptables' para el tema '{topic}'. "
+                    f"Se solicitaron {quantity}, pero solo hay {len(topic_questions)} disponibles."
+                )
+            if selection_method == "primeras":
+                topic_questions = topic_questions.head(quantity).copy()
+            elif selection_method == "menos usadas":
+                topic_questions = topic_questions.sort_values(by='Veces usada en examen').head(quantity).copy()
+            else:  # 'azar' (default).
+                topic_questions = topic_questions.sample(n=quantity).copy()
+            selected_questions.append(topic_questions)
+        if selected_questions:
+            return pd.concat(selected_questions).copy()
+        # Empty DataFrame with the same columns.
+        return pd.DataFrame(columns=self.acceptable_df.columns)
+
+    @staticmethod
+    def _distribute_questions_equitably(acceptable_df: pd.DataFrame, total_questions: int) -> Dict[str, int]:
+        """Spreads `total_questions` across the available topics as evenly as possible.
+
+        Each topic receives the same number of questions; when the total is not divisible by the number
+        of topics (e.g. an odd total), the first topics receive one extra question. If a topic does not
+        have enough 'Aceptable' questions, its surplus is redistributed among the remaining topics
+        (the "as far as possible" part).
+
+        Args:
+            acceptable_df (pd.DataFrame): The pool of acceptable questions (must contain a 'Tema' column).
+            total_questions (int): The total number of questions to distribute.
+
+        Returns:
+            Dict[str, int]: Mapping of topic -> number of questions assigned (topics with 0 are omitted).
+
+        Raises:
+            ValueError: If `total_questions` exceeds the number of available questions.
+        """
+        topic_counts = acceptable_df['Tema'].value_counts().to_dict()
+        topics = sorted(topic_counts.keys(), key=lambda topic: str(topic))
+        total_available = int(sum(topic_counts.values()))
+        if total_questions > total_available:
+            raise ValueError(
+                f"Se solicitaron {total_questions} preguntas en total, "
+                f"pero solo hay {total_available} preguntas 'Aceptables' disponibles."
+            )
+        allocation = {topic: 0 for topic in topics}
+        remaining = total_questions
+        # Round-robin: hand out one question at a time to each topic that still has capacity.
+        while remaining > 0:
+            topics_with_capacity = [topic for topic in topics if allocation[topic] < topic_counts[topic]]
+            if not topics_with_capacity:
+                break
+            for topic in topics_with_capacity:
+                if remaining == 0:
+                    break
+                allocation[topic] += 1
+                remaining -= 1
+        return {topic: count for topic, count in allocation.items() if count > 0}
 
     def read_questions_from_excel(self, excel_path: str) -> Optional[pd.DataFrame]:
         """
@@ -256,7 +622,8 @@ class ExamGenerator:
 
     def generate_moodle_xml(self, df: pd.DataFrame, file_name: str, num_total_questions: int,
                             exam: Optional[str] = None, exam_type: Optional[str] = None,
-                            xml_cat_additional_text: Optional[str] = None, penalty: int = -25):
+                            xml_cat_additional_text: Optional[str] = None, penalty: float = -25,
+                            xml_use_answer_text: bool = False):
         """
         Generates a Moodle XML file from a DataFrame, including category information and correctly
         handling shuffled answers.
@@ -268,12 +635,15 @@ class ExamGenerator:
             exam (Optional[str], optional): The name of the exam.
             exam_type (Optional[str], optional): The type of exam.
             xml_cat_additional_text (Optional[str], optional): Additional text for the Moodle XML category.
-            penalty (int, optional): The penalty percentage for an incorrect answer (e.g., -25 for 25%).
+            penalty (float, optional): Penalty percentage for an incorrect answer.
         """
         self.quiz = Element('quiz')
         self.category = SubElement(self.quiz, 'question', type='category')
         self.category_name = SubElement(self.category, 'category')
         self.text = SubElement(self.category_name, 'text')
+        wrong_fraction = self._format_fraction_percent_for_xml(
+            self._nearest_moodle_grade_option_percent(penalty)
+        )
 
         # Build the category text dynamically.
         category_text = "$course$/top/Examen"
@@ -285,50 +655,127 @@ class ExamGenerator:
             category_text += f" {xml_cat_additional_text}"
 
         self.text.text = category_text
-        use_two_digits = num_total_questions > 9
-
         for _, row in df.iterrows():
-            correct_answer = row['Respuesta correcta'].lower()
+            correct_answer = str(row.get('Respuesta correcta', '')).strip().lower()
 
             pregunta_num = row['Número de pregunta']
-            formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
+            formatted_pregunta_num = self._format_question_number(pregunta_num)
 
             self.question = SubElement(self.quiz, 'question', type='multichoice')
             self.name = SubElement(self.question, 'name')
             self.text = SubElement(self.name, 'text')
             self.text.text = f"Pregunta {formatted_pregunta_num}"
 
+            questiontext = SubElement(self.question, 'questiontext', format='html')
+            questiontext_text = SubElement(questiontext, 'text')
+            questiontext_text.text = row.get('Pregunta', '') if xml_use_answer_text else f"Pregunta {formatted_pregunta_num}"
+
             if correct_answer == 'a':
                 self.answer_a = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_a = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_a = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_a, 'text')
-            self.text.text = 'a'
+            self.text.text = row.get('Respuesta A', '') if xml_use_answer_text else 'a'
 
             if correct_answer == 'b':
                 self.answer_b = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_b = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_b = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_b, 'text')
-            self.text.text = 'b'
+            self.text.text = row.get('Respuesta B', '') if xml_use_answer_text else 'b'
 
             if correct_answer == 'c':
                 self.answer_c = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_c = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_c = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_c, 'text')
-            self.text.text = 'c'
+            self.text.text = row.get('Respuesta C', '') if xml_use_answer_text else 'c'
 
             if correct_answer == 'd':
                 self.answer_d = SubElement(self.question, 'answer', fraction='100')
             else:
-                self.answer_d = SubElement(self.question, 'answer', fraction=str(penalty))
+                self.answer_d = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_d, 'text')
-            self.text.text = 'd'
+            self.text.text = row.get('Respuesta D', '') if xml_use_answer_text else 'd'
 
         self.xml_str = minidom.parseString(tostring(self.quiz)).toprettyxml(indent="  ")
         with open(file_name, 'w', encoding='utf-8') as f:
             f.write(self.xml_str)
+
+    def generate_moodle_xml_from_existing_exam_xlsx(
+            self,
+            exam_xlsx_path: str,
+            xml_output_path: Optional[str] = None,
+            exam: Optional[str] = None,
+            exam_type: Optional[str] = None,
+            xml_cat_additional_text: Optional[str] = None,
+            penalty: float = -25,
+            xml_use_answer_text: bool = False,
+    ) -> str:
+        """Generates Moodle XML from an already generated ``*_completo.xlsx`` exam file.
+
+        Args:
+            exam_xlsx_path (str): Path to the existing exam XLSX.
+            xml_output_path (Optional[str]): Output XML path. If omitted, uses the same base name
+                and drops the ``_completo`` suffix when present.
+            exam (Optional[str]): Exam name for the category path. If not provided, it is inferred
+                from the file name when possible.
+            exam_type (Optional[str]): Exam type/version for the category path. If not provided, it is
+                inferred from the file name when possible.
+            xml_cat_additional_text (Optional[str]): Extra category text appended to Moodle category.
+            penalty (float): Incorrect-answer penalty percentage.
+            xml_use_answer_text (bool): If True, writes full statements/answers instead of a/b/c/d.
+
+        Returns:
+            str: Absolute path of the generated XML file.
+        """
+        if not os.path.exists(exam_xlsx_path):
+            raise FileNotFoundError(f"No se encontró el archivo XLSX: {exam_xlsx_path}")
+
+        df = self.read_questions_from_excel(exam_xlsx_path)
+        if df is None:
+            raise ValueError(f"No se pudo leer el archivo XLSX: {exam_xlsx_path}")
+
+        required_columns = {
+            'Número de pregunta',
+            'Respuesta correcta',
+            'Respuesta A',
+            'Respuesta B',
+            'Respuesta C',
+            'Respuesta D',
+        }
+        missing_columns = sorted(required_columns.difference(df.columns))
+        if missing_columns:
+            raise ValueError(
+                "El XLSX no contiene las columnas necesarias para exportar XML: "
+                f"{', '.join(missing_columns)}"
+            )
+
+        inferred_exam, inferred_exam_type = self._infer_exam_metadata_from_generated_xlsx_name(exam_xlsx_path)
+        resolved_exam = exam.strip() if isinstance(exam, str) and exam.strip() else inferred_exam
+        resolved_exam_type = exam_type.strip() if isinstance(exam_type, str) and exam_type.strip() else inferred_exam_type
+
+        if not xml_output_path:
+            xml_base = os.path.splitext(exam_xlsx_path)[0]
+            if xml_base.lower().endswith("_completo"):
+                xml_base = xml_base[:-len("_completo")]
+            xml_output_path = f"{xml_base}.xml"
+
+        output_dir = os.path.dirname(xml_output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
+        self.generate_moodle_xml(
+            df=df.copy(),
+            file_name=xml_output_path,
+            num_total_questions=len(df),
+            exam=resolved_exam,
+            exam_type=resolved_exam_type,
+            xml_cat_additional_text=xml_cat_additional_text,
+            penalty=penalty,
+            xml_use_answer_text=xml_use_answer_text,
+        )
+        return os.path.abspath(xml_output_path)
 
     def generate_exam_from_excel(
             self,
@@ -337,6 +784,8 @@ class ExamGenerator:
             exam_names: Optional[list] = None,
             questions_per_topic: Optional[dict] = None,
             selection_method: str = "azar",
+            total_questions: Optional[int] = None,
+            total_distribution: str = "equitativo",
             subject: Optional[str] = None,
             exam: Optional[str] = None,
             course: Optional[str] = None,
@@ -348,10 +797,16 @@ class ExamGenerator:
             export_moodle_xml: bool = False,
             font_size: int = 9,
             xml_cat_additional_text: Optional[str] = None,
-            penalty: int = -25,
+            penalty: float = -25,
+            xml_use_answer_text: bool = False,
             check: bool = False,
             update_excel: bool = False,
             answer_sheet_instructions: Optional[str] = None,
+            template_docx_path: Optional[str] = None,
+            session_output_path: Optional[str] = None,
+            usage_warning_enabled: bool = True,
+            usage_warning_threshold: int = 3,
+            usage_warning_callback: Optional[Callable[[pd.DataFrame, int, str], bool]] = None,
             verbose: bool = False
     ):
         """
@@ -364,7 +819,15 @@ class ExamGenerator:
                 If None, uses the same directory as the bank_excel_path.
             exam_names (Optional[list]): A list of names for the exam versions (e.g., ['1A', '1B']).
             questions_per_topic (Optional[dict]): A dictionary specifying how many questions to select from each topic.
-            selection_method (str): Method for selecting questions: 'azar' (random), 'primeras' (first N), 'menos usadas' (least used).
+            selection_method (str): Method for selecting questions within each topic: 'azar' (random),
+                'primeras' (first N), 'menos usadas' (least used).
+            total_questions (Optional[int]): If provided (and > 0), selects this exact total number of
+                questions and overrides `questions_per_topic`. The way the total is spread is controlled
+                by `total_distribution`.
+            total_distribution (str): How to spread `total_questions`: 'equitativo' (same number of
+                questions per topic as far as possible; the first topics get one extra when the total is
+                not divisible) or 'azar' (pick the total at random from the whole acceptable pool,
+                ignoring topics).
             subject (Optional[str]): The subject name for the exam header.
             exam (Optional[str]): The exam name (e.g., 'Parcial 1').
             course (Optional[str]): The course name or year (e.g., '24-25').
@@ -376,12 +839,25 @@ class ExamGenerator:
             export_moodle_xml (bool): If True, exports the exam to Moodle XML format.
             font_size (int): Font size for the text in the document.
             xml_cat_additional_text (Optional[str]): Additional text for the Moodle XML category.
-            penalty (int): Penalty for incorrect answers in the Moodle XML export.
+            penalty (float): Penalty for incorrect answers in the Moodle XML export.
+            xml_use_answer_text (bool): If True, XML stores full question and answer text instead of a/b/c/d.
             check (bool): If True, generates a preview and waits for user confirmation before creating all exams.
             update_excel (bool): If True, updates the source Excel file with usage statistics.
             answer_sheet_instructions (Optional[str]): Text with instructions for the answer sheet.
+            template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
+            session_output_path (Optional[str]): If set, writes a resumable grading session (``.pkl`` +
+                ``.json``) recording the paths of every generated exam, so correction can be resumed later.
+            usage_warning_enabled (bool): If True, warns when selected questions have been used more than
+                ``usage_warning_threshold`` times according to 'Veces usada en examen'.
+            usage_warning_threshold (int): Usage count threshold for the repeated-question warning.
+            usage_warning_callback (Optional[Callable]): Optional callback that receives
+                ``(warning_df, threshold, message)`` and returns True to continue or False to cancel.
             verbose (bool): If True, prints detailed progress messages to the console.
         """
+        # Start a fresh list of generated-exam records for this run.
+        self.generated_exams = []
+        self.generation_cancelled = False
+
         if self.df is None:
             self.df = self.read_questions_from_excel(bank_excel_path)
 
@@ -392,40 +868,39 @@ class ExamGenerator:
         for col in exam_columns:
             self.df[col] = self.df[col].fillna(0)
 
-        self.acceptable_df = self.df[(self.df['Estado'] == 'Aceptable')]
+        self.acceptable_df = self.df[self.df['Estado'].astype(str).str.strip().str.lower() == 'aceptable']
 
         # Comprobación temprana: si no hay NINGUNA pregunta aceptable, paramos aquí.
         if self.acceptable_df.empty:
             raise NoAcceptableQuestionsError("No se encontraron preguntas con estado 'Aceptable' en el banco de preguntas.")
 
-        if questions_per_topic:
-            self.selected_questions = []
-            # Iterate directly over the questions_per_topic dictionary.
-            for topic, quantity in questions_per_topic.items():
-                if verbose:
-                    print(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
-                topic_questions = self.acceptable_df[self.acceptable_df['Tema'] == topic]
-                # Comprobación por tema: si no hay suficientes preguntas para un tema, lanzamos un error claro.
-                if len(topic_questions) < quantity:
-                    raise ValueError(
-                        f"No hay suficientes preguntas 'Aceptables' para el tema '{topic}'. "
-                        f"Se solicitaron {quantity}, pero solo hay {len(topic_questions)} disponibles."
-                    )
-                if selection_method == "azar":
-                    try:
-                        topic_questions = topic_questions.sample(n=quantity).copy()
-                    except ValueError as e:
-                        print(f"Error al seleccionar {quantity} preguntas del tema '{topic}': {e}")
-                        continue  # Skip to the next topic if there is an error.
-                elif selection_method == "primeras":
-                    topic_questions = topic_questions.head(quantity).copy()
-                elif selection_method == "menos usadas":
-                    topic_questions = topic_questions.sort_values(by='Veces usada en examen').head(quantity).copy()
-                self.selected_questions.append(topic_questions)
-            if self.selected_questions:
-                self.exam_df = pd.concat(self.selected_questions).copy()
+        # Normalize the optional total-questions request.
+        total_questions_int = None
+        if total_questions is not None and str(total_questions).strip() != "":
+            try:
+                total_questions_int = int(total_questions)
+            except (TypeError, ValueError):
+                total_questions_int = None
+
+        if total_questions_int and total_questions_int > 0:
+            # A fixed total overrides any per-topic dictionary.
+            available = len(self.acceptable_df)
+            if total_questions_int > available:
+                raise ValueError(
+                    f"Se solicitaron {total_questions_int} preguntas en total, "
+                    f"pero solo hay {available} preguntas 'Aceptables' disponibles."
+                )
+            if total_distribution == "azar":
+                # Pick the total at random from the whole acceptable pool, ignoring topics.
+                self.exam_df = self.acceptable_df.sample(n=total_questions_int).copy()
             else:
-                self.exam_df = pd.DataFrame(columns=self.acceptable_df.columns) # Create an empty DataFrame with the same columns.
+                # Spread the total across topics as evenly as possible.
+                computed_per_topic = self._distribute_questions_equitably(self.acceptable_df, total_questions_int)
+                if verbose:
+                    print(f"Verbose: Reparto equitativo del total {total_questions_int}: {computed_per_topic}")
+                self.exam_df = self._select_questions_by_topic(computed_per_topic, selection_method, verbose)
+        elif questions_per_topic:
+            self.exam_df = self._select_questions_by_topic(questions_per_topic, selection_method, verbose)
         else:
             self.exam_df = self.acceptable_df.copy()
 
@@ -435,6 +910,34 @@ class ExamGenerator:
                 print(f"Verbose: Head de self.exam_df antes del bucle:\n{self.exam_df.head()}")
             else:
                 print(f"Verbose: self.exam_df no es un DataFrame: {self.exam_df}")
+
+        self.last_usage_warning_questions = pd.DataFrame()
+        if usage_warning_enabled:
+            try:
+                usage_warning_threshold_int = int(usage_warning_threshold)
+            except (TypeError, ValueError):
+                usage_warning_threshold_int = 3
+            self.last_usage_warning_questions = self._questions_over_usage_threshold(
+                self.exam_df,
+                usage_warning_threshold_int
+            )
+            if not self.last_usage_warning_questions.empty:
+                warning_message = self._format_usage_warning_message(
+                    self.last_usage_warning_questions,
+                    usage_warning_threshold_int
+                )
+                if usage_warning_callback:
+                    should_continue = usage_warning_callback(
+                        self.last_usage_warning_questions.copy(),
+                        usage_warning_threshold_int,
+                        warning_message
+                    )
+                    if not should_continue:
+                        self.generation_cancelled = True
+                        print("Generacion de examenes cancelada por alerta de uso de preguntas.")
+                        return
+                else:
+                    print(warning_message)
 
         if check:
             preview_exam_df = self.exam_df.copy()
@@ -483,10 +986,18 @@ class ExamGenerator:
         if output_dir is None:
             output_dir = os.path.dirname(bank_excel_path)
         os.makedirs(output_dir, exist_ok=True)
+        usage_column_name = self._generation_usage_column_name(exam, course)
 
         for i in range(num_exams_to_generate):
             exam_type_name = exam_name_list[i]
-            exam_df_shuffled = self.exam_df.sample(frac=1).reset_index(drop=True).copy()
+            exam_df_shuffled = self._build_exam_variant_df(self.exam_df)
+
+            placeholder_map: Dict[str, str] = {
+                "subject": subject or "",
+                "exam": exam or "",
+                "course": course or "",
+                "exam_type": exam_type_name or "",
+            }
 
             base_filename = f'examen_{subject}_{exam}_{course}_{exam_type_name}'
 
@@ -502,34 +1013,11 @@ class ExamGenerator:
                 else:
                     print(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
 
-            exam_df_shuffled['Número de pregunta'] = range(1, len(exam_df_shuffled) + 1)
-
-            exam_df_shuffled['Texto respuesta correcta'] = exam_df_shuffled.apply(
-                lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"] if pd.notnull(
-                    row['Respuesta correcta']) else None, axis=1)
-
-            def shuffle_row_answers(row):
-                answers = [row['Respuesta A'], row['Respuesta B'], row['Respuesta C'], row['Respuesta D']]
-                original_correct_answer = row['Texto respuesta correcta']
-                random.shuffle(answers)
-                new_correct_answer_letter = None
-                if original_correct_answer == answers[0]:
-                    new_correct_answer_letter = 'a'
-                elif original_correct_answer == answers[1]:
-                    new_correct_answer_letter = 'b'
-                elif original_correct_answer == answers[2]:
-                    new_correct_answer_letter = 'c'
-                elif original_correct_answer == answers[3]:
-                    new_correct_answer_letter = 'd'
-                return pd.Series([answers[0], answers[1], answers[2], answers[3], new_correct_answer_letter])
-
-            exam_df_shuffled[['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'Respuesta correcta']] = \
-                exam_df_shuffled.apply(shuffle_row_answers, axis=1)
-
             exam_text, full_exam_text = self.generate_question_text(exam_df_shuffled.copy(), renumber=False,
                                                                     shuffle_answers=False)
 
-            document = Document()
+            document = Document(template_docx_path) if template_docx_path and os.path.exists(template_docx_path) else Document()
+            self._replace_placeholders_in_document(document, placeholder_map)
             title_paragraph = document.add_paragraph(subject, style='Heading 1')
             title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             subtitle_paragraph = document.add_paragraph(
@@ -543,43 +1031,45 @@ class ExamGenerator:
             section.left_margin = Inches(left_margin)
             section.right_margin = Inches(right_margin)
 
-            header = section.header
-            header_paragraph = header.paragraphs[0]
-            header_paragraph.text = f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name}"
-            header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            header_paragraph.runs[0].font.size = Pt(font_size)
+            self._add_student_identification_header(
+                document=document,
+                subject=subject,
+                exam=exam,
+                course=course,
+                exam_type_name=exam_type_name,
+                font_size=font_size
+            )
 
-            for index, row in exam_df_shuffled.iterrows():
-                paragraph = document.add_paragraph()
-                pregunta_num = row['Número de pregunta']
-                use_two_digits = len(exam_df_shuffled) > 9
-                formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
+            use_two_digits = len(exam_df_shuffled) > 9
+            for _, row in exam_df_shuffled.iterrows():
+                self._add_question_block(document, row, font_size, include_solution=False, use_two_digits=use_two_digits)
 
-                # Add the question number in bold.
-                run_numero = paragraph.add_run(f"Pregunta {formatted_pregunta_num}: ")
-                run_numero.font.size = Pt(font_size)
-                run_numero.font.bold = True
-                # Add the question statement in bold.
-                run_enunciado = paragraph.add_run(f"{row['Pregunta']}\n")
-                run_enunciado.font.size = Pt(font_size)
-                run_enunciado.font.bold = True
-                # Add the answer options.
-                paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"d) {row['Respuesta D']}\n").font.size = Pt(font_size)
-
-            document.add_page_break()
+            # Start the answer sheet on an odd page so it prints as a single, self-contained sheet
+            # (front of a physical page) while staying in the same document as the questions.
+            document.add_section(WD_SECTION.ODD_PAGE)
             document.add_heading('Datos del alumno', level=1)
             document.paragraphs[-1].runs[0].font.size = Pt(font_size)
             student_table = document.add_table(rows=4, cols=2)
             student_table.style = 'Table Grid'
+            # Use a fixed layout so the column widths below are honored by Word.
+            student_table.autofit = False
             student_data = ['Nombre', 'Apellidos', 'DNI/NIE', 'Firma']
             for j, data in enumerate(student_data):
                 cell = student_table.cell(j, 0)
                 cell.text = data
                 for paragraph in cell.paragraphs:
                     paragraph.runs[0].font.size = Pt(font_size)
+            # The label column only needs room for words like 'Apellidos'/'DNI/NIE'; give the rest of
+            # the page width to the data column so there is plenty of space to write name, surname, etc.
+            answer_section = document.sections[-1]
+            available_width = answer_section.page_width - answer_section.left_margin - answer_section.right_margin
+            label_col_width = Cm(3.5)
+            if label_col_width > available_width * 0.5:
+                label_col_width = int(available_width * 0.4)
+            value_col_width = available_width - label_col_width
+            for row in student_table.rows:
+                row.cells[0].width = label_col_width
+                row.cells[1].width = value_col_width
             student_table.rows[3].height = Inches(1)
 
             document.add_heading('Hoja de respuestas', level=1)
@@ -599,38 +1089,54 @@ class ExamGenerator:
                 else:
                     print(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
 
-            table = document.add_table(rows=len(exam_df_shuffled) + 1, cols=5)
+            # Answer sheet: 'Pregunta' + one column per answer option plus an extra 'NC' (no
+            # contestada) column so students can explicitly mark a question as unanswered instead of
+            # leaving it blank.
+            headers = ['Pregunta', 'a', 'b', 'c', 'd', 'NC']
+            table = document.add_table(rows=len(exam_df_shuffled) + 1, cols=len(headers))
             table.style = 'Table Grid'
-            headers = ['Pregunta', 'a', 'b', 'c', 'd']
+            # Center the whole table on the page and use a fixed layout so the widths below are kept.
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            table.autofit = False
             for j, header in enumerate(headers):
                 cell = table.cell(0, j)
                 cell.text = header
                 for paragraph in cell.paragraphs:
                     paragraph.runs[0].font.size = Pt(font_size)
-            for j, row in enumerate(exam_df_shuffled.itertuples(), start=1):
+            for j, (_, row) in enumerate(exam_df_shuffled.iterrows(), start=1):
                 cell = table.cell(j, 0)
-                cell.text = str(row._1)
+                cell.text = self._format_question_number(row['Número de pregunta'])
                 for paragraph in cell.paragraphs:
                     paragraph.runs[0].font.size = Pt(font_size)
-            for j in range(5):
-                max_width = 0
-                for k in range(len(exam_df_shuffled) + 1):
-                    cell_text = table.cell(k, j).text
-                    cell_width = len(cell_text)
-                    if cell_width > max_width:
-                        max_width = cell_width
-                    table.columns[j].width = Inches(max_width * 0.08)
-                    for row in table.rows:
-                        cell = row.cells[j]
-                        for paragraph in cell.paragraphs:
-                            for run in paragraph.runs:
-                                run.font.size = Pt(font_size)
+
+            # Column widths: 1 cm by default, growing only when the content needs more room (e.g. the
+            # 'Pregunta' column). The answer columns (a/b/c/d/NC) stay at 1 cm.
+            min_col_width_cm = 1.0
+            approx_char_width_cm = 0.23
+            col_widths = []
+            for j in range(len(headers)):
+                longest = max(len(table.cell(k, j).text) for k in range(len(exam_df_shuffled) + 1))
+                width_cm = max(min_col_width_cm, longest * approx_char_width_cm + 0.2)
+                col_widths.append(Cm(width_cm))
+
+            # Apply the widths to every cell (most reliable in Word) and center the content both
+            # horizontally and vertically, keeping the configured font size.
+            for j in range(len(headers)):
+                for row in table.rows:
+                    cell = row.cells[j]
+                    cell.width = col_widths[j]
+                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                    for paragraph in cell.paragraphs:
+                        paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                        for run in paragraph.runs:
+                            run.font.size = Pt(font_size)
 
             document = self.add_page_number(document)
             self._remove_empty_last_section(document)
             document.save(docx_path)
 
-            full_document = Document()
+            full_document = Document(template_docx_path) if template_docx_path and os.path.exists(template_docx_path) else Document()
+            self._replace_placeholders_in_document(full_document, placeholder_map)
             title_paragraph = full_document.add_paragraph(subject, style='Heading 1')
             title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             subtitle_paragraph = full_document.add_paragraph(
@@ -650,36 +1156,17 @@ class ExamGenerator:
             full_header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             full_header_paragraph.runs[0].font.size = Pt(font_size)
 
-            for index, row in exam_df_shuffled.iterrows():
-                paragraph = full_document.add_paragraph()
-                pregunta_num = row['Número de pregunta']
-                use_two_digits = len(exam_df_shuffled) > 9
-                formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
-
-                # Add the question number in bold.
-                run_numero = paragraph.add_run(f"Pregunta {formatted_pregunta_num}: ")
-                run_numero.font.size = Pt(font_size)
-                run_numero.font.bold = True
-                # Add the question statement in bold.
-                run_enunciado = paragraph.add_run(f"{row['Pregunta']}\n")
-                run_enunciado.font.size = Pt(font_size)
-                run_enunciado.font.bold = True
-                # Add the answer options (not bold).
-                paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"d) {row['Respuesta D']}\n").font.size = Pt(font_size)
-                # Add the correct answer and relevant text (not bold).
-                paragraph.add_run(f"Respuesta correcta: {row['Respuesta correcta'].lower()}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"Texto relevante: {row['Texto relevante']}\n").font.size = Pt(font_size)
-                paragraph.add_run(f"Tema: {row['Tema']}\n").font.size = Pt(font_size)
+            use_two_digits = len(exam_df_shuffled) > 9
+            for _, row in exam_df_shuffled.iterrows():
+                self._add_question_block(full_document, row, font_size, include_solution=True, use_two_digits=use_two_digits)
 
 
             full_document = self.add_page_number(full_document)
             self._remove_empty_last_section(full_document)
             full_document.save(full_docx_path)
 
-            exam_df_shuffled.to_excel(excel_path_out, index=False)
+            exam_export_df = self._add_exam_usage_column_for_export(exam_df_shuffled, usage_column_name)
+            exam_export_df.to_excel(excel_path_out, index=False)
 
             if export_moodle_xml:
                 self.generate_moodle_xml(
@@ -689,15 +1176,26 @@ class ExamGenerator:
                     exam=exam,
                     exam_type=exam_type_name,
                     xml_cat_additional_text=xml_cat_additional_text,
-                    penalty=penalty
+                    penalty=penalty,
+                    xml_use_answer_text=xml_use_answer_text
                 )
 
-        if update_excel:
-            new_column_name_base = f'{exam}_{course}'
-            safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', exam)
-            safe_course_name = re.sub(r'[^a-zA-Z0-9_]', '_', course)
-            usage_column_name = f'{safe_exam_name}_{safe_course_name}_uso'
+            # Record this exam type's output paths for the optional resumable session.
+            self.generated_exams.append({
+                "subject": subject,
+                "exam": exam,
+                "course": course,
+                "exam_type": exam_type_name,
+                "docx": docx_path,
+                "full_docx": full_docx_path,
+                "xlsx": excel_path_out,
+                "xml": xml_path if export_moodle_xml else None,
+            })
 
+        if session_output_path:
+            self._save_grading_session(session_output_path, subject=subject, exam=exam, course=course)
+
+        if update_excel:
             if usage_column_name not in self.df.columns:
                 self.df[usage_column_name] = 0
 
@@ -737,6 +1235,40 @@ class ExamGenerator:
                     f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'.")
             except Exception as e:
                 print(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
+
+    def _save_grading_session(self, session_output_path: str, subject: Optional[str] = None,
+                              exam: Optional[str] = None, course: Optional[str] = None):
+        """Builds and saves a resumable grading session from the exams generated in this run."""
+        try:
+            from pyexamgenerator.grading.session import GradingSession
+        except Exception as exc:  # pragma: no cover - grading is part of the package
+            print(f"No se pudo crear la sesión: {exc}")
+            return None
+        name_parts = [str(p) for p in (subject, exam, course) if p]
+        session = GradingSession(name=" - ".join(name_parts) or "sesion_pyexamgenerator")
+        for record in self.generated_exams:
+            session.add_generated_exam(**record)
+        pkl_path, json_path = session.save(session_output_path)
+        print(f"Sesión guardada en:\n  {pkl_path}\n  {json_path}")
+        return pkl_path, json_path
+
+    @staticmethod
+    def _replace_placeholders_in_document(document: Document, values: Dict[str, str]) -> None:
+        """Replaces placeholders in the format {{field}}. Missing placeholders are ignored."""
+
+        def replace_in_paragraphs(paragraphs):
+            for paragraph in paragraphs:
+                for key, value in values.items():
+                    token = f"{{{{{key}}}}}"
+                    if token in paragraph.text:
+                        for run in paragraph.runs:
+                            run.text = run.text.replace(token, str(value))
+
+        replace_in_paragraphs(document.paragraphs)
+        for table in document.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    replace_in_paragraphs(cell.paragraphs)
 
 ## Example of use
 

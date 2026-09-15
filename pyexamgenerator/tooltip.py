@@ -37,18 +37,33 @@ class ToolTip(object):
         self.id = None
         self.x = self.y = 0
 
-        # Bind events to the widget to show and hide the tooltip
-        self.widget.bind("<Enter>", self.showtip)
-        self.widget.bind("<Leave>", self.hidetip)
+        # Bind events to the widget to show and hide the tooltip.
+        # Use add='+' so existing widget bindings are not overwritten.
+        self.widget.bind("<Enter>", self.showtip, add="+")
+        self.widget.bind("<Leave>", self.hidetip, add="+")
+        self.widget.bind("<ButtonPress>", self.hidetip, add="+")
+        self.widget.bind("<FocusOut>", self.hidetip, add="+")
+        self.widget.bind("<Destroy>", self.hidetip, add="+")
+
+        # If the toplevel/root is closed or hidden, force-hide lingering tooltips.
+        self.root = self.widget.winfo_toplevel()
+        self.root.bind("<Unmap>", self.hidetip, add="+")
+        self.root.bind("<Destroy>", self.hidetip, add="+")
 
     def showtip(self, event=None):
         """
         Display text in the tooltip window.
         This method is called when the mouse cursor enters the widget.
         """
+        # Ensure we only have one tooltip window alive at any time.
+        self.hidetip()
+
         self.x = self.y = 0
-        # Get the position of the widget relative to its parent
-        x, y, cx, cy = self.widget.bbox("insert")
+        # Some widgets do not support bbox("insert"); fallback to (0,0).
+        try:
+            x, y, cx, cy = self.widget.bbox("insert")
+        except Exception:
+            x, y = 0, 0
         # Calculate the position of the tooltip window on the screen
         x = x + self.widget.winfo_rootx() + 20
         y = y + self.widget.winfo_rooty() + 20
@@ -78,4 +93,8 @@ class ToolTip(object):
         tw = self.tipwindow
         self.tipwindow = None
         if tw is not None:
-            tw.destroy()
+            try:
+                tw.destroy()
+            except tk.TclError:
+                # Safe guard: window may already be destroyed during app shutdown.
+                pass

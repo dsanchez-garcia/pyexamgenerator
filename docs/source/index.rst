@@ -4,7 +4,8 @@ Bienvenido a la Documentación de pyexamgenerator (Versión |release|)
 ====================================================================
 
 pyexamgenerator es una herramienta de escritorio para generar exámenes desde PDFs usando IA,
-gestionar bancos de preguntas y crear múltiples versiones de exámenes personalizables.
+gestionar bancos de preguntas, crear múltiples versiones de exámenes personalizables y corregirlos
+desde Moodle o mediante OCR de hojas manuscritas.
 
 .. toctree::
    :maxdepth: 2
@@ -14,6 +15,7 @@ gestionar bancos de preguntas y crear múltiples versiones de exámenes personal
    tutorial_pyexamgenerator_pt1_generar_preguntas
    tutorial_pyexamgenerator_pt2_gestionar_banco_de_preguntas
    tutorial_pyexamgenerator_pt3_generar_examenes
+   tutorial_pyexamgenerator_pt4_corregir_examenes
 
 .. toctree::
    :maxdepth: 2

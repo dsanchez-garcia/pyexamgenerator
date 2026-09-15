@@ -43,7 +43,13 @@ Esta es la parte más importante, donde personalizamos la tarea.
 *   **Modo de Procesamiento:**
     *   **Procesar PDF por fragmentos:** Si marcas esta casilla, el programa no enviará el PDF completo a la IA de una sola vez. En su lugar, lo dividirá en fragmentos más pequeños. Es ideal para documentos muy largos (más de 20-30 páginas) para asegurar que la IA lee y extrae información de todas las partes del texto.
     *   **Páginas por fragmento:** Este campo (que se activa al marcar la casilla) te permite decidir cuántas páginas tendrá cada fragmento. Por ejemplo, si pones `5`, la IA trabajará con las páginas 1-5, luego 6-10, y así sucesivamente.
+    *   **Modo de fragmentación y total de fragmentos:** Puedes dividir por **páginas** o por **longitud de texto**. Si prefieres controlar el número de llamadas, indica el **total de fragmentos**; si lo dejas vacío, se usa el tamaño configurado para cada fragmento.
     *   **Acción para nuestro ejemplo:** Nuestros PDFs son cortos, así que **deja la casilla DESMARCADA**.
+
+*   **Modo de entrada:**
+    *   **Texto:** extrae el texto del PDF y es el modo recomendado para documentos con texto seleccionable.
+    *   **Imagen:** renderiza las páginas y las envía como imágenes al modelo multimodal. Úsalo cuando la maquetación, tablas o esquemas sean relevantes, o cuando el PDF no tenga texto extraíble. Requiere un modelo Gemini con entrada visual y puede tardar más.
+    *   **Prompts sin API:** para trabajar manualmente en Google AI Studio/Gemini, usa la opción de generar prompts. Produce instrucciones listas para copiar, sin realizar llamadas a la API ni consumir tu cuota. Tras obtener una respuesta externa, puedes aplicar el filtro de duplicados contra tu banco antes de incorporarla.
 
 *   **Máx. intentos por fragmento:**
     *   **Qué es:** A veces, la IA no genera el número exacto de preguntas a la primera. Este número le dice cuántas veces puede volver a intentarlo para alcanzar el objetivo.
