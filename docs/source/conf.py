@@ -29,6 +29,9 @@ extensions = [
     'myst_parser',  # Construir markdown
 ]
 
+# El OCR es un extra opcional; se simula solo para documentar su API sin instalarlo.
+autodoc_mock_imports = ['cv2', 'rapidocr', 'rapidocr_onnxruntime']
+
 templates_path = ['_templates']
 exclude_patterns = []
 language = 'es'
