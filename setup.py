@@ -19,10 +19,16 @@ setup(
     version=get_version(),
     author='Daniel Sánchez-García',
     author_email='daniel.sanchezgarcia@uca.es',  # Opcional: añade tu email de contacto
-    description='Una herramienta de escritorio para generar exámenes desde PDFs usando IA.',
+    description='Suite de escritorio para generar, gestionar y corregir exámenes con IA.',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/dsanchez-garcia/pyexamgenerator',  # URL del repositorio de tu proyecto
+    project_urls={
+        'Documentación': 'https://pyexamgenerator.readthedocs.io/es/latest/',
+        'Cambios': 'https://github.com/dsanchez-garcia/pyexamgenerator/blob/master/CHANGELOG.md',
+        'Código fuente': 'https://github.com/dsanchez-garcia/pyexamgenerator',
+        'Citar': 'https://github.com/dsanchez-garcia/pyexamgenerator/blob/master/CITATION.cff',
+    },
     packages=find_packages(),
     install_requires=[
         'google-genai',

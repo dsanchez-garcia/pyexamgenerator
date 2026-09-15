@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/zenodo/zenodo-jsonschema/master/zenodo.json",
+  "title": "pyexamgenerator",
+  "description": "Suite de escritorio en Python para generar preguntas desde documentos PDF con IA, gestionar bancos de preguntas, crear exámenes en DOCX y Moodle XML, y corregirlos desde Moodle o mediante OCR opcional de hojas manuscritas.",
+  "creators": [
+    {
+      "name": "Sánchez-García, Daniel",
+      "affiliation": "Universidad de Cádiz"
+    }
+  ],
+  "keywords": [
+    "education",
+    "exam generation",
+    "assessment",
+    "Moodle",
+    "OCR",
+    "Gemini",
+    "Python"
+  ],
+  "license": "GPL-3.0-or-later",
+  "access_right": "open",
+  "upload_type": "software",
+  "publication_date": "2026-09-15",
+  "version": "0.3.0",
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/dsanchez-garcia/pyexamgenerator/tree/v0.3.0",
+      "relation": "isSupplementTo",
+      "resource_type": "software"
+    }
+  ]
+}

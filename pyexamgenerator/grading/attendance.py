@@ -1642,11 +1642,9 @@ class TheoryBonusApplier:
 
     Inputs (``theory`` and ``attendance_quiz``) may be either a path to an Excel file
     or an in-memory DataFrame, so the step can be chained without writing intermediate
-    files. After :meth:`apply` the instance exposes:
-      - ``theory_df`` / ``bonus_df``: the loaded inputs.
-      - ``grade_columns``: the theory grade column(s) that received the bonus.
-      - ``result_df``: the theory table with bonus columns added.
-      - ``output_path``: where the result was written (filled by :meth:`apply`/:meth:`export`).
+    files. After :meth:`apply`, the instance exposes ``theory_df`` / ``bonus_df`` for the loaded
+    inputs, ``grade_columns`` for the theory grade column(s) that received the bonus, ``result_df``
+    for the theory table with bonus columns added, and ``output_path`` for the written result.
     """
 
     def __init__(
@@ -1717,6 +1715,10 @@ def _compute_theory_bonus(
     if grade_columns_out is not None:
         grade_columns_out.grade_columns = grade_columns
     out_df = theory_df.copy()
+    # Pandas with StringDtype rejects assigning the numeric bonus to a text grade column.
+    # Object dtype preserves the original cell values while allowing updated numeric grades.
+    for grade_column in grade_columns:
+        out_df[grade_column] = out_df[grade_column].astype(object)
     out_df["Punto_Adicional_Cuestionarios"] = 0
     out_df["Nota_Original_Teoria"] = pd.NA
     out_df["Nota_Final_Teoria"] = pd.NA

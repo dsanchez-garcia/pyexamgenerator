@@ -77,8 +77,10 @@ class ExamGenerator:
 
         The grading subpackage parses two column conventions (the prefix ``Cuestionario:`` is added by
         Moodle itself when exporting grades):
-          - per exam type: ``Cuestionario:<nombre>_Tipo <1A> (Real)``
-          - per class quiz (topic + group): ``Cuestionario:Cuestionario <tema> - <GIM|GITI-GIE-GIEI> (Real)``
+
+        * Per exam type: ``Cuestionario:<nombre>_Tipo <1A> (Real)``.
+        * Per class quiz (topic + group):
+          ``Cuestionario:Cuestionario <tema> - <GIM|GITI-GIE-GIEI> (Real)``.
 
         Args:
             exam: Exam name (e.g. 'Parcial 1').

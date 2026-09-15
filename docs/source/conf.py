@@ -11,7 +11,7 @@ from pyexamgenerator import __version__
 
 # -- Project information -----------------------------------------------------
 project = 'pyexamgenerator'
-copyright = '2025, Daniel Sánchez-García'
+copyright = '2025-2026, Daniel Sánchez-García'
 author = 'Daniel Sánchez-García'
 
 

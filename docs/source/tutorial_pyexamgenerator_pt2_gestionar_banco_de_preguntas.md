@@ -110,3 +110,18 @@ Si marcaste **"Actualizar Archivo Excel con Uso"** al generar un examen, el banc
     *   **Acción:** Haz clic en él. La aplicación empareja por enunciado las preguntas de **cada** examen con las del banco (el orden de las respuestas se baraja en el examen, por eso el cruce se hace por el texto de la pregunta), marca cada pregunta usada en la columna `<etiqueta>_uso` correspondiente y recalcula la columna `Veces usada en examen` sumando todas las columnas de uso. Te mostrará un resumen con las coincidencias de cada examen y después te preguntará si quieres sobrescribir el banco o guardar una copia, igual que en la Tarea 2.
 
 Esto alimenta la opción **"menos usadas"** de la pestaña *Generar Exámenes*, manteniendo el reparto de preguntas equilibrado a lo largo del curso.
+
+### Tarea 4: Unificar varios bancos en uno definitivo
+
+Cuando los bancos proceden de distintas asignaturas, cursos o colaboradores, usa la sección
+**"Unificar Bancos de Preguntas"** para obtener un único archivo maestro sin duplicados. Añade todos
+los archivos `.xlsx`, elige la ruta de salida y selecciona el criterio de coincidencia:
+
+* **Solo enunciado:** conserva una sola pregunta si el texto del enunciado coincide.
+* **Enunciado y respuestas:** conserva preguntas con el mismo enunciado cuando sus cuatro respuestas
+  son las mismas, incluso si aparecen en otro orden. Un enunciado con respuestas realmente distintas
+  se mantiene como una pregunta diferente.
+
+El primer banco de la lista tiene prioridad ante duplicados. Al finalizar, la aplicación informa de
+los archivos leídos, preguntas únicas, duplicados descartados y posibles archivos que no se pudieron
+leer. Conserva los originales hasta revisar el banco unificado.

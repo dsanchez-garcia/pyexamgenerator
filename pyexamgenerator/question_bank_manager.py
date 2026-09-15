@@ -592,11 +592,11 @@ class QuestionBankManager:
             bank_paths (List[str]): Paths of the bank XLSX files to unify (at least one).
             output_path (Optional[str]): Where to save the unified bank. If None or ``save`` is
                 False, nothing is written and only the DataFrame/stats are returned.
-            duplicate_criterion (str): Criterion to detect duplicates. Accepts two vocabularies:
-                - ``"enunciado"`` / ``"pregunta_unica"``: same statement -> duplicate (answers ignored).
-                - ``"enunciado_y_respuestas"`` / ``"pregunta_respuestas"``: duplicate only if the
-                  statement **and** the set of answers match; same statement with different answers
-                  is kept as a distinct question. (Default.)
+            duplicate_criterion (str): Criterion to detect duplicates. Accepted values are
+                ``"enunciado"`` / ``"pregunta_unica"`` for a matching statement (answers ignored),
+                or ``"enunciado_y_respuestas"`` / ``"pregunta_respuestas"`` when both the statement
+                and the set of answers must match. The latter is the default and retains a statement
+                whose answers differ.
             statement_column (str): Column holding the question statement. Defaults to 'Pregunta'.
             answer_columns (Optional[List[str]]): Answer columns compared as a set. Defaults to
                 ['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D'].

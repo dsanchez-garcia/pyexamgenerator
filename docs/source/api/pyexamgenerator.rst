@@ -1,6 +1,14 @@
 pyexamgenerator package
 =======================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   pyexamgenerator.grading
+
 Submodules
 ----------
 
@@ -49,5 +57,6 @@ Module contents
 
 .. automodule:: pyexamgenerator
    :members:
+   :exclude-members: grading
    :undoc-members:
    :show-inheritance:

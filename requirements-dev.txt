@@ -10,6 +10,7 @@ PyPDF2
 python-docx
 pandas
 openpyxl
+PyMuPDF
 ttkwidgets
 importlib-metadata; python_version < "3.8"
 
@@ -28,4 +29,6 @@ twine
 
 # === Herramientas de Testing (Recomendado) ===
 # Para ejecutar pruebas y asegurar la calidad del código
+numpy
 pytest
+tox

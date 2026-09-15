@@ -68,6 +68,8 @@ Aquí personalizas el aspecto visual de tu examen en el archivo de Word.
 *   **Exportar a Moodle XML:** Marca esta casilla para activar la exportación.
 *   **Penalización (-%):** En Moodle, puedes hacer que las respuestas incorrectas resten puntos. Aquí indicas el porcentaje negativo (ej. `-25` para que un error reste un 25% del valor de la pregunta).
 *   **Texto Adicional Moodle XML:** Un texto extra para organizar tus preguntas dentro de Moodle.
+*   **Sugerir nombres Moodle:** El botón propone automáticamente el nombre de cuestionario, la categoría y la columna que reconocerá el corrector a partir de los datos del examen. Úsalo antes de generar o de configurar el cuestionario en Moodle.
+*   **Generar Moodle XML desde XLSX de Examen:** Si ya dispones de un archivo `..._completo.xlsx`, no es necesario generar de nuevo los DOCX. Selecciónalo en esa sección, indica opcionalmente la ruta XML y los mismos ajustes de penalización, texto de categoría y modo de contenido, y pulsa el botón de conversión.
 *   **Acción para nuestro ejemplo:** **Marca la casilla**. En el campo `Texto Adicional Moodle XML`, puedes escribir lo que quieras. Nosotros vamos a escribir `Examen Temas LPRL y RSP`, aunque en este caso se mostrará de forma redundante (en Moodle se mostrará `Examen Temas LPRL y RSP - Examen Temas LPRL y RSP`).
 
 ### Sección 7: Actualizar archivo Excel con uso
@@ -99,7 +101,7 @@ Ve a tu carpeta de trabajo. Verás que, además de los documentos de Word y Exce
 *   **`examen_..._Tipo B.xml`**
 
     *   **¿Qué son estos archivos?** ¡Aquí es donde ocurre la magia! Estos no son archivos de examen normales. Son ficheros de importación que contienen las preguntas de forma **anónima**, diseñados específicamente para la auto-corrección.
-        *   Dentro de Moodle, el enunciado de la pregunta no será el texto completo, sino simplemente **"Pregunta 1", "Pregunta 2", etc.**
+        *   Dentro de Moodle, el enunciado de la pregunta no será el texto completo, sino simplemente **"Pregunta 01", "Pregunta 02", etc.** La numeración coincide con la hoja de respuestas y se conserva para todos los tipos de examen.
         *   Las opciones de respuesta no serán los textos completos, sino simplemente **"a", "b", "c", y "d"**.
         *   La lógica de cuál es la respuesta correcta para cada pregunta está oculta dentro del archivo, pero invisible para el alumno.
 
@@ -108,11 +110,11 @@ Ve a tu carpeta de trabajo. Verás que, además de los documentos de Word y Exce
         2.  **Importación a Moodle:** Tú, como profesor, subes el archivo `.xml` (por ejemplo, el del Tipo A) a la sección **"Banco de preguntas"** de tu curso en Moodle.
         3.  **Creación del Cuestionario:** Creas un nuevo "Cuestionario" en Moodle y añades las preguntas que acabas de importar desde el banco.
         4.  **Transferencia de Respuestas:** Una vez finalizado el examen en papel, los alumnos se quedan únicamente con su hoja de respuestas. Acceden al cuestionario de Moodle y ven una simple lista:
-            *   Pregunta 1: [ ] a [ ] b [ ] c [ ] d
-            *   Pregunta 2: [ ] a [ ] b [ ] c [ ] d
+            *   Pregunta 01: [ ] a [ ] b [ ] c [ ] d
+            *   Pregunta 02: [ ] a [ ] b [ ] c [ ] d
             *   ...y así sucesivamente.
             Su tarea es simplemente transferir las respuestas de su hoja de papel a este formulario digital.
-        5.  **Corrección Automática:** En cuanto los alumnos envían el cuestionario, Moodle lo corrige al instante, ya que sabe cuál es la respuesta correcta para "Pregunta 1", "Pregunta 2", etc., según el archivo `.xml` que importaste.
+        5.  **Corrección Automática:** En cuanto los alumnos envían el cuestionario, Moodle lo corrige al instante, ya que sabe cuál es la respuesta correcta para "Pregunta 01", "Pregunta 02", etc., según el archivo `.xml` que importaste.
         6.  **Verificación:** Tienes las notas de todos los alumnos calculadas automáticamente en Moodle, y conservas las hojas de respuesta físicas para cualquier revisión o verificación necesaria.
 
 Además, si abres tu archivo `banco_principal.xlsx`, verás que se ha añadido una nueva columna (`Examen Temas LPRL y RSP_24-25_uso`) y que la columna `Veces usada en examen` se ha actualizado para las 5 preguntas que se incluyeron en el examen.

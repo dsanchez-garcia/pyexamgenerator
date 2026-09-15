@@ -7,6 +7,8 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-15
+
 ### Añadido
 - **Modo unión/estricto en integración OCR (GUI + API):** la sección de integración en la pestaña **Corregir Exámenes** incorpora un check para elegir entre **unir** (añadir alumnos OCR no presentes en teoría) o **modo estricto** (bloquear no emparejados). La preferencia se guarda/carga en la sesión de corrección (`append_unmatched_ocr`) y se propaga a `OCRIntegrationConfig.append_unmatched_students`.
 - **Reporte de incidencias de integración OCR:** `OcrGradeIntegrator` expone `last_integration_summary` y `last_integration_incidents_df`, `ExamCorrectionAPI.integrate_ocr_grades(...)` guarda el resumen en `results["ocr_integration_summary"]` y exporta `incidencias_integracion_ocr.xlsx` cuando hay filas bloqueadas.
