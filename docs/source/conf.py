@@ -5,6 +5,10 @@ import sys
 # Añade la ruta raíz del proyecto para que Sphinx pueda encontrar tus módulos
 sys.path.insert(0, os.path.abspath('../../'))
 
+# El OCR es un extra opcional; se simula antes de importar el paquete para
+# documentar su API sin instalar sus dependencias binarias en Read the Docs.
+autodoc_mock_imports = ['cv2', 'rapidocr', 'rapidocr_onnxruntime']
+
 # Importa la versión desde tu paquete
 from pyexamgenerator import __version__
 
@@ -29,8 +33,6 @@ extensions = [
     'myst_parser',  # Construir markdown
 ]
 
-# El OCR es un extra opcional; se simula solo para documentar su API sin instalarlo.
-autodoc_mock_imports = ['cv2', 'rapidocr', 'rapidocr_onnxruntime']
 
 templates_path = ['_templates']
 exclude_patterns = []
