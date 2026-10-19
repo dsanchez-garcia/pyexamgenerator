@@ -6,13 +6,15 @@
 # === Dependencias Principales de la Aplicación ===
 # (Las mismas que en setup.py)
 google-genai
-PyPDF2
+pypdf
 python-docx
 pandas
 openpyxl
 PyMuPDF
-ttkwidgets
-importlib-metadata; python_version < "3.8"
+
+# === Proveedores de IA opcionales (extras [openai] / [anthropic] / [ia]) ===
+openai>=1.66
+anthropic>=0.49
 
 # === Herramientas de Documentación ===
 # Para construir la documentación desde la carpeta /docs

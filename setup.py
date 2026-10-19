@@ -19,7 +19,7 @@ setup(
     version=get_version(),
     author='Daniel Sánchez-García',
     author_email='daniel.sanchezgarcia@uca.es',  # Opcional: añade tu email de contacto
-    description='Suite de escritorio para generar, gestionar y corregir exámenes con IA.',
+    description='Suite de escritorio para generar, gestionar y corregir exámenes con IA (Gemini, ChatGPT o Claude, con o sin API).',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/dsanchez-garcia/pyexamgenerator',  # URL del repositorio de tu proyecto
@@ -32,15 +32,18 @@ setup(
     packages=find_packages(),
     install_requires=[
         'google-genai',
-        'PyPDF2',
+        'pypdf',
         'python-docx',
         'pandas',
         'openpyxl',
         'PyMuPDF',
-        'ttkwidgets',
-        'importlib-metadata; python_version < "3.8"',
     ],
     extras_require={
+        # Proveedores de IA adicionales para generar preguntas con API (Gemini va incluido).
+        # Sin API (copiando los prompts en Google AI Studio, ChatGPT o Claude) no hace falta ninguno.
+        'openai': ['openai>=1.66'],
+        'anthropic': ['anthropic>=0.49'],
+        'ia': ['openai>=1.66', 'anthropic>=0.49'],
         # Corrección con OCR de hojas manuscritas (subpaquete `grading`).
         # Doble backend según la versión de Python:
         #   - Python >= 3.13 (p. ej. 3.14): paquete nuevo `rapidocr` + numpy>=2 + opencv reciente.
@@ -61,8 +64,9 @@ setup(
             'pyexamgenerator=pyexamgenerator.main_app:main',
         ],
     },
-    python_requires='>=3.8',  # Especifica la versión mínima de Python compatible
-    keywords=['exam', 'generator', 'ai', 'gemini', 'pdf', 'moodle', 'quiz', 'education', 'test'],
+    python_requires='>=3.9',  # google-genai requiere Python 3.9 o superior
+    keywords=['exam', 'generator', 'ai', 'gemini', 'chatgpt', 'openai', 'claude', 'anthropic', 'pdf', 'moodle',
+              'quiz', 'education', 'test'],
     license='GPL-3.0-or-later',
     classifiers=[
         # Estado de desarrollo del paquete
@@ -79,7 +83,6 @@ setup(
 
         # Versiones de Python soportadas
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',

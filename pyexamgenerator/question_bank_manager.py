@@ -51,7 +51,8 @@ class QuestionBankManager:
                 if text.startswith("Pregunta "):
                     if current_question:
                         questions.append(current_question)
-                    current_question = {"Número de pregunta": text.split(":")[0].replace("Pregunta ", "").strip(), "Pregunta": text.split(":")[1].strip()}
+                    number, _, statement = text.partition(":")
+                    current_question = {"Número de pregunta": number.replace("Pregunta ", "").strip(), "Pregunta": statement.strip()}
                     state = "pregunta"
                 elif text.startswith("Tema:"):
                     current_question["Tema"] = text.replace("Tema:", "").strip()

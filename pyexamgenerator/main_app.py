@@ -19,6 +19,20 @@ import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 import pandas as pd
 from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededError, ServiceOverloadedError
+from pyexamgenerator.ai_providers import (
+    API_KEY_PLACEHOLDER,
+    PROVIDERS,
+    AIProviderError,
+    InvalidAPIKeyError,
+    ModelNotFoundError,
+    ProviderNotAvailableError,
+    get_api_key_from_env,
+    is_provider_installed,
+    is_valid_api_key,
+    list_available_models,
+    resolve_provider,
+)
+from pyexamgenerator.web_chat_assistant import WebChatAssistant
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
@@ -27,8 +41,6 @@ import os
 import json
 import shutil
 import threading
-from ttkwidgets.frames import ScrolledFrame
-from google import genai
 
 # Importamos la versión directamente desde nuestro paquete
 from pyexamgenerator import __version__
@@ -111,17 +123,28 @@ class ExamApp:
         main_title_label = ttk.Label(self.root, text=f"pyexamgenerator v{version}", font=title_font)
         main_title_label.pack(pady=(10, 5), padx=10, anchor='w')
 
-        # Lógica de carga de API Key actualizada con GEMINI_API_KEY
-        initial_status = "Aplicación iniciada."
-        # 1. Intentar cargar desde la variable de entorno (máxima prioridad)
-        env_api_key = os.getenv('GEMINI_API_KEY') # <--- NOMBRE CORREGIDO
-        if env_api_key:
-            self.api_key = env_api_key
-            initial_status = "Clave API cargada desde la variable de entorno GEMINI_API_KEY."
-            print(initial_status)
-        else:
-            # 2. Si no existe, intentar cargar desde config.json (fallback)
-            self.api_key = self.load_api_key()
+        # Proveedor de IA, claves y modelos. Por proveedor, la clave se toma de su variable de
+        # entorno (GEMINI_API_KEY/GOOGLE_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY) y, si no
+        # existe, de config.json.
+        self.ai_config = self.load_ai_config()
+        self.api_keys_by_provider: Dict[str, str] = {}
+        self.api_key_sources: Dict[str, str] = {}
+        for provider_key, spec in PROVIDERS.items():
+            env_key = get_api_key_from_env(provider_key)
+            if env_key:
+                self.api_keys_by_provider[provider_key] = env_key
+                self.api_key_sources[provider_key] = "env"
+                print(f"Clave API de {spec.label} cargada desde la variable de entorno.")
+            elif self.ai_config["api_keys"].get(provider_key):
+                self.api_keys_by_provider[provider_key] = self.ai_config["api_keys"][provider_key]
+                self.api_key_sources[provider_key] = "config"
+        self.models_by_provider: Dict[str, str] = {
+            provider_key: self.ai_config["models"].get(provider_key) or spec.default_models[0]
+            for provider_key, spec in PROVIDERS.items()
+        }
+        self.current_provider = self.ai_config.get("provider", "gemini")
+        # Se mantiene por compatibilidad: clave del proveedor activo.
+        self.api_key = self.api_keys_by_provider.get(self.current_provider)
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
@@ -171,10 +194,15 @@ class ExamApp:
         self.pdf_files_var = tk.StringVar()
         self.num_questions_var = tk.StringVar(value="5")
         self.output_filename_var = tk.StringVar(value="banco_prueba")
-        self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else "TU_CLAVE_API")
+        self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else API_KEY_PLACEHOLDER)
         self.gen_questions_output_dir_var = tk.StringVar()
 
-        self.selected_model_var = tk.StringVar(value='')
+        self.ai_provider_var = tk.StringVar(value=PROVIDERS[self.current_provider].label)
+        self.selected_model_var = tk.StringVar(value=self.models_by_provider[self.current_provider])
+        self.api_key_info_var = tk.StringVar(value="")
+        self.include_full_context_var = tk.BooleanVar(value=True)
+        self.question_generation_cancel_event: Optional[threading.Event] = None
+        self.models_loaded_for_provider: Optional[str] = None
 
         self.existing_bank_for_gen_path = tk.StringVar()
         self.input_mode_var = tk.StringVar(value="text")
@@ -233,6 +261,7 @@ class ExamApp:
         menubar.add_cascade(label="Ayuda", menu=help_menu)
 
         help_menu.add_command(label="Configurar API Key (Ayuda)...", command=self.open_api_key_help)
+        help_menu.add_command(label="Obtener clave API del proveedor seleccionado...", command=self.open_provider_api_key_page)
         help_menu.add_separator()
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
 
@@ -309,14 +338,27 @@ class ExamApp:
         return "ok"
 
     def open_api_key_help(self):
-        """Opens the Google AI documentation for setting up API key environment variables."""
-        url = "https://ai.google.dev/gemini-api/docs/api-key?hl=es-419#set-api-env-var"
+        """Explains where each provider reads its API key and opens the Gemini guide."""
+        lines = ["La aplicación busca la clave API de cada proveedor en estas variables de entorno "
+                 "(si no existe, usa la guardada con 'Guardar Clave' en config.json):", ""]
+        for spec in PROVIDERS.values():
+            lines.append(f"• {spec.label}: {' o '.join(spec.env_vars)}  —  crear clave: {spec.api_key_url}")
+        lines += ["", "Sin clave API también puedes generar preguntas copiando los prompts en "
+                      "Google AI Studio, ChatGPT o Claude ('Preparar prompts sin API...')."]
+        messagebox.showinfo("Configurar API Key", "\n".join(lines))
+        self._open_url("https://ai.google.dev/gemini-api/docs/api-key?hl=es-419#set-api-env-var")
+
+    def open_provider_api_key_page(self) -> None:
+        """Opens the page where the selected provider's API keys are created."""
+        self._open_url(PROVIDERS[self._selected_provider()].api_key_url)
+
+    def _open_url(self, url: str) -> None:
         try:
             webbrowser.open_new_tab(url)
-            self.update_status(f"Abriendo enlace de ayuda en el navegador: {url}")
+            self.update_status(f"Abriendo enlace en el navegador: {url}")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir el enlace en el navegador.\n\nError: {e}")
-            self.update_status("Error al intentar abrir el enlace de ayuda.")
+            self.update_status("Error al intentar abrir el enlace.")
 
 
     def load_prompt_types(self) -> Dict[str, str]:
@@ -336,19 +378,14 @@ class ExamApp:
                 except json.JSONDecodeError:
                     messagebox.showerror("Error", "Error al decodificar el archivo de prompts personalizados (custom_prompts.json).")
 
+        if not isinstance(custom_prompts, dict):
+            messagebox.showerror("Error", "El archivo custom_prompts.json no contiene un diccionario de prompts; se ignora.")
+            custom_prompts = {}
+        custom_prompts = {str(k): v for k, v in custom_prompts.items() if isinstance(v, str) and v.strip()}
         default_prompts = self.load_default_prompt_types()
 
         # Combina ambos, dando prioridad a los personalizados si hay un conflicto de nombres.
         return {**default_prompts, **custom_prompts}
-
-    def save_prompt_types(self) -> None:
-        """
-        Saves custom prompt types to a JSON file.
-        """
-        filename = "custom_prompt_types.json"
-        custom_prompts = {k: v for k, v in self.prompt_types.items() if k not in self.load_default_prompt_types()}
-        with open(filename, 'w') as f:
-            json.dump(custom_prompts, f, indent=4)
 
     def load_default_prompt_types(self) -> Dict[str, str]:
         """
@@ -372,8 +409,9 @@ class ExamApp:
         Saves custom prompt types to a JSON file.
         """
         filename = "custom_prompts.json"
-        # Filtra para guardar solo los prompts que no son los predeterminados.
-        custom_prompts = {k: v for k, v in self.prompt_types.items() if k not in self.load_default_prompt_types()}
+        # Guarda los prompts propios y los predeterminados que se hayan modificado.
+        defaults = self.load_default_prompt_types()
+        custom_prompts = {k: v for k, v in self.prompt_types.items() if k not in defaults or v != defaults[k]}
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(custom_prompts, f, indent=4, ensure_ascii=False)
 
@@ -411,6 +449,9 @@ class ExamApp:
                 if not messagebox.askyesno("Sobrescribir", f"El tipo '{new_type}' ya existe. ¿Desea sobrescribirlo?", parent=add_window):
                     return
 
+            if existing_type and new_type != existing_type:
+                # Renombrado de un tipo personalizado: se elimina el nombre anterior.
+                self.prompt_types.pop(existing_type, None)
             self.prompt_types[new_type] = new_prompt
             self.save_prompt_types()
             self.update_prompt_type_options()
@@ -465,79 +506,6 @@ class ExamApp:
             self.selected_prompt_type.set("")
             self.update_custom_prompt_display()
 
-    def add_edit_prompt_type(self, existing_type: Optional[str] = None,
-                             existing_prompt: Optional[str] = None) -> None:
-        """
-        Adds or edits a prompt type via a new Toplevel window.
-
-        Args:
-            existing_type (Optional[str], optional): The existing prompt type (for editing). Defaults to None.
-            existing_prompt (Optional[str], optional): The existing prompt text (for editing). Defaults to None.
-        """
-        add_window = tk.Toplevel(self.root)
-        add_window.title("Añadir/Editar Tipo de Prompt")
-
-        ttk.Label(add_window, text="Tipo de Prompt:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        type_entry = ttk.Entry(add_window, width=30)
-        type_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        if existing_type:
-            type_entry.insert(0, existing_type)
-            type_entry.config(state='disabled')
-
-        ttk.Label(add_window, text="Prompt:").grid(row=1, column=0, padx=5, pady=5, sticky='nw')
-        prompt_text_area = scrolledtext.ScrolledText(add_window, width=40, height=5)
-        prompt_text_area.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-        if existing_prompt:
-            prompt_text_area.insert("1.0", existing_prompt)
-
-        def save_prompt_type():
-            new_type = type_entry.get().strip()
-            new_prompt = prompt_text_area.get("1.0", tk.END).strip()
-            if new_type and new_prompt:
-                if existing_type:
-                    self.prompt_types[existing_type] = new_prompt
-                else:
-                    if new_type in self.prompt_types:
-                        if messagebox.askyesno("Advertencia", f"El tipo '{new_type}' ya existe. ¿Desea sobrescribirlo?"):
-                            self.prompt_types[new_type] = new_prompt
-                        else:
-                            return
-                    else:
-                        self.prompt_types[new_type] = new_prompt
-                self.update_prompt_type_options()
-                self.save_prompt_types()  # Save after adding/editing.
-                add_window.destroy()
-            else:
-                messagebox.showerror("Error", "Por favor, introduce un tipo y un prompt.")
-
-        ttk.Button(add_window, text="Guardar", command=save_prompt_type).grid(row=2, column=0, columnspan=2, pady=10)
-        add_window.columnconfigure(1, weight=1)
-
-    def delete_prompt_type(self) -> None:
-        """
-        Deletes the selected prompt type, preventing deletion of default types.
-        """
-        selected_type = self.prompt_type_combo.get()
-        if selected_type in self.prompt_types and selected_type not in ["PRL", "PM"]:
-            if messagebox.askyesno("Confirmar", f"¿Seguro que desea eliminar el tipo de prompt '{selected_type}'?"):
-                del self.prompt_types[selected_type]
-                self.update_prompt_type_options()
-                self.save_prompt_types()  # Save after deleting.
-        elif selected_type in ["PRL", "PM"]:
-            messagebox.showerror("Error", "No se pueden eliminar los tipos de prompt predeterminados.")
-        else:
-            messagebox.showinfo("Información", "Por favor, seleccione un tipo de prompt para eliminar.")
-
-    def update_prompt_type_options(self) -> None:
-        """
-        Updates the options in the prompt type dropdown menu.
-        """
-        prompt_type_names = list(self.prompt_types.keys())
-        self.prompt_type_combo['values'] = prompt_type_names
-        if prompt_type_names:
-            self.prompt_type_combo.set(prompt_type_names[0])
-            self.update_custom_prompt_display()
-
     def update_custom_prompt_display(self, event: Optional[tk.Event] = None) -> None:
         """
         Updates the custom prompt text in the GUI.
@@ -555,10 +523,16 @@ class ExamApp:
         else:
             self.custom_prompt_text.set("")
         if hasattr(self, 'prompt_text_display'):
-            self.prompt_text_display.config(state=tk.NORMAL)
             self.prompt_text_display.delete("1.0", tk.END)
             self.prompt_text_display.insert(tk.END, self.custom_prompt_text.get())
-            self.prompt_text_display.config(state=tk.DISABLED)
+
+    def _current_prompt_text(self) -> str:
+        """Prompt shown in the tab (it may have been modified for this run only)."""
+        if hasattr(self, 'prompt_text_display'):
+            text = self.prompt_text_display.get("1.0", tk.END).strip()
+            if text:
+                return text
+        return self.custom_prompt_text.get()
 
     def update_status(self, message: str) -> None:
         """
@@ -1072,7 +1046,7 @@ class ExamApp:
     def _grad_add_final_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Añadir examen para la nota final",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")],
+            filetypes=[("Archivos Excel", "*.xlsx *.xls")],
         )
         if not path:
             return
@@ -1630,10 +1604,12 @@ class ExamApp:
             self.pages_per_chunk_entry.config(state='normal')
             self.total_chunks_entry.config(state='normal')
             self.chunking_mode_combo.config(state='readonly')
+            self.include_full_context_check.config(state='normal')
         else:
             self.pages_per_chunk_entry.config(state='disabled')
             self.total_chunks_entry.config(state='disabled')
             self.chunking_mode_combo.config(state='disabled')
+            self.include_full_context_check.config(state='disabled')
 
     def create_question_tab(self) -> None:
         """
@@ -1665,15 +1641,19 @@ class ExamApp:
             return "break"
 
         def _bind_question_scroll_recursively(widget):
-            widget.bind("<MouseWheel>", _on_question_mousewheel)
-            widget.bind("<Button-4>", _on_question_scroll_up)
-            widget.bind("<Button-5>", _on_question_scroll_down)
+            # Text areas and tables keep their own wheel scrolling.
+            if not isinstance(widget, (tk.Text, ttk.Treeview, tk.Listbox)):
+                widget.bind("<MouseWheel>", _on_question_mousewheel)
+                widget.bind("<Button-4>", _on_question_scroll_up)
+                widget.bind("<Button-5>", _on_question_scroll_down)
             for child in widget.winfo_children():
                 _bind_question_scroll_recursively(child)
 
         inner_frame_question = ttk.Frame(canvas_question)
         inner_frame_question.bind("<Configure>", lambda e: canvas_question.configure(scrollregion=canvas_question.bbox("all")))
-        canvas_question.create_window((0, 0), window=inner_frame_question, anchor="nw")
+        question_window_id = canvas_question.create_window((0, 0), window=inner_frame_question, anchor="nw")
+        # The content follows the window width (as in the 'Gestionar Banco' tab).
+        canvas_question.bind("<Configure>", lambda e: canvas_question.itemconfigure(question_window_id, width=e.width))
 
         # --- Prompts and PDF section ---
         prompt_type_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar/Editar Tipo de Prompt")
@@ -1710,10 +1690,11 @@ class ExamApp:
 
         selected_prompt_frame = ttk.LabelFrame(inner_frame_question, text="Prompt Seleccionado")
         selected_prompt_frame.pack(padx=10, pady=10, fill='both', expand=True)
-        self.prompt_text_display = scrolledtext.ScrolledText(selected_prompt_frame, state=tk.DISABLED)
+        self.prompt_text_display = scrolledtext.ScrolledText(selected_prompt_frame, height=10, wrap=tk.WORD)
         self.prompt_text_display.pack(padx=5, pady=5, fill='both', expand=True)
         self.update_custom_prompt_display()
-        ToolTip(self.prompt_text_display, "Texto del prompt seleccionado. No editable directamente aquí.")
+        ToolTip(self.prompt_text_display, "Texto del prompt seleccionado. Puedes modificarlo aquí para esta generación "
+                                          "(se usa tal cual); para guardarlo de forma permanente usa 'Editar'.")
 
         pdf_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar Archivos Fuente")
         pdf_frame.pack(padx=10, pady=10, fill='x')
@@ -1729,16 +1710,20 @@ class ExamApp:
 
         input_mode_label = ttk.Label(pdf_frame, text="Modo de entrada:")
         input_mode_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(input_mode_label, "text: extrae texto del PDF; image: analiza contenido visual (imágenes o páginas renderizadas).")
+        ToolTip(input_mode_label, "text: extrae el texto del PDF y lo incluye en el prompt.\n"
+                                  "image: envía las páginas como imágenes (útil con esquemas, tablas o PDFs escaneados).\n"
+                                  "pdf: adjunta el propio PDF (o cada fragmento) como documento.")
         input_mode_combo = ttk.Combobox(
             pdf_frame,
             textvariable=self.input_mode_var,
-            values=["text", "image"],
+            values=["text", "image", "pdf"],
             state='readonly',
             width=12
         )
         input_mode_combo.grid(row=1, column=1, padx=5, pady=5, sticky='w')
-        ToolTip(input_mode_combo, "Selecciona cómo Gemini debe interpretar los archivos fuente.")
+        ToolTip(input_mode_combo, "Selecciona cómo debe recibir el modelo los archivos fuente. Los tres proveedores "
+                                  "(Gemini, OpenAI y Claude) admiten los tres modos. Sin API, en los modos 'image' y "
+                                  "'pdf' tendrás que adjuntar el archivo (o fragmento) indicado en el chat.")
         pdf_frame.columnconfigure(1, weight=1)
 
         # --- Generation configuration section ---
@@ -1790,7 +1775,15 @@ class ExamApp:
             width=12
         )
         self.chunking_mode_combo.grid(row=0, column=6, padx=5, pady=5, sticky='w')
-        ToolTip(self.chunking_mode_combo, "pages: divide por páginas; text_length: divide por longitud de texto.")
+        ToolTip(self.chunking_mode_combo, "pages: divide por páginas; text_length: divide por longitud de texto (solo modo 'text').")
+
+        self.include_full_context_check = ttk.Checkbutton(
+            processing_frame, text="Incluir el documento completo como contexto en cada fragmento (modo 'text')",
+            variable=self.include_full_context_var, state='disabled')
+        self.include_full_context_check.grid(row=1, column=0, columnspan=7, padx=5, pady=(0, 5), sticky='w')
+        ToolTip(self.include_full_context_check,
+                "Si se marca, cada prompt incluye además el texto completo del PDF para dar contexto (prompts mucho "
+                "más largos). Desmárcalo para ahorrar tokens o si copias los prompts a mano en un chat web.")
 
         # Row 3: Max attempts per chunk
         max_attempts_label = ttk.Label(config_frame, text="Máx. intentos por fragmento:")
@@ -1798,7 +1791,7 @@ class ExamApp:
         ToolTip(max_attempts_label, "Número máximo de veces que se llamará a la API para un único fragmento si no se alcanza el objetivo de preguntas.")
         max_attempts_entry = ttk.Entry(config_frame, width=5, textvariable=self.max_attempts_var)
         max_attempts_entry.grid(row=3, column=1, padx=5, pady=5, sticky='w')
-        ToolTip(max_attempts_entry, "Número máximo de intentos de generación por fragmento si no se alcanza el objetivo (Recomendado: 3).\nAfecta al uso de la API de Gemini (más intentos = más uso y posible límite diario).")
+        ToolTip(max_attempts_entry, "Número máximo de intentos de generación por fragmento si no se alcanza el objetivo (Recomendado: 3).\nAfecta al uso de la API (más intentos = más uso, coste y posible límite diario).")
 
         # Row 4: Duplicate Filter
         similarity_filter_frame = ttk.LabelFrame(config_frame, text="Filtro de Duplicados")
@@ -1875,56 +1868,79 @@ class ExamApp:
         include_similar_check.pack(anchor='w', padx=10, pady=(0, 5))
         ToolTip(include_similar_check, "Desmarcar para no incluir ejemplos del banco existente dentro del prompt.")
 
-        # Row 6: Model and API Key - Ahora con una tabla
-        model_api_frame = ttk.LabelFrame(config_frame, text="Modelo y Clave API")
+        # Row 6: AI provider, API key and model
+        model_api_frame = ttk.LabelFrame(config_frame, text="Proveedor de IA, Clave API y Modelo")
         model_api_frame.grid(row=6, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        ToolTip(model_api_frame, "Necesario solo para generar con API. Para trabajar sin API (copiando los prompts en "
+                                 "Google AI Studio, ChatGPT o Claude) usa la sección 'Generar sin API'.")
 
-        # API Key sigue igual
-        api_key_label = ttk.Label(model_api_frame, text="Clave API de Gemini:")
-        api_key_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(api_key_label, "Su clave personal de API para Google Gemini.")
+        provider_label = ttk.Label(model_api_frame, text="Proveedor:")
+        provider_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(provider_label, "Google Gemini (claves de Google AI Studio, con nivel gratuito), "
+                                "OpenAI (modelos de ChatGPT) o Anthropic (modelos de Claude).")
+        self.provider_combo = ttk.Combobox(
+            model_api_frame, textvariable=self.ai_provider_var, state='readonly', width=30,
+            values=[spec.label for spec in PROVIDERS.values()],
+        )
+        self.provider_combo.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        self.provider_combo.bind("<<ComboboxSelected>>", self.on_provider_change)
+        ToolTip(self.provider_combo, "Selecciona el proveedor cuya API se usará para generar las preguntas.")
+
+        api_key_label = ttk.Label(model_api_frame, text="Clave API:")
+        api_key_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(api_key_label, "Clave personal de API del proveedor seleccionado.")
         self.api_key_entry = ttk.Entry(model_api_frame, width=40, textvariable=self.api_key_var, show="*")
-        self.api_key_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ToolTip(self.api_key_entry, "Introduzca aquí su clave de API.")
+        self.api_key_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(self.api_key_entry, "Introduzca aquí su clave de API (o defina la variable de entorno del proveedor).")
 
         api_buttons_frame = ttk.Frame(model_api_frame)
-        api_buttons_frame.grid(row=0, column=2, padx=5, pady=5, sticky='w')
+        api_buttons_frame.grid(row=1, column=2, padx=5, pady=5)
 
         save_api_key_button = ttk.Button(api_buttons_frame, text="Guardar Clave", command=self.save_current_api_key)
         save_api_key_button.pack(side='left', padx=2)
-        ToolTip(save_api_key_button, text="Guarda la clave de API actual en la configuración.")
+        ToolTip(save_api_key_button, text="Guarda la clave del proveedor seleccionado en config.json (carpeta actual).")
 
-        load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
-        load_models_button.pack(side='left', padx=2)
-        ToolTip(load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
+        self.load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
+        self.load_models_button.pack(side='left', padx=2)
+        ToolTip(self.load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
 
-        # Nueva tabla para los modelos
+        get_key_button = ttk.Button(api_buttons_frame, text="Obtener clave...", command=self.open_provider_api_key_page)
+        get_key_button.pack(side='left', padx=2)
+        ToolTip(get_key_button, text="Abre en el navegador la página donde se crean las claves API del proveedor.")
+
+        model_label = ttk.Label(model_api_frame, text="Modelo:")
+        model_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
+        ToolTip(model_label, "Identificador del modelo. Puedes escribirlo, elegir una sugerencia o pulsar "
+                             "'Cargar Modelos' y seleccionarlo en la tabla.")
+        self.model_combo = ttk.Combobox(model_api_frame, textvariable=self.selected_model_var, width=40)
+        self.model_combo.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
+        ToolTip(self.model_combo, "Modelos sugeridos para el proveedor. Puedes escribir cualquier otro identificador.")
+
+        api_key_info_label = ttk.Label(model_api_frame, textvariable=self.api_key_info_var, foreground="#555555",
+                                       wraplength=700, justify='left')
+        api_key_info_label.grid(row=3, column=0, columnspan=3, padx=5, pady=(0, 5), sticky='w')
+
+        # Models table
         models_table_frame = ttk.Frame(model_api_frame)
-        models_table_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='nsew')
+        models_table_frame.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='nsew')
 
-        # Ampliamos las columnas a mostrar
-        cols = ('name', 'display_name', 'version', 'input_tokens', 'output_tokens', 'methods', 'description')
+        cols = ('name', 'display_name', 'version', 'input_tokens', 'output_tokens', 'description')
         self.models_tree = ttk.Treeview(models_table_frame, columns=cols, show='headings', height=6)
 
-        # Definir encabezados
         self.models_tree.heading('name', text='Nombre Técnico')
         self.models_tree.heading('display_name', text='Nombre')
         self.models_tree.heading('version', text='Versión')
         self.models_tree.heading('input_tokens', text='Tokens Entrada')
         self.models_tree.heading('output_tokens', text='Tokens Salida')
-        self.models_tree.heading('methods', text='Métodos Soportados')
         self.models_tree.heading('description', text='Descripción')
 
-        # Definir anchos y alineación de columna
-        self.models_tree.column('name', width=180, stretch=tk.NO)
-        self.models_tree.column('display_name', width=150, stretch=tk.NO)
+        self.models_tree.column('name', width=220, stretch=tk.NO)
+        self.models_tree.column('display_name', width=170, stretch=tk.NO)
         self.models_tree.column('version', width=60, stretch=tk.NO, anchor='center')
         self.models_tree.column('input_tokens', width=100, stretch=tk.NO, anchor='e')  # 'e' para alinear a la derecha (este)
         self.models_tree.column('output_tokens', width=100, stretch=tk.NO, anchor='e')
-        self.models_tree.column('methods', width=200)
         self.models_tree.column('description', width=400)
 
-        # Añadir scrollbars
         vsb = ttk.Scrollbar(models_table_frame, orient="vertical", command=self.models_tree.yview)
         hsb = ttk.Scrollbar(models_table_frame, orient="horizontal", command=self.models_tree.xview)
         self.models_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -1936,22 +1952,21 @@ class ExamApp:
         models_table_frame.grid_rowconfigure(0, weight=1)
         models_table_frame.grid_columnconfigure(0, weight=1)
 
-        # Vincular el evento de selección
         self.models_tree.bind('<<TreeviewSelect>>', self.on_model_select)
-        # Vinculamos los eventos de movimiento y salida del ratón para el tooltip
         self.models_tree.bind('<Motion>', self.on_treeview_motion)
         self.models_tree.bind('<Leave>', self.hide_tree_tooltip)
 
         model_api_frame.columnconfigure(1, weight=1)
-        model_api_frame.rowconfigure(1, weight=1)
+        model_api_frame.rowconfigure(4, weight=1)
+        self._refresh_provider_widgets()
 
         # Row 7: Checkbox to print raw response
         debug_options_frame = ttk.Frame(config_frame)
         debug_options_frame.grid(row=7, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
 
-        print_raw_check = ttk.Checkbutton(debug_options_frame, text="Imprimir respuesta cruda de Gemini (depuración)", variable=self.print_raw_gemini_answer_var)
+        print_raw_check = ttk.Checkbutton(debug_options_frame, text="Imprimir respuesta cruda del modelo (depuración)", variable=self.print_raw_gemini_answer_var)
         print_raw_check.pack(anchor='w', padx=5)
-        ToolTip(print_raw_check, "Si se marca, la respuesta completa de la API de Gemini se imprimirá en la consola. Útil para depuración.")
+        ToolTip(print_raw_check, "Si se marca, la respuesta completa del modelo se imprimirá en la consola. Útil para depuración.")
 
         # Row 8: Output Directory
         output_dir_frame = ttk.LabelFrame(config_frame, text="Directorio de Salida")
@@ -1966,10 +1981,33 @@ class ExamApp:
         output_dir_button.pack(side='left', padx=5, pady=5)
         ToolTip(output_dir_button, "Abrir diálogo para seleccionar el directorio de salida.")
 
-        # Row 9: Generate Button
-        generate_button = ttk.Button(config_frame, text="Generar Preguntas", command=self.generate_questions)
-        generate_button.grid(row=9, column=0, columnspan=3, pady=10)
-        ToolTip(generate_button, "Iniciar el proceso de generación de preguntas con la configuración actual.")
+        # Row 9: Generate with the API
+        api_actions_frame = ttk.LabelFrame(config_frame, text="Generar con API")
+        api_actions_frame.grid(row=9, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        self.generate_button = ttk.Button(api_actions_frame, text="Generar Preguntas", command=self.generate_questions)
+        self.generate_button.pack(side='left', padx=5, pady=10)
+        ToolTip(self.generate_button, "Iniciar la generación de preguntas con la API del proveedor seleccionado.")
+        self.cancel_generation_button = ttk.Button(api_actions_frame, text="Cancelar", state='disabled',
+                                                   command=self.cancel_question_generation)
+        self.cancel_generation_button.pack(side='left', padx=5, pady=10)
+        ToolTip(self.cancel_generation_button, "Detiene la generación tras la petición en curso y guarda las "
+                                               "preguntas obtenidas hasta ese momento.")
+
+        # Row 10: Generate without the API (web chats)
+        manual_frame = ttk.LabelFrame(config_frame, text="Generar sin API (Google AI Studio, ChatGPT o Claude en el navegador)")
+        manual_frame.grid(row=10, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        ToolTip(manual_frame, "No necesita clave API ni consume cuota de la API: la aplicación prepara un prompt por "
+                              "PDF/fragmento con la configuración de arriba, tú lo pegas en el chat y pegas aquí la "
+                              "respuesta. Se generan los mismos archivos de revisión (Excel y DOCX).")
+        manual_button = ttk.Button(manual_frame, text="Preparar prompts sin API...", command=self.open_web_chat_assistant)
+        manual_button.pack(side='left', padx=5, pady=10)
+        ToolTip(manual_button, "Abre el asistente: copia cada prompt, ábrelo en el chat elegido, pega la respuesta "
+                               "y guarda las preguntas.")
+        import_button = ttk.Button(manual_frame, text="Importar respuestas desde Excel de prompts...",
+                                   command=self.import_responses_from_prompts_file)
+        import_button.pack(side='left', padx=5, pady=10)
+        ToolTip(import_button, "Lee un archivo '*_prompts.xlsx' exportado por el asistente en el que hayas pegado las "
+                               "respuestas en la columna 'Respuesta' (o la ruta a un .txt con la respuesta).")
 
         config_frame.columnconfigure(1, weight=1)
         inner_frame_question.columnconfigure(0, weight=1)
@@ -1978,79 +2016,109 @@ class ExamApp:
         _bind_question_scroll_recursively(canvas_question)
         _bind_question_scroll_recursively(inner_frame_question)
 
+    def _selected_provider(self) -> str:
+        """Canonical key ('gemini', 'openai', 'anthropic') of the provider selected in the GUI."""
+        try:
+            return resolve_provider(self.ai_provider_var.get())
+        except ValueError:
+            return "gemini"
+
+    def _refresh_provider_widgets(self) -> None:
+        """Updates the model suggestions and the key information for the selected provider."""
+        provider = self._selected_provider()
+        spec = PROVIDERS[provider]
+        if hasattr(self, 'model_combo'):
+            self.model_combo['values'] = list(spec.default_models)
+        source = self.api_key_sources.get(provider)
+        if source == "env":
+            info = "Clave cargada desde la variable de entorno " + " / ".join(spec.env_vars) + "."
+        elif source == "config":
+            info = "Clave cargada desde config.json."
+        elif source == "typed":
+            info = "Clave introducida en esta sesión (sin guardar)."
+        else:
+            info = (f"Sin clave guardada. Créala en {spec.api_key_url} o define la variable de entorno "
+                    f"{spec.env_vars[0]}.")
+        if not is_provider_installed(provider):
+            info += f" ATENCIÓN: falta la librería del proveedor; instálala con: {spec.install_hint}"
+        if provider == "gemini":
+            info += " Google ofrece un nivel gratuito de la API (con límites)."
+        self.api_key_info_var.set(info)
+
+    def on_provider_change(self, event=None) -> None:
+        """Keeps the key/model typed for the previous provider and loads the ones of the new provider."""
+        previous = self.current_provider
+        typed_key = self.api_key_var.get().strip()
+        if is_valid_api_key(typed_key) and typed_key != self.api_keys_by_provider.get(previous):
+            self.api_keys_by_provider[previous] = typed_key
+            self.api_key_sources[previous] = "typed"
+        if self.selected_model_var.get().strip():
+            self.models_by_provider[previous] = self.selected_model_var.get().strip()
+
+        provider = self._selected_provider()
+        self.current_provider = provider
+        self.api_key = self.api_keys_by_provider.get(provider)
+        self.api_key_var.set(self.api_key or API_KEY_PLACEHOLDER)
+        self.selected_model_var.set(self.models_by_provider.get(provider) or PROVIDERS[provider].default_models[0])
+        if self.models_loaded_for_provider != provider:
+            for item in self.models_tree.get_children():
+                self.models_tree.delete(item)
+            self.models_loaded_for_provider = None
+        self._refresh_provider_widgets()
+        self.update_status(f"Proveedor seleccionado: {PROVIDERS[provider].label}")
+
     def populate_models_table(self):
         """
-        Fetches available Gemini models using the provided API key and populates the Treeview table.
-        Adapted for the new google-genai library.
+        Fetches the models available for the selected provider with the API key
+        and populates the Treeview table (in a background thread).
         """
-        api_key = self.api_key_var.get()
-        if not api_key or api_key == "TU_CLAVE_API":
-            messagebox.showerror("Error", "Por favor, introduce una clave API de Gemini válida antes de cargar los modelos.")
+        provider = self._selected_provider()
+        spec = PROVIDERS[provider]
+        api_key = self.api_key_var.get().strip()
+        if not is_valid_api_key(api_key):
+            messagebox.showerror("Error", f"Por favor, introduce una clave API de {spec.label} válida antes de cargar los modelos.")
             return
 
-        self.update_status("Cargando lista de modelos...")
-        self.root.update_idletasks()
+        self.update_status(f"Cargando lista de modelos de {spec.label}...")
+        self.load_models_button.config(state='disabled')
 
-        # Limpiar la tabla antes de llenarla
-        for i in self.models_tree.get_children():
-            self.models_tree.delete(i)
+        def worker():
+            try:
+                models = list_available_models(provider, api_key)
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                error = str(exc)
+                print(f"Error detallado al cargar modelos: {error}")
+                self.root.after(0, lambda: self._on_models_loaded(provider, None, error))
+                return
+            self.root.after(0, lambda: self._on_models_loaded(provider, models, None))
 
-        try:
-            # Inicializamos el cliente con la nueva librería
-            client = genai.Client(api_key=api_key)
+        threading.Thread(target=worker, daemon=True).start()
 
-            # Obtenemos el iterador de modelos
-            # Nota: La nueva librería maneja la paginación automáticamente
-            models_pager = client.models.list()
-
-            count = 0
-            for model in models_pager:
-                # 1. FILTRO: Solo nos interesan los modelos que se llamen "gemini"
-                # Usamos getattr para mayor seguridad por si el objeto cambia
-                model_name = getattr(model, 'name', '')
-                if 'gemini' not in model_name:
-                    continue
-
-                # 2. OBTENCIÓN SEGURA DE DATOS
-                # La nueva API puede no devolver todos los campos que tenía la antigua.
-                # Usamos getattr(objeto, 'atributo', 'valor_por_defecto') para evitar crashes.
-
-                display_name = getattr(model, 'display_name', model_name)
-                version = getattr(model, 'version', '')
-
-                # Los límites de tokens a veces no vienen en el listado general en la nueva API
-                input_tokens = getattr(model, 'input_token_limit', 'N/A')
-                output_tokens = getattr(model, 'output_token_limit', 'N/A')
-
-                # 'supported_generation_methods' ya no existe en el objeto simple.
-                # Asumimos que si es Gemini, soporta generación de contenido.
-                methods_str = "generateContent"
-
-                description = getattr(model, 'description', '') or ""
-                description = description.replace('\n', ' ')
-
-                # 3. INSERTAR EN LA TABLA
-                self.models_tree.insert("", "end", values=(
-                    model_name,
-                    display_name,
-                    version,
-                    input_tokens,
-                    output_tokens,
-                    methods_str,
-                    description
-                ))
-                count += 1
-
-            if count == 0:
-                messagebox.showwarning("Sin Modelos", "La API respondió, pero no se encontraron modelos 'gemini'.")
-
-            self.update_status(f"Se cargaron {count} modelos. Por favor, seleccione uno de la tabla.")
-
-        except Exception as e:
-            messagebox.showerror("Error de API", f"No se pudo obtener la lista de modelos. Verifica tu clave API y conexión a internet.\n\nError: {e}")
+    def _on_models_loaded(self, provider: str, models: Optional[List[Dict[str, Any]]], error: Optional[str]) -> None:
+        self.load_models_button.config(state='normal')
+        spec = PROVIDERS[provider]
+        if error is not None:
+            messagebox.showerror("Error de API", f"No se pudo obtener la lista de modelos de {spec.label}. "
+                                                 f"Verifica tu clave API y tu conexión a internet.\n\n{error}")
             self.update_status("Error al cargar modelos.")
-            # Imprimimos el error completo en consola para depuración si es necesario
-            print(f"Error detallado al cargar modelos: {e}")
+            return
+        if provider != self._selected_provider():
+            return  # The user changed the provider meanwhile.
+
+        for item in self.models_tree.get_children():
+            self.models_tree.delete(item)
+        for model in models:
+            self.models_tree.insert("", "end", values=(
+                model["name"], model["display_name"], model["version"],
+                model["input_tokens"], model["output_tokens"], model["description"],
+            ))
+        self.models_loaded_for_provider = provider
+        if models:
+            self.model_combo['values'] = list(dict.fromkeys(
+                [m["name"] for m in models] + list(spec.default_models)))
+        else:
+            messagebox.showwarning("Sin Modelos", f"La API de {spec.label} respondió, pero no se encontraron modelos de texto.")
+        self.update_status(f"Se cargaron {len(models)} modelos de {spec.label}. Seleccione uno de la tabla o de la lista.")
 
     # Nueva función para manejar la selección en la tabla
     def on_model_select(self, event=None):
@@ -2138,47 +2206,102 @@ class ExamApp:
         # Reseteamos la última celda para que el tooltip se vuelva a mostrar si volvemos a entrar
         self.last_hovered_cell = (None, None)
 
+    def load_ai_config(self) -> Dict[str, Any]:
+        """
+        Loads the AI configuration (keys and models per provider) from ``config.json``.
+
+        The legacy format ``{"api_key": "..."}`` (Gemini key) is still understood.
+
+        Returns:
+            Dict[str, Any]: ``{"provider": str, "api_keys": {...}, "models": {...}}``.
+        """
+        config: Dict[str, Any] = {}
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                config = loaded
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+        api_keys = config.get("api_keys") if isinstance(config.get("api_keys"), dict) else {}
+        if config.get("api_key") and not api_keys.get("gemini"):
+            api_keys["gemini"] = config["api_key"]
+        models = config.get("models") if isinstance(config.get("models"), dict) else {}
+        try:
+            provider = resolve_provider(config.get("provider"))
+        except ValueError:
+            provider = "gemini"
+        return {
+            "provider": provider,
+            "api_keys": {k: v for k, v in api_keys.items() if k in PROVIDERS and is_valid_api_key(v)},
+            "models": {k: v for k, v in models.items() if k in PROVIDERS and isinstance(v, str) and v.strip()},
+        }
+
+    def _save_ai_config(self) -> None:
+        """Writes the AI configuration to ``config.json`` keeping any other existing keys."""
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+            if not isinstance(existing, dict):
+                existing = {}
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            existing = {}
+        existing.update({
+            "provider": self.ai_config.get("provider", "gemini"),
+            "api_keys": self.ai_config.get("api_keys", {}),
+            "models": self.ai_config.get("models", {}),
+        })
+        # Legacy key read by previous versions.
+        if self.ai_config.get("api_keys", {}).get("gemini"):
+            existing["api_key"] = self.ai_config["api_keys"]["gemini"]
+        with open('config.json', 'w', encoding='utf-8') as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+
     def load_api_key(self) -> Optional[str]:
         """
-        Loads the API key from a configuration file.
+        Loads the Gemini API key from the configuration file (kept for backward compatibility).
 
         Returns:
             Optional[str]: The API key if found, otherwise None.
         """
-        try:
-            with open('config.json', 'r') as f:
-                config = json.load(f)
-                return config.get('api_key')
-        except (FileNotFoundError, json.JSONDecodeError):
-            return None
+        return self.load_ai_config()["api_keys"].get("gemini")
 
-    def save_api_key(self, api_key: str) -> None:
+    def save_api_key(self, api_key: str, provider: Optional[str] = None) -> None:
         """
-        Saves the API key to a configuration file.
+        Saves the API key of a provider (the selected one by default) to the configuration file.
 
         Args:
             api_key (str): The API key to save.
+            provider (Optional[str]): Provider of the key.
         """
-        with open('config.json', 'w') as f:
-            json.dump({'api_key': api_key}, f)
-        messagebox.showinfo("Info", "API key guardada.")
+        provider = resolve_provider(provider) if provider else self._selected_provider()
+        self.ai_config.setdefault("api_keys", {})[provider] = api_key
+        self.ai_config["provider"] = provider
+        model = self.selected_model_var.get().strip()
+        if model:
+            self.ai_config.setdefault("models", {})[provider] = model
+        self._save_ai_config()
 
     def save_current_api_key(self) -> None:
         """
-        Saves the API key currently entered in the GUI.
-
-        This method gets the API key from the GUI variable,
-        saves it using the `save_api_key` method, and updates the
-        API key in the instance.
-        It also shows informational or error messages to the user via messagebox.
+        Saves the API key currently entered in the GUI for the selected provider,
+        together with the selected model.
         """
-        key_to_save = self.api_key_var.get()
-        if key_to_save:
-            self.save_api_key(key_to_save)
-            self.api_key = key_to_save  # Update the API key in the instance.
-            # We don't instantiate QuestionGenerator here anymore because it requires a model_name,
-            # which might not be selected yet. It will be instantiated when generating questions.
-            messagebox.showinfo("Info", "La API key ha sido actualizada y guardada.")
+        key_to_save = self.api_key_var.get().strip()
+        provider = self._selected_provider()
+        if is_valid_api_key(key_to_save):
+            try:
+                self.save_api_key(key_to_save, provider)
+            except OSError as e:
+                messagebox.showerror("Error", f"No se pudo guardar config.json: {e}")
+                return
+            self.api_key = key_to_save
+            self.api_keys_by_provider[provider] = key_to_save
+            if self.api_key_sources.get(provider) != "env":
+                self.api_key_sources[provider] = "config"
+            self._refresh_provider_widgets()
+            messagebox.showinfo("Info", f"La clave API de {PROVIDERS[provider].label} se ha guardado en "
+                                        f"config.json (carpeta actual).")
         else:
             messagebox.showerror("Error", "Por favor, introduce la API key.")
 
@@ -2196,7 +2319,11 @@ class ExamApp:
                 ("Todos los archivos", "*.*"),
             )
         )
-        self.pdf_entry.insert(tk.END, ",".join(file_paths))
+        if not file_paths:
+            return
+        current = self._split_source_paths(self.pdf_files_var.get())
+        new_paths = [path for path in file_paths if path not in current]
+        self.pdf_files_var.set(",".join(current + new_paths))
 
     def select_existing_bank_for_gen_file(self) -> None:
         """
@@ -2206,173 +2333,357 @@ class ExamApp:
         """
         filepath = filedialog.askopenfilename(
             title="Seleccionar Banco de Preguntas Existente (Opcional)",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            filetypes=[("Archivos Excel", "*.xlsx *.xls")]
         )
         if filepath:
             self.existing_bank_for_gen_path.set(filepath)
 
-    def generate_questions(self) -> None:
+    @staticmethod
+    def _split_source_paths(text: str) -> List[str]:
         """
-        Gathers all parameters from the GUI and triggers the question generation process.
-        This function acts as a bridge between the user interface and the backend logic.
+        Splits the comma-separated list of source files, keeping together the pieces of a
+        file name that itself contains commas (e.g. 'Tema 1, introducción.pdf').
         """
-        api_key = self.api_key_var.get()
-        pdf_paths_str = self.pdf_files_var.get()
-        pdf_paths = [path.strip() for path in pdf_paths_str.split(',') if path.strip()]
-        selected_prompt_type = self.selected_prompt_type.get()
-        custom_prompt_text_to_use = self.custom_prompt_text.get()
+        pieces = text.split(',')
+        paths: List[str] = []
+        i = 0
+        while i < len(pieces):
+            match_end = None
+            for j in range(len(pieces), i, -1):
+                if os.path.isfile(','.join(pieces[i:j]).strip()):
+                    match_end = j
+                    break
+            end = match_end or i + 1
+            candidate = ','.join(pieces[i:end]).strip()
+            if candidate:
+                paths.append(candidate)
+            i = end
+        return paths
+
+    def _collect_generation_params(self, for_api: bool) -> Optional[Dict[str, Any]]:
+        """
+        Reads and validates the options of the 'Generar Preguntas' tab.
+
+        Args:
+            for_api (bool): Also validate the options that only matter when calling the API.
+
+        Returns:
+            Optional[Dict[str, Any]]: Keyword arguments for ``QuestionGenerator`` (``None`` after
+            showing an error to the user).
+        """
+        pdf_paths = self._split_source_paths(self.pdf_files_var.get())
+        if not pdf_paths:
+            messagebox.showerror("Error", "Por favor, selecciona al menos un archivo PDF o imagen.")
+            return None
+        missing = [path for path in pdf_paths if not os.path.exists(path)]
+        if missing:
+            messagebox.showerror("Error", "No se encuentran estos archivos:\n" + "\n".join(missing))
+            return None
+
+        input_mode_value = self.input_mode_var.get() or "text"
+        if input_mode_value == "text":
+            non_pdf_paths = [path for path in pdf_paths if not path.lower().endswith('.pdf')]
+            if non_pdf_paths:
+                messagebox.showerror("Error", "En modo 'text' solo se permiten archivos PDF. Usa el modo 'image' o "
+                                              "'pdf' para trabajar con imágenes.")
+                return None
 
         try:
             # This is the TARGET number of questions per chunk.
             num_questions_target_per_chunk = int(self.num_questions_var.get())
             if num_questions_target_per_chunk <= 0:
-                messagebox.showerror("Error", "El número de preguntas objetivo por PDF/fragmento debe ser positivo.")
-                return
+                raise ValueError
         except ValueError:
-            messagebox.showerror("Error", "El número de preguntas objetivo por PDF/fragmento debe ser un entero.")
-            return
+            messagebox.showerror("Error", "El número de preguntas objetivo por PDF/fragmento debe ser un entero positivo.")
+            return None
 
-        # Get and validate the maximum number of attempts.
-        try:
-            max_attempts_value = int(self.max_attempts_var.get())
-            if max_attempts_value < 1:
-                messagebox.showerror("Error", "El número máximo de intentos por fragmento debe ser al menos 1.")
-                return
-        except ValueError:
-            messagebox.showerror("Error", "El número máximo de intentos por fragmento debe ser un entero.")
-            return
+        max_attempts_value = 1
+        if for_api:
+            try:
+                max_attempts_value = int(self.max_attempts_var.get())
+                if max_attempts_value < 1:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror("Error", "El número máximo de intentos por fragmento debe ser un entero mayor o igual que 1.")
+                return None
 
-        output_filename = self.output_filename_var.get()
-
-        # Obtenemos el modelo directamente de la variable que se actualiza con la tabla
-        technical_model_name = self.selected_model_var.get()
-        if not technical_model_name:
-            messagebox.showerror("Error", "Por favor, carga y selecciona un modelo de la tabla.")
-            return
-
-        if not api_key or api_key == "TU_CLAVE_API":
-            messagebox.showerror("Error", "Por favor, introduce tu clave API de Gemini.")
-            return
-        if not pdf_paths:
-            messagebox.showerror("Error", "Por favor, selecciona al menos un archivo PDF.")
-            return
-
-        if self.input_mode_var.get() == "text":
-            non_pdf_paths = [path for path in pdf_paths if not path.lower().endswith('.pdf')]
-            if non_pdf_paths:
-                messagebox.showerror("Error", "En modo 'text' solo se permiten archivos PDF.")
-                return
-
-        try:
-            # Re-initialize the generator with the current model and API key.
-            # This is important if the user changes the model or API key.
-            self.question_generator = QuestionGenerator(api_key, model_name=technical_model_name)
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al inicializar el generador de preguntas: {e}")
-            return
-
-        self.update_status("Generando preguntas...")
-        self.root.update_idletasks()
-
-        existing_bank_path_for_gen = self.existing_bank_for_gen_path.get()
-        bank_prompt_scope_value = self.bank_in_prompt_scope_var.get()
-        prompt_example_content_value = self.prompt_example_content_var.get()
-        input_mode_value = self.input_mode_var.get() or "text"
-        print_raw_gemini_answer_value = self.print_raw_gemini_answer_var.get()  # Get checkbox value.
+        existing_bank_path_for_gen = self.existing_bank_for_gen_path.get().strip()
+        if existing_bank_path_for_gen and not os.path.exists(existing_bank_path_for_gen):
+            messagebox.showerror("Error", f"No se encuentra el banco existente: {existing_bank_path_for_gen}")
+            return None
 
         similarity_threshold_value = None
         if self.use_similarity_filter_var.get() and existing_bank_path_for_gen:
             try:
-                similarity_threshold_value = float(self.similarity_threshold_var.get())
+                similarity_threshold_value = float(self.similarity_threshold_var.get().replace(',', '.'))
                 if not (0.0 <= similarity_threshold_value <= 1.0):
-                    messagebox.showerror("Error", "El umbral de similitud debe estar entre 0.0 y 1.0.")
-                    self.update_status("Error en el umbral de similitud.")
-                    return
+                    raise ValueError
             except ValueError:
-                messagebox.showerror("Error", "El umbral de similitud debe ser un número.")
+                messagebox.showerror("Error", "El umbral de similitud debe ser un número entre 0.0 y 1.0.")
                 self.update_status("Error en el umbral de similitud.")
-                return
+                return None
 
         process_by_pages_value = self.process_by_pages_var.get()
         pages_per_chunk_value = 1  # Default value if not processing by pages.
         total_chunks_value = None
-        chunking_mode_value = self.chunking_mode_var.get() or "pages"
         if process_by_pages_value:
             try:
                 pages_per_chunk_value = int(self.pages_per_chunk_var.get())
                 if pages_per_chunk_value <= 0:
-                    messagebox.showerror("Error", "Las páginas por fragmento deben ser un entero positivo.")
-                    self.update_status("Error en páginas por fragmento.")
-                    return
+                    raise ValueError
             except ValueError:
-                messagebox.showerror("Error", "Las páginas por fragmento deben ser un número entero.")
+                messagebox.showerror("Error", "Las páginas por fragmento deben ser un entero positivo.")
                 self.update_status("Error en páginas por fragmento.")
-                return
+                return None
 
             total_chunks_raw = self.total_chunks_var.get().strip()
             if total_chunks_raw:
                 try:
                     total_chunks_value = int(total_chunks_raw)
                     if total_chunks_value <= 0:
-                        messagebox.showerror("Error", "El número total de fragmentos debe ser un entero positivo.")
-                        return
+                        raise ValueError
                 except ValueError:
-                    messagebox.showerror("Error", "El número total de fragmentos debe ser un número entero.")
-                    return
+                    messagebox.showerror("Error", "El número total de fragmentos debe ser un entero positivo.")
+                    return None
 
-        bank_prompt_scope_to_pass = bank_prompt_scope_value if existing_bank_path_for_gen else None
+        return {
+            "pdf_paths": pdf_paths,
+            "prompt_type": self.selected_prompt_type.get(),
+            "num_questions_per_chunk_target": num_questions_target_per_chunk,
+            "custom_prompt": self._current_prompt_text(),
+            "existing_bank_path": existing_bank_path_for_gen or None,
+            "process_by_pages": process_by_pages_value,
+            "pages_per_chunk": pages_per_chunk_value,
+            "total_chunks": total_chunks_value,
+            "chunking_mode": self.chunking_mode_var.get() or "pages",
+            "bank_prompt_scope": self.bank_in_prompt_scope_var.get() if existing_bank_path_for_gen else None,
+            "prompt_example_content_type": self.prompt_example_content_var.get(),
+            "include_similar_questions_in_prompt": self.include_similar_questions_in_prompt_var.get(),
+            "input_mode": input_mode_value,
+            "include_full_document_context": self.include_full_context_var.get(),
+            "output_filename": self.output_filename_var.get().strip() or "preguntas",
+            "output_dir": self.gen_questions_output_dir_var.get().strip() or None,
+            "similarity_threshold": similarity_threshold_value,
+            "print_raw_gemini_answer": self.print_raw_gemini_answer_var.get(),
+            "max_generation_attempts_per_chunk": max_attempts_value,
+        }
 
-        output_dir_value = self.gen_questions_output_dir_var.get() or None
+    def generate_questions(self) -> None:
+        """
+        Gathers all parameters from the GUI and triggers the question generation process
+        through the API of the selected provider, in a background thread.
+        """
+        if self.question_generation_cancel_event is not None:
+            messagebox.showinfo("En curso", "Ya hay una generación de preguntas en curso.")
+            return
+
+        provider = self._selected_provider()
+        spec = PROVIDERS[provider]
+        api_key = self.api_key_var.get().strip()
+        technical_model_name = self.selected_model_var.get().strip()
+        if not is_valid_api_key(api_key):
+            messagebox.showerror("Error", f"Por favor, introduce tu clave API de {spec.label}.\n\n"
+                                          "Si no tienes clave, usa 'Preparar prompts sin API...'.")
+            return
+        if not technical_model_name:
+            messagebox.showerror("Error", "Por favor, escribe un modelo o carga y selecciona uno de la tabla.")
+            return
+        if not is_provider_installed(provider):
+            messagebox.showerror("Librería no instalada", f"Para usar {spec.label} instala su librería:\n\n    {spec.install_hint}")
+            return
+
+        params = self._collect_generation_params(for_api=True)
+        if params is None:
+            return
 
         try:
-            questions_df = self.question_generator.generate_multiple_choice_questions(
-                pdf_paths=pdf_paths,
-                prompt_type=selected_prompt_type,
-                num_questions_per_chunk_target=num_questions_target_per_chunk,
-                output_filename=output_filename,
-                output_dir=output_dir_value,
-                custom_prompt=custom_prompt_text_to_use,
-                existing_bank_path=existing_bank_path_for_gen if existing_bank_path_for_gen else None,
-                similarity_threshold=similarity_threshold_value,
-                process_by_pages=process_by_pages_value,
-                pages_per_chunk=pages_per_chunk_value,
-                bank_prompt_scope=bank_prompt_scope_to_pass,
-                prompt_example_content_type=prompt_example_content_value,
-                print_raw_gemini_answer=print_raw_gemini_answer_value,
-                max_generation_attempts_per_chunk=max_attempts_value,
-                total_chunks=total_chunks_value,
-                chunking_mode=chunking_mode_value,
-                include_similar_questions_in_prompt=self.include_similar_questions_in_prompt_var.get(),
-                input_mode=input_mode_value
-            )
-            if questions_df is not None and not questions_df.empty:
-                self.update_status(f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
-                messagebox.showinfo("Éxito", f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
+            # Re-initialize the generator with the current provider, model and API key.
+            self.question_generator = QuestionGenerator(api_key, model_name=technical_model_name, provider=provider)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al inicializar el generador de preguntas: {e}")
+            return
+        self.models_by_provider[provider] = technical_model_name
+
+        cancel_event = threading.Event()
+        self.question_generation_cancel_event = cancel_event
+        self.generate_button.config(state='disabled')
+        self.cancel_generation_button.config(state='normal')
+        self.update_status(f"Generando preguntas con {spec.label} ({technical_model_name})...")
+        generator = self.question_generator
+
+        def progress(message: str) -> None:
+            lines = [line.strip() for line in str(message).splitlines() if line.strip()]
+            if lines:
+                self.root.after(0, lambda text=lines[-1][:200]: self.update_status(text))
+
+        def worker():
+            error: Optional[BaseException] = None
+            questions_df = None
+            try:
+                questions_df = generator.generate_multiple_choice_questions(
+                    **params, progress_callback=progress, cancel_event=cancel_event)
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                error = exc
+                if not isinstance(exc, AIProviderError):
+                    import traceback
+                    print(traceback.format_exc())
+            self.root.after(0, lambda: self._on_question_generation_finished(generator, questions_df, error))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def cancel_question_generation(self) -> None:
+        """Asks the running generation to stop after the current request."""
+        if self.question_generation_cancel_event is not None:
+            self.question_generation_cancel_event.set()
+            self.cancel_generation_button.config(state='disabled')
+            self.update_status("Cancelando: se detendrá tras la petición en curso...")
+
+    def _on_question_generation_finished(self, generator: QuestionGenerator, questions_df,
+                                         error: Optional[BaseException]) -> None:
+        """Runs in the Tk thread when the background generation ends."""
+        self.question_generation_cancel_event = None
+        self.generate_button.config(state='normal')
+        self.cancel_generation_button.config(state='disabled')
+
+        saved_paths = getattr(generator, "last_output_paths", {}) or {}
+        saved_note = ""
+        if saved_paths:
+            saved_note = "\n\nArchivos guardados:\n" + "\n".join(saved_paths.values())
+
+        if error is None:
+            total = 0 if questions_df is None else len(questions_df)
+            extra = []
+            if generator.rejected_questions_list:
+                extra.append(f"{len(generator.rejected_questions_list)} descartadas por similitud")
+            if generator.invalid_questions_list:
+                extra.append(f"{len(generator.invalid_questions_list)} respuestas/fragmentos con formato no válido")
+            extra_text = f" ({'; '.join(extra)})" if extra else ""
+            if generator.cancelled:
+                self.update_status(f"Generación cancelada: {total} preguntas guardadas.")
+                messagebox.showinfo("Cancelado", f"Generación cancelada. Se guardaron {total} preguntas{extra_text}.{saved_note}")
+            elif total:
+                self.update_status(f"Preguntas generadas y guardadas ({total} en total).")
+                messagebox.showinfo("Éxito", f"Preguntas generadas y guardadas ({total} en total){extra_text}.{saved_note}")
             else:
                 # This message may appear if, after all attempts and filters, no questions are left.
                 self.update_status("No se generaron preguntas o ninguna pasó los filtros.")
-                messagebox.showinfo("Resultado", "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, errores de API). Revisa la consola para más detalles.")
+                messagebox.showinfo("Resultado", "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, "
+                                                 f"errores de API){extra_text}. Revisa la consola para más detalles.{saved_note}")
+            return
 
-        except QuotaExceededError as e:
-            title = "Límite de Cuota Excedido"
-            # El mensaje 'e' ya viene formateado desde QuestionGenerator
-            message = str(e)
-
+        partial = f"\n\nSe guardaron las preguntas obtenidas antes del error.{saved_note}" if saved_paths else ""
+        if isinstance(error, QuotaExceededError):
             self.update_status("Error: Límite de cuota de la API excedido.")
-            messagebox.showerror(title, message)
-            print(f"ERROR: {title}\n{message}")
-
-        except ServiceOverloadedError as e:
-            title = "Servidores de Google Saturados"
+            messagebox.showerror("Límite de Cuota Excedido", f"{error}{partial}")
+        elif isinstance(error, ServiceOverloadedError):
             self.update_status("Error: Modelo de IA saturado.")
-            messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
-            print(f"ERROR: {title}\n{e}")
+            messagebox.showwarning("Servidores Saturados", f"{error}{partial}")  # warning: temporal
+        elif isinstance(error, InvalidAPIKeyError):
+            self.update_status("Error: clave API no válida.")
+            messagebox.showerror("Clave API no válida", f"{error}{partial}")
+        elif isinstance(error, ModelNotFoundError):
+            self.update_status("Error: modelo no disponible.")
+            messagebox.showerror("Modelo no disponible", f"{error}{partial}")
+        elif isinstance(error, ProviderNotAvailableError):
+            self.update_status("Error: librería del proveedor no instalada.")
+            messagebox.showerror("Librería no instalada", f"{error}{partial}")
+        else:
+            self.update_status(f"Error durante la generación de preguntas: {error}")
+            messagebox.showerror("Error", f"Error: {error}{partial}")
 
+    def open_web_chat_assistant(self) -> None:
+        """Builds the prompts for the web chats and opens the copy/paste assistant."""
+        params = self._collect_generation_params(for_api=False)
+        if params is None:
+            return
+        output_dir = params["output_dir"] or os.getcwd()
+        attachments_dir = None
+        if params["input_mode"] != "text" and params["process_by_pages"]:
+            attachments_dir = os.path.join(output_dir, f"{params['output_filename']}_adjuntos")
+
+        generator = QuestionGenerator()  # No API key needed.
+        self.update_status("Preparando prompts sin API...")
+        self.root.update_idletasks()
+        try:
+            prompts_df = generator.build_generation_prompts(
+                pdf_paths=params["pdf_paths"],
+                prompt_type=params["prompt_type"],
+                num_questions_per_chunk_target=params["num_questions_per_chunk_target"],
+                custom_prompt=params["custom_prompt"],
+                existing_bank_path=params["existing_bank_path"],
+                process_by_pages=params["process_by_pages"],
+                pages_per_chunk=params["pages_per_chunk"],
+                total_chunks=params["total_chunks"],
+                chunking_mode=params["chunking_mode"],
+                bank_prompt_scope=params["bank_prompt_scope"],
+                prompt_example_content_type=params["prompt_example_content_type"],
+                include_similar_questions_in_prompt=params["include_similar_questions_in_prompt"],
+                input_mode=params["input_mode"],
+                for_web_chat=True,
+                attachments_dir=attachments_dir,
+                include_full_document_context=params["include_full_document_context"],
+            )
         except Exception as e:
-            self.update_status(f"Error durante la generación de preguntas: {e}")
-            messagebox.showerror("Error", f"Error: {e}")
-            import traceback
-            print(traceback.format_exc())
+            self.update_status("Error al preparar los prompts.")
+            messagebox.showerror("Error", f"No se pudieron preparar los prompts: {e}")
+            return
+        if prompts_df.empty:
+            self.update_status("No se generó ningún prompt.")
+            messagebox.showwarning("Sin prompts", "No se pudo preparar ningún prompt (¿PDF sin texto extraíble? "
+                                                  "Prueba el modo 'pdf' o 'image').")
+            return
+
+        self.update_status(f"{len(prompts_df)} prompts preparados. Cópialos en el chat y pega las respuestas.")
+        WebChatAssistant(
+            self.root, generator, prompts_df,
+            output_dir=output_dir,
+            output_filename=params["output_filename"],
+            existing_bank_path=params["existing_bank_path"],
+            similarity_threshold=params["similarity_threshold"],
+            questions_per_prompt=params["num_questions_per_chunk_target"],
+            default_target=self._selected_provider(),
+            status_callback=self.update_status,
+        )
+
+    def import_responses_from_prompts_file(self) -> None:
+        """Imports the answers pasted in the 'Respuesta' column of an exported '*_prompts.xlsx'."""
+        prompts_path = filedialog.askopenfilename(
+            title="Seleccionar Excel de prompts con las respuestas",
+            filetypes=[("Archivos Excel", "*.xlsx")],
+        )
+        if not prompts_path:
+            return
+        existing_bank = self.existing_bank_for_gen_path.get().strip() or None
+        threshold = None
+        if self.use_similarity_filter_var.get() and existing_bank:
+            try:
+                threshold = float(self.similarity_threshold_var.get().replace(',', '.'))
+                if not (0.0 <= threshold <= 1.0):
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror("Error", "El umbral de similitud debe ser un número entre 0.0 y 1.0.")
+                return
+        output_dir = self.gen_questions_output_dir_var.get().strip() or os.path.dirname(prompts_path)
+        output_filename = self.output_filename_var.get().strip() or "preguntas"
+
+        generator = QuestionGenerator()
+        try:
+            df = generator.import_questions_from_prompts_file(
+                prompts_path, output_filename=output_filename, output_dir=output_dir,
+                existing_bank_path=existing_bank, similarity_threshold=threshold,
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudieron importar las respuestas: {e}")
+            return
+        paths = "\n".join(generator.last_output_paths.values())
+        self.update_status(f"Importadas {len(df)} preguntas desde {os.path.basename(prompts_path)}.")
+        messagebox.showinfo(
+            "Importación completada",
+            f"Preguntas aceptadas: {len(df)}\n"
+            f"Descartadas por similitud: {len(generator.rejected_questions_list)}\n"
+            f"Fragmentos no válidos: {len(generator.invalid_questions_list)}"
+            + (f"\n\nArchivos guardados:\n{paths}" if paths else ""),
+        )
 
     def create_exam_tab(self):
         """
@@ -3142,7 +3453,7 @@ class ExamApp:
         """Opens a dialog to select an already generated exam XLSX file for XML export."""
         filepath = filedialog.askopenfilename(
             title="Seleccionar Examen XLSX",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            filetypes=[("Archivos Excel", "*.xlsx *.xls")]
         )
         if filepath:
             self.existing_exam_xlsx_for_xml_var.set(filepath)
@@ -3494,7 +3805,7 @@ class ExamApp:
         """
         filepath = filedialog.askopenfilename(
             title="Seleccionar Archivo Excel Existente",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            filetypes=[("Archivos Excel", "*.xlsx *.xls")]
         )
         if filepath:
             self.existing_bank_path.set(filepath)
@@ -3507,7 +3818,7 @@ class ExamApp:
         """
         filepath = filedialog.askopenfilename(
             title="Seleccionar Archivo Excel Revisado",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            filetypes=[("Archivos Excel", "*.xlsx *.xls")]
         )
         if filepath:
             self.reviewed_add_path.set(filepath)
@@ -3574,7 +3885,7 @@ class ExamApp:
         """Opens a dialog to select the question bank XLSX whose usage will be updated."""
         filepath = filedialog.askopenfilename(
             title="Seleccionar Banco de Preguntas a Actualizar",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            filetypes=[("Archivos Excel", "*.xlsx *.xls")]
         )
         if filepath:
             self.update_bank_path_var.set(filepath)
@@ -3624,7 +3935,7 @@ class ExamApp:
         """
         filepaths = filedialog.askopenfilenames(
             title="Seleccionar Exámenes Generados (XLSX)",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            filetypes=[("Archivos Excel", "*.xlsx *.xls")]
         )
         if not filepaths:
             return
