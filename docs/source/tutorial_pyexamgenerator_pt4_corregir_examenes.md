@@ -142,7 +142,28 @@ propio botón, para que ejecutes solo el paso que necesites:
 8. **Sesión:** guardar/cargar para retomar el trabajo.
 
 Se mantiene además un botón **"Pipeline completo"** que ejecuta todos los pasos de una pasada (como
-antes). Cada acción corre en segundo plano y deja sus resultados en la carpeta de salida.
+antes). Cada acción corre en segundo plano y deja sus resultados en la carpeta de salida. Solo se
+ejecuta una tarea de corrección a la vez: si pulsas otro botón mientras una está en marcha, la
+aplicación te avisa.
+
+Algunos detalles útiles:
+
+- La matrícula fusionada se guarda como `matriculados_fusionados.xlsx` en la carpeta de salida y
+  **nunca** sobrescribe tus ficheros de matriculados. El **mapeo de columnas** se usa también para
+  leer esos ficheros (por ejemplo, un listado exportado de Moodle en inglés).
+- Los **números de ID** se comparan normalizados (`12345678` y `12345678.0` son el mismo alumno) y
+  los alumnos **sin ID** nunca comparten notas, justificaciones ni punto extra con otros.
+- Si corriges desde un xlsx de **respuestas** con **varias plantillas XML**, el fichero debe tener
+  una columna con el tipo de examen de cada fila (`Tipo_Examen_Usado`, `Tipo_Examen` o `Tipo`; el
+  `respuestas.xlsx` del OCR ya la incluye). Las filas que no se pueden corregir (alumno no
+  encontrado o tipo desconocido) se listan en `incidencias_respuestas.xlsx` y en un aviso.
+- Dos plantillas XML **distintas** para el mismo tipo (p. ej. `GIM/..._1A.xml` y `GITI/..._1A.xml`)
+  se rechazan para no corregir con la clave equivocada: corrige cada grupo por separado.
+- En el OCR, una hoja ilegible o cuyo tipo de examen no se detecta ya **no detiene el lote**: aparece
+  en `incidencias.xlsx` (tipos `IMAGE_READ_ERROR`, `EXAM_TYPE_UNRESOLVED` con el tipo sugerido,
+  `FORCED_STUDENT_ERROR`...) y se escriben igualmente todos los resultados. La tabla de incidencias
+  también señala las marcas dudosas o sin resolver.
+- Las columnas de asistencia se reconocen sea cual sea el año del curso.
 
 ## Sesión reanudable (retomar más tarde)
 
@@ -151,7 +172,9 @@ antes). Cada acción corre en segundo plano y deja sus resultados en la carpeta 
 después sin volver a indicarlas. Al generar exámenes puedes escribir la sesión (campo *"Sesión de
 corrección"* de la pestaña Generar Exámenes, o el parámetro `session_output_path`); en la pestaña
 Corregir Exámenes, **Cargar sesión** rellena rutas y columnas (incluidos los XML de los exámenes
-generados).
+generados) y vacía los campos que estén vacíos en la sesión. La interfaz carga siempre el `.json`
+(aunque elijas el `.pkl`): abrir un `.pkl` de origen desconocido podría ejecutar código, así que ese
+formato queda para tus propios scripts.
 
 ```python
 from pyexamgenerator.grading import GradingSession
@@ -166,7 +189,8 @@ print(session.grading_inputs)               # entradas y mapeo de columnas
 `FinalGradeCalculator` (o `ExamCorrectionAPI.compute_final_grade`) combina varios exámenes con los
 pesos que definas. Dos modos: **por fichero** (un peso por examen, emparejando alumnos por ID o
 nombre) y **por columnas** (ponderar columnas de un único xlsx). Los pesos se normalizan y la nota
-final puede topar en 10.
+final puede topar en 10. En la interfaz los pesos pueden escribirse también como porcentaje (`60%`).
+Si dos ficheros tienen el mismo nombre en carpetas distintas, cuentan como exámenes diferentes.
 
 ```python
 from pyexamgenerator.grading import ExamCorrectionAPI, FinalGradeConfig

@@ -168,7 +168,7 @@ Según el caso, también pueden aparecer:
     *   la **respuesta correcta** falta, es ambigua o no es válida. Se acepta la letra (A, B, C o D), expresiones como "Opción B" o el texto de una de las opciones, pero se rechazan los números como `1` o `"2"`, porque no se sabe si cuentan desde 0 o desde 1;
     *   o la respuesta no contenía ninguna pregunta en formato JSON reconocible.
 
-Además, las preguntas repetidas (con el mismo enunciado) que aparezcan en varios fragmentos o intentos se descartan automáticamente.
+Además, las preguntas repetidas (mismo tema, mismo enunciado y mismas opciones, aunque estén en otro orden) que aparezcan en varios fragmentos o intentos se descartan automáticamente. Las preguntas con el mismo enunciado pero opciones distintas (por ejemplo, "Señala la afirmación correcta") se conservan.
 
 **Tu siguiente paso sería leer este archivo de Word, corregir cualquier error que veas, y prepararlo para añadirlo a tu banco de preguntas principal, ¡pero eso lo veremos en el tutorial de la siguiente pestaña!**
 
