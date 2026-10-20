@@ -6,6 +6,8 @@ from typing import Iterable, List, Optional, Tuple
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 
 class MoodleGradeIntegrator:
     def __init__(
@@ -332,7 +334,9 @@ class MoodleGradeIntegrator:
 
         if deduplicate_by_id:
             merged_df = merged_df.sort_values("_Numeric_Grade", ascending=False)
-            merged_df = merged_df.drop_duplicates(subset=[self.id_col], keep="first")
+            # Solo se deduplican filas con ID (normalizado: 111 == 111.0); los alumnos sin ID son distintos.
+            id_norm = merged_df[self.id_col].map(normalize_id)
+            merged_df = merged_df.loc[~(id_norm.ne("") & id_norm.duplicated(keep="first"))]
 
         merged_df = merged_df.sort_values([self.last_name_col, self.first_name_col], na_position="last")
         merged_df = merged_df.drop(columns=["_Numeric_Grade"], errors="ignore")
@@ -379,6 +383,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
 
 
@@ -439,30 +444,8 @@ class OcrGradeIntegrator:
 
     @staticmethod
     def _normalize_id(value) -> str:
-        if pd.isna(value):
-            return ""
-        if isinstance(value, int):
-            return str(value)
-        if isinstance(value, float):
-            if value.is_integer():
-                return str(int(value))
-            text = str(value).strip()
-            return text
-
-        text = str(value).strip()
-        if not text:
-            return ""
-
-        lowered = text.lower()
-        if lowered in {"nan", "none", "<na>"}:
-            return ""
-
-        # Excel/pandas may surface integer-like IDs as e.g. "12345.0".
-        if re.fullmatch(r"[-+]?\d+\.0+", text):
-            return text.split(".", 1)[0]
-
-        # Keep textual IDs as-is so leading zeros are preserved.
-        return text
+        # Normalización compartida: NaN/'nan' -> '', 12345.0 -> '12345', textos (ceros a la izquierda) intactos.
+        return normalize_id(value)
 
     @staticmethod
     def _clean_text(value) -> str:
@@ -926,6 +909,12 @@ class OcrGradeIntegrator:
 
         general_group_col = self._find_column(general_cols, ["tipogrupo", "tipo"])
         ocr_group_col = self._find_column(ocr_cols, ["tipoexamen", "tipogrupo", "tipo"])
+        general_email_col = self._find_column(general_cols, ["direcciondecorreo", "direccindecorreo", "email", "correo"])
+        # Columnas de identidad del fichero general (el que se sube a Moodle): nunca se sobrescriben con
+        # los datos del OCR, solo se rellenan si están vacías.
+        identity_cols_general = {
+            c for c in (general_id_col, general_first_name_col, general_last_name_col, general_email_col) if c
+        }
 
         summary = self._new_integration_summary(len(ocr_df))
         incidents: List[Dict[str, str]] = []
@@ -1016,6 +1005,8 @@ class OcrGradeIntegrator:
                     if not self._is_empty(value):
                         if c in grade_cols_set:
                             value = self._to_float_grade(value)
+                        elif c == general_id_col:
+                            value = self._normalize_id(value)
                         new_row[c] = value
 
                 for general_col in grade_cols_general:
@@ -1047,7 +1038,12 @@ class OcrGradeIntegrator:
             for c in shared_cols:
                 value = ocr_row.get(c, "")
                 if not self._is_empty(value):
-                    if c in grade_cols_set:
+                    if c in identity_cols_general:
+                        if not self._is_empty(out_df.at[target_idx, c]):
+                            continue
+                        if c == general_id_col:
+                            value = self._normalize_id(value)
+                    elif c in grade_cols_set:
                         value = self._to_float_grade(value)
                     out_df.at[target_idx, c] = value
                     row_updated = True

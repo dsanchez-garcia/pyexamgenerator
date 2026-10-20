@@ -14,6 +14,15 @@ from pyexamgenerator.grading.session import GradingSession
 
 @dataclass
 class ExcelGradingConfig:
+    """Grading from an answers XLSX.
+
+    ``exam_xml_paths`` (optional) lists several Moodle XML templates (one per exam type, e.g. 1A/1B);
+    when it holds more than one, each answers row is graded with the template of its own exam type
+    (column ``exam_type_col`` or ``Tipo_Examen_Usado`` / ``Tipo_Examen`` / ``Tipo``). When given, it
+    takes precedence over ``exam_xml_path``. Rows that cannot be graded are written to
+    ``incidents_output_path`` (next to ``output_path``).
+    """
+
     exam_xml_path: str
     answers_xlsx_path: str
     enrollment_xlsx_path: str
@@ -24,6 +33,9 @@ class ExcelGradingConfig:
     first_name_col: str = "Nombre"
     id_col: str = "Número de ID"
     email_col: str = "Dirección de correo"
+    exam_xml_paths: Sequence[str] = field(default_factory=tuple)
+    exam_type_col: Optional[str] = None
+    incidents_output_path: str = "incidencias_respuestas.xlsx"
 
 
 @dataclass
@@ -314,8 +326,15 @@ class ExamCorrectionAPI:
 
         export_state = self._start_step_export(export_steps_dir, "grade_from_excel")
 
+        xml_paths = [str(p) for p in (cfg.exam_xml_paths or ()) if str(p).strip()]
+        exam_xml_path = xml_paths[0] if xml_paths else cfg.exam_xml_path
+        questions_by_exam_type = None
+        if len(xml_paths) > 1:
+            # Varias plantillas: cada fila se corrige con la clave de su propio tipo de examen.
+            questions_by_exam_type = self.shared_store.load_questions_by_exam_type(xml_paths)
+
         grader = ExamGrader(
-            exam_xml_path=cfg.exam_xml_path,
+            exam_xml_path=exam_xml_path,
             answers_xlsx_path=cfg.answers_xlsx_path,
             enrollment_xlsx_path=cfg.enrollment_xlsx_path,
             enrollment_sheet=cfg.enrollment_sheet,
@@ -324,6 +343,8 @@ class ExamCorrectionAPI:
             id_col=cfg.id_col,
             email_col=cfg.email_col,
             shared_store=self.shared_store,
+            questions_by_exam_type=questions_by_exam_type,
+            exam_type_col=cfg.exam_type_col,
         )
         self._export_step_dataframe(export_state, "enrollment_loaded", grader.enrollment_df)
         self._export_step_dataframe(export_state, "answers_loaded", grader.answers_df)
@@ -331,10 +352,20 @@ class ExamCorrectionAPI:
 
         result_df = grader.grade_and_export(output_path)
         self._export_step_dataframe(export_state, "graded_output", result_df)
-        self._finalize_step_export(export_state, {"output_path": output_path})
+
+        # Filas no corregidas: se escribe siempre (vacío si no hay) para no dejar un fichero de una ejecución anterior.
+        incidents_df = grader.incidents_df
+        incidents_path = str(Path(output_path).with_name(Path(cfg.incidents_output_path).name))
+        incidents_df.to_excel(incidents_path, index=False)
+        self.results["excel_grading_incidents"] = incidents_df
+        self.results["excel_grading_incidents_path"] = incidents_path
+        outputs: Dict[str, object] = {"output_path": output_path, "incidents_path": incidents_path}
+        self._export_step_dataframe(export_state, "grading_incidents", incidents_df)
+
+        self._finalize_step_export(export_state, outputs)
         self.session.record_workflow(
-            "grade_from_excel", config=cfg, outputs={"output_path": output_path},
-            summary={"rows": int(len(result_df))},
+            "grade_from_excel", config=cfg, outputs=outputs,
+            summary={"rows": int(len(result_df)), "rows_not_graded": int(len(incidents_df))},
         )
         return result_df
 
@@ -624,6 +655,7 @@ class ExamCorrectionAPI:
         self.results["justifications_summary"] = result.summary_df
         self.results["justifications_detail"] = result.detailed_df
         self.results["attendance_with_quizzes"] = result.attendance_quiz_df
+        self.results["attendance_warnings"] = list(getattr(result, "warnings", []) or [])
         self.session.record_workflow(
             "process_absence_justifications", config=cfg,
             outputs={

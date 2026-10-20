@@ -3,9 +3,11 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Callable, Dict, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
+
+from pyexamgenerator.grading._ids import normalize_id
 
 
 QuestionMap = Dict[str, Dict[str, float]]
@@ -67,15 +69,7 @@ class SharedExamDataStore:
             q_num = int(num_match.group())
             q_name = f"Pregunta {q_num:02d}"
 
-            answers: Dict[str, float] = {}
-            for answer in question.findall("answer"):
-                text_node = answer.find("text")
-                if text_node is None or text_node.text is None:
-                    continue
-                letter = text_node.text.strip().lower()
-                answers[letter] = float(answer.get("fraction", "0")) / 100.0
-
-            questions[q_name] = answers
+            questions[q_name] = self._answer_map_from_question(question)
 
         if not questions:
             raise ValueError(f"No multichoice questions found in {xml_path}")
@@ -83,16 +77,75 @@ class SharedExamDataStore:
         self._xml_cache[key] = questions
         return questions
 
+    @staticmethod
+    def _answer_map_from_question(question: ET.Element) -> Dict[str, float]:
+        """Devuelve ``{letra: fracción}`` para las respuestas de una pregunta del XML.
+
+        Las hojas de respuestas y los xlsx de respuestas contienen letras (a, b, c, d). Si el XML
+        usa esas letras como texto de las respuestas (en cualquier orden), se usan como clave. Si el
+        XML contiene el texto completo de cada respuesta (``xml_use_answer_text=True`` al generarlo),
+        la letra se asigna por posición: el generador escribe siempre las opciones en orden A, B, C, D.
+        En ese caso se conservan además las claves de texto, sin pisar nunca las letras.
+        """
+        texts: List[str] = []
+        fractions: List[float] = []
+        for answer in question.findall("answer"):
+            text_node = answer.find("text")
+            text = "" if text_node is None or text_node.text is None else text_node.text.strip().lower()
+            texts.append(text)
+            fractions.append(float(answer.get("fraction", "0")) / 100.0)
+
+        letters = [chr(ord("a") + i) for i in range(min(len(texts), 26))]
+        letter_texts = []
+        for text in texts:
+            match = re.fullmatch(r"\(?([a-z])[\).:]?", text)
+            letter_texts.append(match.group(1) if match else None)
+
+        answers: Dict[str, float] = {}
+        if None not in letter_texts and sorted(letter_texts) == letters:
+            # XML con letras como texto de respuesta (formato por defecto).
+            for letter, fraction in zip(letter_texts, fractions):
+                answers[letter] = fraction
+            return answers
+
+        # XML con el texto completo de las respuestas: letra por posición (A, B, C, D...).
+        for letter, fraction in zip(letters, fractions):
+            answers[letter] = fraction
+        for text, fraction in zip(texts, fractions):
+            if text and text not in answers:
+                answers[text] = fraction
+        return answers
+
     def load_questions_by_exam_type(
         self,
         xml_paths: Sequence[str],
         infer_exam_type: Optional[Callable[[str], str]] = None,
     ) -> QuestionsByExamTypeMap:
+        """Carga varias plantillas XML indexadas por tipo de examen (inferido del nombre).
+
+        Si dos ficheros distintos corresponden al mismo tipo y sus claves de respuesta difieren
+        (p. ej. ``GIM/examen_..._1A.xml`` y ``GITI/examen_..._1A.xml``), se lanza ``ValueError``:
+        de lo contrario la última plantilla pisaría a la otra y se corregiría con la clave errónea.
+        """
         infer = infer_exam_type or self._infer_exam_type_from_filename
         out: QuestionsByExamTypeMap = {}
+        source_by_type: Dict[str, str] = {}
         for xml_path in xml_paths:
             exam_type = infer(xml_path)
-            out[exam_type] = self.load_questions_xml(xml_path)
+            questions = self.load_questions_xml(xml_path)
+            if exam_type in out:
+                previous_path = source_by_type[exam_type]
+                same_file = self._normalize_path(previous_path) == self._normalize_path(xml_path)
+                if not same_file and out[exam_type] != questions:
+                    raise ValueError(
+                        f"Hay varias plantillas XML distintas para el tipo de examen '{exam_type}':\n"
+                        f"- {previous_path}\n- {xml_path}\n"
+                        "Corrige cada grupo por separado o renombra las plantillas para que cada tipo "
+                        "sea único (p. ej. ..._1A.xml y ..._2A.xml)."
+                    )
+                continue
+            out[exam_type] = questions
+            source_by_type[exam_type] = str(xml_path)
         return out
 
     def load_enrollment(
@@ -171,17 +224,31 @@ def _is_subgroup_selected(value: str) -> bool:
     return text not in {"", "sincontestaraun", "sincontestar"}
 
 
+def _name_tokens(stem: str) -> set:
+    """Palabras del nombre de fichero (separadores y cambios minúscula->MAYÚSCULA), en mayúsculas."""
+    tokens = re.findall(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+", str(stem))
+    return {token.upper() for token in tokens}
+
+
 def _detect_macro_group(path: str) -> str:
-    name = Path(path).stem.upper()
-    if "GITI" in name or "GIE" in name:
+    # Se comparan palabras completas: 'HIGIENE' contiene 'GIE' y no debe clasificarse como GITI-GIE-GIEI.
+    tokens = _name_tokens(Path(path).stem)
+    if tokens & {"GITI", "GIE", "GIEI"}:
         return "GITI-GIE-GIEI"
-    if "GIM" in name:
+    if "GIM" in tokens:
         return "GIM"
     return Path(path).stem
 
 
+def _candidates(override: Optional[str], defaults: Sequence[str]) -> List[str]:
+    """Lista de candidatos para :func:`_find_column`, con prioridad para el nombre indicado por el usuario."""
+    if override and str(override).strip():
+        return [str(override).strip(), *defaults]
+    return list(defaults)
+
+
 def _identity_key(row: pd.Series, id_col: Optional[str], name_col: Optional[str], last_name_col: Optional[str]) -> str:
-    student_id = _clean_text(row.get(id_col, "")) if id_col else ""
+    student_id = normalize_id(row.get(id_col, "")) if id_col else ""
     if student_id:
         return f"id::{student_id}"
 
@@ -212,13 +279,30 @@ class EnrollmentMerger:
       - ``source_dfs``: the raw DataFrames read from each file (filled by :meth:`merge`).
       - ``merged_df``: the consolidated roster (filled by :meth:`merge`).
       - ``output_path``: where the roster was written (filled by :meth:`export`).
+
+    ``first_name_col`` / ``last_name_col`` / ``id_col`` / ``email_col`` are optional column names of
+    the *source* files (e.g. the GUI column mapping); they take priority over the built-in candidates.
+    The merged roster always uses the canonical names ``Apellido(s)``, ``Nombre``, ``Número de ID``
+    and ``Dirección de correo``, and IDs are normalised (``11111111.0`` -> ``11111111``, blank -> ``''``).
     """
 
-    def __init__(self, source_paths: Iterable[str], sheet_name: int = 0) -> None:
+    def __init__(
+        self,
+        source_paths: Iterable[str],
+        sheet_name: int = 0,
+        first_name_col: Optional[str] = None,
+        last_name_col: Optional[str] = None,
+        id_col: Optional[str] = None,
+        email_col: Optional[str] = None,
+    ) -> None:
         self.source_paths: list = [str(p).strip() for p in source_paths if str(p).strip()]
         if not self.source_paths:
             raise ValueError("At least one enrollment path is required.")
         self.sheet_name = sheet_name
+        self.first_name_col = first_name_col
+        self.last_name_col = last_name_col
+        self.id_col = id_col
+        self.email_col = email_col
         self.source_dfs: Optional[list] = None
         self.merged_df: Optional[pd.DataFrame] = None
         self.output_path: Optional[str] = None
@@ -233,10 +317,13 @@ class EnrollmentMerger:
             self.source_dfs.append(df)
             columns = list(df.columns)
 
-            last_name_col = _find_column(columns, ["Apellido(s)", "Apellidos", "Apellido"])
-            first_name_col = _find_column(columns, ["Nombre"])
-            id_col = _find_column(columns, ["Número de ID", "Nmero de ID", "ID", "DNI"])
-            email_col = _find_column(columns, ["Dirección de correo", "Direccin de correo", "Email", "Correo"])
+            last_name_col = _find_column(columns, _candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"]))
+            first_name_col = _find_column(columns, _candidates(self.first_name_col, ["Nombre"]))
+            id_col = _find_column(columns, _candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID", "DNI"]))
+            email_col = _find_column(
+                columns,
+                _candidates(self.email_col, ["Dirección de correo", "Direccin de correo", "Email", "Correo"]),
+            )
             subgroup_col = _find_column(columns, ["Consulta", "Subgrupo", "Grupo", "Grupo prácticas"])
             source_group = _detect_macro_group(path)
 
@@ -266,7 +353,7 @@ class EnrollmentMerger:
                 if not merged["Nombre"] and first_name_col:
                     merged["Nombre"] = _clean_text(row.get(first_name_col, ""))
                 if not merged["Número de ID"] and id_col:
-                    merged["Número de ID"] = _clean_text(row.get(id_col, ""))
+                    merged["Número de ID"] = normalize_id(row.get(id_col, ""))
                 if not merged["Dirección de correo"] and email_col:
                     merged["Dirección de correo"] = _clean_text(row.get(email_col, ""))
 
@@ -299,7 +386,18 @@ class EnrollmentMerger:
         return out
 
     def export(self, output_path: str) -> pd.DataFrame:
-        """Run :meth:`merge` if needed and write the roster to ``output_path``."""
+        """Run :meth:`merge` if needed and write the roster to ``output_path``.
+
+        Raises ``ValueError`` if ``output_path`` is one of the source files: the merged roster only
+        keeps the normalised columns, so writing it there would destroy the teacher's original file.
+        """
+        target = Path(output_path).resolve()
+        for source in self.source_paths:
+            if Path(source).resolve() == target:
+                raise ValueError(
+                    "La matrícula fusionada no puede guardarse sobre uno de los ficheros de matriculados "
+                    f"de origen ('{source}'): se perderían sus columnas. Elige otra ruta de salida."
+                )
         if self.merged_df is None:
             self.merge()
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -308,13 +406,27 @@ class EnrollmentMerger:
         return self.merged_df
 
 
-def build_merged_enrollment_from_sources(paths: Iterable[str], sheet_name: int = 0) -> pd.DataFrame:
+def build_merged_enrollment_from_sources(
+    paths: Iterable[str],
+    sheet_name: int = 0,
+    first_name_col: Optional[str] = None,
+    last_name_col: Optional[str] = None,
+    id_col: Optional[str] = None,
+    email_col: Optional[str] = None,
+) -> pd.DataFrame:
     """Merge multiple enrollment exports and resolve subgroup selection per student.
 
     Thin functional wrapper kept for backward compatibility; delegates to
-    :class:`EnrollmentMerger`.
+    :class:`EnrollmentMerger` (the optional column names are passed through).
     """
-    return EnrollmentMerger(paths, sheet_name=sheet_name).merge()
+    return EnrollmentMerger(
+        paths,
+        sheet_name=sheet_name,
+        first_name_col=first_name_col,
+        last_name_col=last_name_col,
+        id_col=id_col,
+        email_col=email_col,
+    ).merge()
 
 
 

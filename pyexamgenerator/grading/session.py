@@ -4,7 +4,8 @@ A :class:`GradingSession` stores the paths of generated exams, the inputs and co
 grading workflow, the configuration used and a summary of the results. It is written **both** as a
 binary pickle (``.pkl``, exact round-trip) and as a human-readable JSON (``.json``, equivalent
 content) so a correction session can be resumed later — for example, knowing the paths of the exams
-that were generated and grading them directly without re-specifying every route.
+that were generated and grading them directly without re-specifying every route. Loading prefers the
+JSON: unpickling a file can run arbitrary code, so only load a ``.pkl`` you trust.
 """
 
 from __future__ import annotations
@@ -154,26 +155,50 @@ class GradingSession:
         return pkl_path, json_path
 
     @classmethod
-    def load(cls, path: str) -> "GradingSession":
-        """Loads a session from ``path`` (``.pkl`` or ``.json``) or from its base name.
+    def _load_json(cls, path: Path) -> "GradingSession":
+        with open(path, "r", encoding="utf-8") as handle:
+            return cls.from_dict(json.load(handle))
 
-        If an exact file is given it is used; otherwise the pickle is preferred over the JSON.
+    @staticmethod
+    def _load_pickle(path: Path) -> "GradingSession":
+        # Un pickle puede ejecutar código al cargarse: solo para ficheros de confianza.
+        with open(path, "rb") as handle:
+            return pickle.load(handle)
+
+    @classmethod
+    def load(cls, path: str, allow_pickle: bool = True) -> "GradingSession":
+        """Loads a session from ``path`` (``.json`` or ``.pkl``) or from its base name.
+
+        If an exact file is given it is used. From a base name the JSON is preferred: it restores the
+        same content and, unlike a pickle, cannot execute code when loaded. With ``allow_pickle=False``
+        nothing is ever unpickled: for a ``.pkl`` path the sibling ``.json`` is loaded instead (or
+        ``ValueError`` is raised if there is none). Only unpickle session files you trust.
         """
         p = Path(path)
-        if p.suffix.lower() == ".pkl" and p.exists():
-            with open(p, "rb") as handle:
-                return pickle.load(handle)
-        if p.suffix.lower() == ".json" and p.exists():
-            with open(p, "r", encoding="utf-8") as handle:
-                return cls.from_dict(json.load(handle))
+        suffix = p.suffix.lower()
+        if suffix == ".json" and p.exists():
+            return cls._load_json(p)
+        if suffix == ".pkl" and p.exists():
+            if allow_pickle:
+                return cls._load_pickle(p)
+            sibling = p.with_suffix(".json")
+            if sibling.exists():
+                return cls._load_json(sibling)
+            raise ValueError(
+                f"Por seguridad no se carga el fichero pickle '{path}' (podría ejecutar código). "
+                "Carga el .json de la sesión, que contiene la misma información."
+            )
 
         base = _strip_known_ext(str(path))
-        pkl_candidate = Path(base + ".pkl")
-        if pkl_candidate.exists():
-            with open(pkl_candidate, "rb") as handle:
-                return pickle.load(handle)
         json_candidate = Path(base + ".json")
         if json_candidate.exists():
-            with open(json_candidate, "r", encoding="utf-8") as handle:
-                return cls.from_dict(json.load(handle))
+            return cls._load_json(json_candidate)
+        pkl_candidate = Path(base + ".pkl")
+        if pkl_candidate.exists():
+            if allow_pickle:
+                return cls._load_pickle(pkl_candidate)
+            raise ValueError(
+                f"Solo existe el fichero pickle '{pkl_candidate}'; por seguridad no se carga. "
+                "Carga una sesión en formato .json."
+            )
         raise FileNotFoundError(f"No session file found for '{path}' (.pkl or .json).")

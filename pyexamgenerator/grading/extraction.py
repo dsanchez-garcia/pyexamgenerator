@@ -14,6 +14,8 @@ import cv2
 import numpy as np
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 # Backend OCR: el paquete nuevo `rapidocr` (>=2, soporta Python 3.13/3.14) si esta disponible;
 # si no, el antiguo `rapidocr_onnxruntime` (solo Python <3.13). La API difiere y se normaliza
 # en AnswerSheetExtractor._ocr_call.
@@ -51,6 +53,12 @@ class SheetResult:
     answers: Dict[str, str]
     audit_rows: List[Dict[str, object]]
     rotation_degrees: int = 0
+    # Etiqueta de la fila de la matrícula asociada al alumno (None si no se identificó).
+    enrollment_index: Optional[object] = None
+
+
+class ForcedStudentError(ValueError):
+    """El alumno forzado para una imagen (forced_student_by_image) no existe en la matrícula."""
 
 
 @dataclass
@@ -264,14 +272,24 @@ class AnswerSheetExtractor:
         value = min(value_candidates, key=lambda t: (abs(t.cy - label.cy), t.cx))
         return value.text.strip() or None
 
-    def _match_official_student(
+    def _official_identity(self, row: pd.Series) -> Tuple[Optional[str], Optional[str]]:
+        """(nombre oficial, ID oficial normalizado o None) de una fila de la matrícula."""
+        official_name = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}".strip()
+        id_col = getattr(self, "id_col", "Número de ID")
+        raw_id = row.get(id_col, "") if id_col in row.index else row.get("Número de ID", "")
+        # Un ID vacío (NaN -> 'nan') no es un ID: se devuelve None para que se registre MISSING_ID.
+        official_id = normalize_id(raw_id) or None
+        return official_name or None, official_id
+
+    def _match_official_student_row(
         self,
         student_name_ocr: Optional[str],
         first_name_raw: Optional[str],
         last_name_raw: Optional[str],
-    ) -> Tuple[Optional[str], Optional[str]]:
+    ) -> Tuple[Optional[str], Optional[str], Optional[object]]:
+        """Como :meth:`_match_official_student`, devolviendo además la etiqueta de la fila de la matrícula."""
         if self.enrollment_df is None:
-            return None, None
+            return None, None, None
 
         if first_name_raw and last_name_raw:
             first_name_norm = self._normalize(first_name_raw)
@@ -290,68 +308,83 @@ class AnswerSheetExtractor:
                     best_idx = idx
 
             if best_idx is not None and best_score >= 0.50:
-                row = self.enrollment_df.iloc[best_idx]
-                official_name = f"{row['Nombre']} {row['Apellido(s)']}".strip()
-                official_id = str(row.get("Número de ID", "")).strip() or None
-                return official_name, official_id
+                official_name, official_id = self._official_identity(self.enrollment_df.loc[best_idx])
+                return official_name, official_id, best_idx
 
         if not student_name_ocr:
-            return None, None
+            return None, None, None
 
         cleaned_name = student_name_ocr.strip().lower()
         matches = difflib.get_close_matches(cleaned_name, self.lookup_names, n=1, cutoff=0.6)
         if not matches:
-            return None, None
+            return None, None, None
 
-        row = self.enrollment_df[self.enrollment_df["Lookup_Name"] == matches[0]].iloc[0]
-        official_name = f"{row['Nombre']} {row['Apellido(s)']}".strip()
-        official_id = str(row.get("Número de ID", "")).strip() or None
+        matched = self.enrollment_df[self.enrollment_df["Lookup_Name"] == matches[0]]
+        official_name, official_id = self._official_identity(matched.iloc[0])
+        return official_name, official_id, matched.index[0]
+
+    def _match_official_student(
+        self,
+        student_name_ocr: Optional[str],
+        first_name_raw: Optional[str],
+        last_name_raw: Optional[str],
+    ) -> Tuple[Optional[str], Optional[str]]:
+        official_name, official_id, _ = self._match_official_student_row(
+            student_name_ocr, first_name_raw, last_name_raw
+        )
         return official_name, official_id
+
+    def _resolve_forced_student_row(self, identifier: str) -> Tuple[Optional[str], Optional[str], Optional[object]]:
+        """Como :meth:`_resolve_forced_student`, devolviendo además la etiqueta de la fila de la matrícula."""
+        if self.enrollment_df is None:
+            raise ForcedStudentError("forced_student_by_image requiere una matrícula cargada (enrollment_df).")
+
+        ident = str(identifier).strip()
+        if not ident:
+            raise ForcedStudentError("forced_student_by_image: identificador de alumno vacío.")
+
+        def _row_to_triple(label: object, row: pd.Series) -> Tuple[Optional[str], Optional[str], Optional[object]]:
+            official_name = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}".strip()
+            official_id = normalize_id(row.get(self.id_col, "")) or None
+            return official_name or None, official_id, label
+
+        # 1) Coincidencia exacta por "Número de ID" normalizado (lo más inequívoco; 123.0 == 123).
+        ident_id = normalize_id(ident)
+        if ident_id and self.id_col in self.enrollment_df.columns:
+            id_series = self.enrollment_df[self.id_col].map(normalize_id)
+            matches = self.enrollment_df[id_series == ident_id]
+            if not matches.empty:
+                return _row_to_triple(matches.index[0], matches.iloc[0])
+
+        # 2) Coincidencia exacta por nombre completo normalizado ("Nombre Apellido(s)").
+        ident_norm = self._normalize(ident)
+        for label, row in self.enrollment_df.iterrows():
+            full = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}"
+            full_rev = f"{row.get('Apellido(s)', '')} {row.get('Nombre', '')}"
+            if self._normalize(full) == ident_norm or self._normalize(full_rev) == ident_norm:
+                return _row_to_triple(label, row)
+
+        # 3) Coincidencia aproximada por nombre.
+        fuzzy = difflib.get_close_matches(ident.lower(), self.lookup_names, n=1, cutoff=0.6)
+        if fuzzy:
+            matched = self.enrollment_df[self.enrollment_df["Lookup_Name"] == fuzzy[0]]
+            return _row_to_triple(matched.index[0], matched.iloc[0])
+
+        raise ForcedStudentError(
+            f"forced_student_by_image: no se encontró ningún alumno para '{identifier}' "
+            f"en la matrícula (ni por '{self.id_col}' ni por nombre)."
+        )
 
     def _resolve_forced_student(self, identifier: str) -> Tuple[Optional[str], Optional[str]]:
         """Resolve a manually supplied student identifier against the enrollment.
 
         ``identifier`` may be the official ``id_col`` value ("Número de ID") or the student's
         full name as it appears in the enrollment. Returns ``(official_name, official_id)``.
-        Raises ``ValueError`` if no enrollment is loaded or the identifier matches no student.
+        Raises ``ValueError`` (:class:`ForcedStudentError`) if no enrollment is loaded or the
+        identifier matches no student.
         """
-        if self.enrollment_df is None:
-            raise ValueError("forced_student_by_image requiere una matrícula cargada (enrollment_df).")
-
-        ident = str(identifier).strip()
-        if not ident:
-            raise ValueError("forced_student_by_image: identificador de alumno vacío.")
-
-        def _row_to_pair(row: pd.Series) -> Tuple[Optional[str], Optional[str]]:
-            official_name = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}".strip()
-            official_id = str(row.get(self.id_col, "")).strip() or None
-            return official_name or None, official_id
-
-        # 1) Coincidencia exacta por "Número de ID" (lo más inequívoco).
-        if self.id_col in self.enrollment_df.columns:
-            id_series = self.enrollment_df[self.id_col].astype(str).str.strip()
-            matches = self.enrollment_df[id_series == ident]
-            if not matches.empty:
-                return _row_to_pair(matches.iloc[0])
-
-        # 2) Coincidencia exacta por nombre completo normalizado ("Nombre Apellido(s)").
-        ident_norm = self._normalize(ident)
-        for _, row in self.enrollment_df.iterrows():
-            full = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}"
-            full_rev = f"{row.get('Apellido(s)', '')} {row.get('Nombre', '')}"
-            if self._normalize(full) == ident_norm or self._normalize(full_rev) == ident_norm:
-                return _row_to_pair(row)
-
-        # 3) Coincidencia aproximada por nombre.
-        fuzzy = difflib.get_close_matches(ident.lower(), self.lookup_names, n=1, cutoff=0.6)
-        if fuzzy:
-            row = self.enrollment_df[self.enrollment_df["Lookup_Name"] == fuzzy[0]].iloc[0]
-            return _row_to_pair(row)
-
-        raise ValueError(
-            f"forced_student_by_image: no se encontró ningún alumno para '{identifier}' "
-            f"en la matrícula (ni por '{self.id_col}' ni por nombre)."
-        )
+        official_name, official_id, _ = self._resolve_forced_student_row(identifier)
+        return official_name, official_id
 
     @staticmethod
     def _infer_question_spacing(question_tokens: Sequence[OcrToken]) -> float:
@@ -727,14 +760,14 @@ class AnswerSheetExtractor:
         elif first_name_raw:
             student_name_ocr = first_name_raw
 
-        student_name_official, student_id_official = self._match_official_student(
+        student_name_official, student_id_official, enrollment_index = self._match_official_student_row(
             student_name_ocr, first_name_raw, last_name_raw
         )
 
         # Identificación manual del alumno: prevalece sobre el resultado del OCR.
         forced_key = Path(image_path).name
         if forced_key in self.forced_student_by_image:
-            student_name_official, student_id_official = self._resolve_forced_student(
+            student_name_official, student_id_official, enrollment_index = self._resolve_forced_student_row(
                 self.forced_student_by_image[forced_key]
             )
 
@@ -753,6 +786,7 @@ class AnswerSheetExtractor:
             answers=answers,
             audit_rows=audit_rows,
             rotation_degrees=rotation_degrees,
+            enrollment_index=enrollment_index,
         )
 
     def process_batch(self, image_paths: Sequence[str]) -> List[SheetResult]:
@@ -771,7 +805,7 @@ def results_to_dataframe(results: Sequence[SheetResult]) -> pd.DataFrame:
             "Apellidos_Raw": r.last_name_raw or "",
             "Nombre_OCR": r.student_name_ocr or "",
             "Nombre_Oficial": r.student_name_official or "",
-            "ID_Oficial": r.student_id_official or "",
+            "ID_Oficial": normalize_id(r.student_id_official),
         }
         for q in all_questions:
             row[q] = r.answers.get(q, "")
@@ -941,6 +975,8 @@ class ImageExamGrader:
 
         self.questions_by_exam_type = self._load_xmls_by_exam_type(self.xml_paths)
         self.available_exam_types = sorted(self.questions_by_exam_type.keys())
+        # Incidencias de la última corrección (también se escriben en output_incidents si se indica).
+        self.last_incidents_df: Optional[pd.DataFrame] = None
 
     def _load_enrollment(self, enrollment_path: Optional[str]) -> Optional[pd.DataFrame]:
         if self.enrollment_paths:
@@ -1074,18 +1110,67 @@ class ImageExamGrader:
         return max(0.0, total), points_per_question_output
 
     def _enrollment_row_from_id(self, official_id: Optional[str]) -> Optional[pd.Series]:
-        if self.enrollment_df is None or not official_id:
+        if self.enrollment_df is None:
             return None
 
-        normalized_id = str(official_id).strip()
-        if normalized_id == "":
+        # NaN/'nan'/'' no son IDs: con str() coincidirían con el primer alumno sin ID de la matrícula.
+        normalized_id = normalize_id(official_id)
+        if normalized_id == "" or self.id_col not in self.enrollment_df.columns:
             return None
 
-        series = self.enrollment_df[self.id_col].astype(str).str.strip()
+        series = self.enrollment_df[self.id_col].map(normalize_id)
         matches = self.enrollment_df[series == normalized_id]
         if matches.empty:
             return None
         return matches.iloc[0]
+
+    def _enrollment_row_for_sheet(self, sheet: SheetResult) -> Optional[pd.Series]:
+        """Fila de la matrícula del alumno identificado en la hoja.
+
+        Se usa la fila con la que se emparejó el OCR (``enrollment_index``); solo si no se conoce se
+        busca por el ID oficial normalizado. Nunca se busca por un ID vacío.
+        """
+        if self.enrollment_df is None:
+            return None
+        index = getattr(sheet, "enrollment_index", None)
+        if index is not None and index in self.enrollment_df.index:
+            return self.enrollment_df.loc[index]
+        return self._enrollment_row_from_id(sheet.student_id_official)
+
+    @staticmethod
+    def _cell_text(value: object) -> str:
+        if value is None:
+            return ""
+        try:
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return str(value).strip()
+
+    def _process_images(self, image_paths: Sequence[str]) -> Tuple[List[SheetResult], List[Dict[str, object]]]:
+        """OCR imagen a imagen: una hoja ilegible se registra como incidencia y no aborta el lote."""
+        sheets: List[SheetResult] = []
+        incidents: List[Dict[str, object]] = []
+        for image_path in image_paths:
+            try:
+                sheets.append(self.extractor.process_image(image_path))
+            except Exception as exc:  # noqa: BLE001 - se informa como incidencia de esa hoja
+                if isinstance(exc, ForcedStudentError):
+                    incident_type = "FORCED_STUDENT_ERROR"
+                elif isinstance(exc, OSError):
+                    incident_type = "IMAGE_READ_ERROR"
+                else:
+                    incident_type = "IMAGE_ERROR"
+                incidents.append(
+                    {
+                        "Imagen": str(image_path),
+                        "Tipo": incident_type,
+                        "Severidad": "alta",
+                        "Detalle": f"Hoja no corregida: {type(exc).__name__}: {exc}",
+                    }
+                )
+        return sheets, incidents
 
     @staticmethod
     def _parse_decimal_grade(value: object) -> Optional[float]:
@@ -1105,6 +1190,7 @@ class ImageExamGrader:
         sheet_results: Sequence[SheetResult],
         grades_df: pd.DataFrame,
         audit_df: Optional[pd.DataFrame],
+        extra_incidents: Optional[Sequence[Dict[str, object]]] = None,
     ) -> pd.DataFrame:
         incidents: List[Dict[str, object]] = []
         grade_by_image: Dict[str, float] = {}
@@ -1140,7 +1226,7 @@ class ImageExamGrader:
 
         for sheet in sheet_results:
             image = sheet.image
-            if not str(sheet.student_id_official or "").strip():
+            if not normalize_id(sheet.student_id_official):
                 incidents.append(
                     {
                         "Imagen": image,
@@ -1193,9 +1279,10 @@ class ImageExamGrader:
                     }
                 )
 
+        incidents.extend(extra_incidents or [])
         if not incidents:
             return pd.DataFrame(columns=["Imagen", "Tipo", "Severidad", "Detalle"])
-        return pd.DataFrame(incidents)
+        return pd.DataFrame(incidents, columns=["Imagen", "Tipo", "Severidad", "Detalle"])
 
     @staticmethod
     def _best_option_from_audit_row(row: Dict[str, object]) -> Tuple[str, float, float]:
@@ -1381,7 +1468,20 @@ class ImageExamGrader:
             if output_manual_changes:
                 output_manual_changes = str(output_base / Path(output_manual_changes).name)
 
-        sheet_results = self.extractor.process_batch(image_paths)
+        # Una imagen ilegible o un alumno forzado inexistente no aborta el lote: se registra la incidencia.
+        sheet_results, extra_incidents = self._process_images(image_paths)
+        if image_paths and not sheet_results and extra_incidents:
+            # Ninguna hoja legible (p. ej. carpeta o formato equivocados): se guardan las incidencias y se
+            # avisa con un error en lugar de dar por buena una corrección sin ninguna nota.
+            incidents_df = pd.DataFrame(extra_incidents, columns=["Imagen", "Tipo", "Severidad", "Detalle"])
+            self.last_incidents_df = incidents_df
+            if output_incidents:
+                incidents_df.to_excel(output_incidents, index=False)
+            raise ValueError(
+                f"No se pudo procesar ninguna de las {len(image_paths)} imagen(es). "
+                f"Primer error ({extra_incidents[0]['Imagen']}): {extra_incidents[0]['Detalle']}"
+                + (f"\nRevisa: {output_incidents}" if output_incidents else "")
+            )
         manual_changes: List[Dict[str, object]] = []
         if interactive_review:
             _updated, manual_changes = self._run_interactive_review(sheet_results, open_image_on_review=open_image_on_review)
@@ -1397,7 +1497,24 @@ class ImageExamGrader:
         reference_weight_str = f"{reference_weight:.2f}".replace(".", ",")
 
         for sheet in sheet_results:
-            exam_type = self._resolve_exam_type(sheet, forced, prompt_missing_type)
+            try:
+                exam_type = self._resolve_exam_type(sheet, forced, prompt_missing_type)
+            except ValueError as exc:
+                # Tipo ilegible o no cargado: no se corrige con una clave adivinada; se deja como incidencia.
+                resolved_types.append("")
+                suggestion = self._suggest_exam_type_from_answers(sheet.answers)
+                extra_incidents.append(
+                    {
+                        "Imagen": sheet.image,
+                        "Tipo": "EXAM_TYPE_UNRESOLVED",
+                        "Severidad": "alta",
+                        "Detalle": (
+                            f"Hoja no corregida: {exc}. Asigna su tipo en 'Tipos forzados' y vuelve a corregir"
+                            + (f" (tipo sugerido por las respuestas: {suggestion})." if suggestion else ".")
+                        ),
+                    }
+                )
+                continue
             resolved_types.append(exam_type)
             total_score, points_by_question = self._calculate_score_for_type(sheet.answers, exam_type)
 
@@ -1406,20 +1523,21 @@ class ImageExamGrader:
                 "Tipo_Examen": exam_type,
                 "Nombre_OCR": sheet.student_name_ocr or "",
                 "Nombre_Oficial": sheet.student_name_official or "",
-                "ID_Oficial": sheet.student_id_official or "",
+                "ID_Oficial": normalize_id(sheet.student_id_official),
                 "Calificacion/10,00": f"{total_score:.2f}".replace(".", ","),
             }
 
-            enrollment_row = self._enrollment_row_from_id(sheet.student_id_official)
+            # La identidad sale de la fila con la que se emparejó el OCR (no de re-buscar un ID vacío).
+            enrollment_row = self._enrollment_row_for_sheet(sheet)
             if enrollment_row is not None:
-                row[self.last_name_col] = str(enrollment_row.get(self.last_name_col, ""))
-                row[self.first_name_col] = str(enrollment_row.get(self.first_name_col, ""))
-                row[self.id_col] = str(enrollment_row.get(self.id_col, ""))
-                row[self.email_col] = str(enrollment_row.get(self.email_col, ""))
+                row[self.last_name_col] = self._cell_text(enrollment_row.get(self.last_name_col, ""))
+                row[self.first_name_col] = self._cell_text(enrollment_row.get(self.first_name_col, ""))
+                row[self.id_col] = normalize_id(enrollment_row.get(self.id_col, ""))
+                row[self.email_col] = self._cell_text(enrollment_row.get(self.email_col, ""))
                 if "Grupo_Principal" in enrollment_row.index:
-                    row["Grupo_Principal"] = str(enrollment_row.get("Grupo_Principal", ""))
+                    row["Grupo_Principal"] = self._cell_text(enrollment_row.get("Grupo_Principal", ""))
                 if "Subgrupo_Practicas" in enrollment_row.index:
-                    row["Subgrupo_Practicas"] = str(enrollment_row.get("Subgrupo_Practicas", ""))
+                    row["Subgrupo_Practicas"] = self._cell_text(enrollment_row.get("Subgrupo_Practicas", ""))
 
             for question in all_questions:
                 question_num = int(re.search(r"\d+", question).group())
@@ -1432,18 +1550,27 @@ class ImageExamGrader:
         answers_df.to_excel(output_answers, index=False)
 
         grades_df = pd.DataFrame(moodle_rows)
+        if grades_df.empty:
+            # Sin hojas corregidas se mantienen las columnas básicas (la integración posterior las espera).
+            grades_df = pd.DataFrame(
+                columns=["Imagen", "Tipo_Examen", "Nombre_OCR", "Nombre_Oficial", "ID_Oficial", "Calificacion/10,00"]
+            )
         grades_df.to_excel(output_grades, index=False)
 
+        # La auditoría se calcula siempre en memoria: las incidencias de marcas dudosas o sin resolver
+        # (LOW_CONFIDENCE_MARKS / UNRESOLVED_ANSWERS) dependen de ella. Solo se escribe si se pide.
+        full_audit_df = audit_to_dataframe(sheet_results)
         audit_df = None
         if output_audit:
-            audit_df = audit_to_dataframe(sheet_results)
+            audit_df = full_audit_df
             audit_df.to_excel(output_audit, index=False)
 
-        incidents_df = self._build_ocr_incidents(sheet_results, grades_df, audit_df)
+        incidents_df = self._build_ocr_incidents(sheet_results, grades_df, full_audit_df, extra_incidents)
+        self.last_incidents_df = incidents_df
         if output_incidents:
             incidents_df.to_excel(output_incidents, index=False)
 
-        review_df = self._build_manual_review_dataframe(audit_df)
+        review_df = self._build_manual_review_dataframe(full_audit_df)
         if output_review:
             review_df.to_excel(output_review, index=False)
 

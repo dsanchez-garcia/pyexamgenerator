@@ -4,11 +4,13 @@ import argparse
 import difflib
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import pandas as pd
+
+from pyexamgenerator.grading._ids import normalize_id
 
 
 @dataclass
@@ -19,6 +21,8 @@ class AbsenceJustificationResult:
     sender_absence_check_df: Optional[pd.DataFrame] = None
     attendance_quiz_df: Optional[pd.DataFrame] = None
     extreme_justified_absences_df: Optional[pd.DataFrame] = None
+    # Avisos para el usuario (p. ej. no se encontró ninguna columna de sesión en las asistencias).
+    warnings: List[str] = field(default_factory=list)
 
 
 class AbsenceJustificationManager:
@@ -183,8 +187,9 @@ class AbsenceJustificationManager:
 
     @staticmethod
     def _is_attendance_date_column(column_name: str) -> bool:
+        # Cualquier año: la fecha debe poder leerse ("10 feb 2027 10:00 Todos los estudiantes").
         text = str(column_name)
-        return "2026" in text and "Todos los estudiantes" in text
+        return "Todos los estudiantes" in text and AbsenceJustificationManager._parse_attendance_date(text) is not None
 
     @staticmethod
     def _is_present_value(value: object) -> bool:
@@ -261,7 +266,9 @@ class AbsenceJustificationManager:
     @staticmethod
     def _student_lookup_keys(student_id: object, first_name: object, last_name: object) -> List[str]:
         keys: List[str] = []
-        sid = str(student_id or "").strip()
+        # Un ID vacío (NaN, 'nan', '') nunca genera clave 'id:': si no, todos los alumnos sin ID
+        # compartirían la justificación de cualquiera de ellos.
+        sid = normalize_id(student_id)
         if sid:
             keys.append(f"id:{sid}")
         sname = AbsenceJustificationManager._student_name_key(first_name, last_name)
@@ -389,6 +396,8 @@ class AbsenceJustificationManager:
             out["_email_norm"] = out[email_col].astype(str).str.strip().str.lower()
         else:
             out["_email_norm"] = ""
+        # ID normalizado: NaN/'nan' -> '' y 11111111.0 -> '11111111'.
+        out["_id_norm"] = out[id_col].map(normalize_id) if id_col else ""
         return out
 
     def _match_sender_to_enrollment(
@@ -429,7 +438,7 @@ class AbsenceJustificationManager:
             attendance_df[first_name_col].astype(str).str.strip() + " " + attendance_df[last_name_col].astype(str).str.strip()
         ).str.strip()
         attendance_df["_full_name_norm"] = attendance_df["_full_name"].map(self._normalize)
-        attendance_df["_id_norm"] = attendance_df[id_col].astype(str).str.strip() if id_col else ""
+        attendance_df["_id_norm"] = attendance_df[id_col].map(normalize_id) if id_col else ""
         date_cols = [c for c in attendance_df.columns if self._is_attendance_date_column(str(c))]
         return attendance_df, date_cols, first_name_col, last_name_col, (id_col or "")
 
@@ -486,7 +495,11 @@ class AbsenceJustificationManager:
                 }
             )
 
-        return pd.DataFrame(rows)
+        # Sin columnas de sesión se devuelve una tabla vacía con las columnas esperadas (no un KeyError).
+        return pd.DataFrame(
+            rows,
+            columns=["Fecha_Asistencia_Col", "Fecha_Clase", "Tema_Clase", "Grupo_Clase", "Clase_Label", "Es_Teoria"],
+        )
 
     def _build_attendance_overview(
         self,
@@ -525,7 +538,7 @@ class AbsenceJustificationManager:
         for _, erow in enrollment_df.iterrows():
             id_col = str(erow.get("_id_col", "")).strip()
             email_col = str(erow.get("_email_col", "")).strip()
-            student_id = str(erow.get(id_col, "")).strip() if id_col else ""
+            student_id = normalize_id(erow.get(id_col, "")) if id_col else ""
             student_name = str(erow.get("_full_name", "")).strip()
             student_name_norm = str(erow.get("_full_name_norm", "")).strip()
             student_email = str(erow.get(email_col, "")).strip() if email_col else ""
@@ -630,8 +643,10 @@ class AbsenceJustificationManager:
                     group,
                 ))
 
-        q_first_col = self._find_column(quizzes_df.columns, ["Nombre"])
-        q_last_col = self._find_column(quizzes_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
+        q_first_col = self._find_column(quizzes_df.columns, self._candidates(self.first_name_col, ["Nombre"]))
+        q_last_col = self._find_column(
+            quizzes_df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+        )
         if q_first_col is None or q_last_col is None:
             return pd.DataFrame()
 
@@ -641,15 +656,21 @@ class AbsenceJustificationManager:
             if key and key not in quiz_by_key:
                 quiz_by_key[key] = qrow
 
-        a_first_col = self._find_column(attendance_df.columns, ["Nombre"])
-        a_last_col = self._find_column(attendance_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
-        a_id_col = self._find_column(attendance_df.columns, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"])
+        # Mismas columnas (y mismo mapeo del usuario) que en _build_attendance_lookup.
+        a_first_col = self._find_column(attendance_df.columns, self._candidates(self.first_name_col, ["Nombre"]))
+        a_last_col = self._find_column(
+            attendance_df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+        )
+        a_id_col = self._find_column(
+            attendance_df.columns,
+            self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"]),
+        )
 
         rows: List[Dict[str, object]] = []
         for _, arow in attendance_df.iterrows():
             key = self._student_name_key(arow.get(a_first_col, ""), arow.get(a_last_col, ""))
             qrow = quiz_by_key.get(key)
-            student_id_val = "" if a_id_col is None else str(arow.get(a_id_col, "")).strip()
+            student_id_val = "" if a_id_col is None else normalize_id(arow.get(a_id_col, ""))
             student_first_name = "" if a_first_col is None else str(arow.get(a_first_col, "")).strip()
             student_last_name = "" if a_last_col is None else str(arow.get(a_last_col, "")).strip()
             row_out: Dict[str, object] = {
@@ -777,7 +798,7 @@ class AbsenceJustificationManager:
         sender_name_norms: Set[str] = set()
         sender_info: Dict[str, Dict[str, str]] = {}
         for _, row in summary_df.iterrows():
-            student_id = str(row.get("ID_Alumno", "")).strip()
+            student_id = normalize_id(row.get("ID_Alumno", ""))
             student_name = str(row.get("Alumno_Matcheado", "")).strip()
             if not student_name:
                 continue
@@ -802,7 +823,7 @@ class AbsenceJustificationManager:
 
         attendance_cols = [c for c in attendance_quiz_df.columns if str(c).endswith("__Asistencia")]
         for _, row in attendance_quiz_df.iterrows():
-            student_id = str(row.get("ID_Alumno", "")).strip()
+            student_id = normalize_id(row.get("ID_Alumno", ""))
             full_name = f"{str(row.get('Nombre', '')).strip()} {str(row.get('Apellido(s)', '')).strip()}".strip()
             full_name_norm = self._normalize(full_name)
             key = f"{student_id}|{full_name_norm}"
@@ -837,6 +858,15 @@ class AbsenceJustificationManager:
         if self.sender_col not in just_df.columns:
             raise ValueError(f"Justifications file must include column '{self.sender_col}'.")
 
+        warnings: List[str] = []
+        if not date_cols:
+            warnings.append(
+                "No se encontró ninguna columna de sesión en el fichero de asistencias "
+                f"'{self.attendance_xlsx_path}' (cabecera en la fila {self.attendance_header_row}; se esperan "
+                "columnas como '10 feb 2027 10:00 Todos los estudiantes'). Sin sesiones nadie obtiene el "
+                "punto extra: revisa la fila de cabecera del fichero de asistencias."
+            )
+
         attendance_overview_df = self._build_attendance_overview(
             enrollment_df=enrollment_df,
             attendance_df=attendance_df,
@@ -846,6 +876,11 @@ class AbsenceJustificationManager:
 
         summary_rows: List[Dict[str, object]] = []
         detailed_rows: List[Dict[str, object]] = []
+        # (ID normalizado, nombre, apellidos) del alumno de la matrícula, en paralelo a summary_rows /
+        # detailed_rows. Las claves de justificación se construyen con ellos (no partiendo el nombre
+        # completo por espacios, que rompe los nombres compuestos como 'María José').
+        summary_identities: List[Tuple[str, object, object]] = []
+        detailed_identities: List[Tuple[str, object, object]] = []
 
         session_map = self._build_sessions_catalog(date_cols)
         session_label_by_col = {
@@ -881,14 +916,18 @@ class AbsenceJustificationManager:
             student_name = ""
             student_id = ""
             student_email = ""
+            student_first_name: object = ""
+            student_last_name: object = ""
             attendance_match = None
 
             if enrollment_match is not None:
                 student_name = str(enrollment_match.get("_full_name", "")).strip()
                 id_col = str(enrollment_match.get("_id_col", "")).strip()
                 email_col = str(enrollment_match.get("_email_col", "")).strip()
-                student_id = str(enrollment_match.get(id_col, "")).strip() if id_col else ""
+                student_id = normalize_id(enrollment_match.get(id_col, "")) if id_col else ""
                 student_email = str(enrollment_match.get(email_col, "")).strip() if email_col else ""
+                student_first_name = enrollment_match.get(str(enrollment_match.get("_first_name_col", "")), "")
+                student_last_name = enrollment_match.get(str(enrollment_match.get("_last_name_col", "")), "")
 
                 if student_id and attendance_id_col:
                     att = attendance_df[attendance_df["_id_norm"] == student_id]
@@ -899,6 +938,7 @@ class AbsenceJustificationManager:
                     att = attendance_df[attendance_df["_full_name_norm"] == full_norm]
                     if not att.empty:
                         attendance_match = att.iloc[0]
+            identity = (student_id, student_first_name, student_last_name)
 
             absences: List[str] = []
             uncertain_dates: List[str] = []
@@ -937,6 +977,7 @@ class AbsenceJustificationManager:
                             "Es_Dudosa": "si" if (not self._is_present_value(value) and not self._is_absence_value(value)) else "no",
                         }
                     )
+                    detailed_identities.append(identity)
             else:
                 detailed_rows.append(
                     {
@@ -962,7 +1003,9 @@ class AbsenceJustificationManager:
                         "Es_Dudosa": "si",
                     }
                 )
+                detailed_identities.append(identity)
 
+            summary_identities.append(identity)
             summary_rows.append(
                 {
                     "Fecha_Correo": mail_row.get("FECHA", ""),
@@ -1036,35 +1079,21 @@ class AbsenceJustificationManager:
         justified_classes_by_student: Dict[str, Set[str]] = {}
         if self.justification_mode == "extremo":
             # Modo extremo: cualquier alumno que haya escrito queda con todas las faltas justificadas.
-            for _, row in summary_df.iterrows():
+            for row, (student_id, first_name, last_name) in zip(summary_rows, summary_identities):
                 full_name = str(row.get("Alumno_Matcheado", "")).strip()
                 if not full_name:
                     continue
-                student_id = str(row.get("ID_Alumno", "")).strip()
-                first_name = ""
-                last_name = ""
-                parts = [p for p in full_name.split(" ") if p]
-                if parts:
-                    first_name = parts[0]
-                    last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-                for lookup_key in self._student_lookup_keys(student_id, first_name, last_name):
+                for lookup_key in self._justification_lookup_keys(student_id, first_name, last_name, full_name):
                     justified_classes_by_student.setdefault(lookup_key, set()).add("__ALL_ABSENCES__")
         else:
-            for _, row in detailed_df.iterrows():
+            for row, (student_id, first_name, last_name) in zip(detailed_rows, detailed_identities):
                 if str(row.get("Es_Falta_Clara", "")).strip().lower() != "si":
                     continue
                 class_label = str(row.get("Clase_Label", "")).strip()
                 if not class_label:
                     continue
-                student_id = str(row.get("ID_Alumno", "")).strip()
                 full_name = str(row.get("Alumno_Matcheado", "")).strip()
-                first_name = ""
-                last_name = ""
-                parts = [p for p in full_name.split(" ") if p]
-                if parts:
-                    first_name = parts[0]
-                    last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-                for lookup_key in self._student_lookup_keys(student_id, first_name, last_name):
+                for lookup_key in self._justification_lookup_keys(student_id, first_name, last_name, full_name):
                     justified_classes_by_student.setdefault(lookup_key, set()).add(class_label)
 
         attendance_quiz_df = self._build_attendance_with_quizzes_df(
@@ -1085,7 +1114,20 @@ class AbsenceJustificationManager:
             sender_absence_check_df=sender_absence_check_df,
             attendance_quiz_df=attendance_quiz_df,
             extreme_justified_absences_df=extreme_justified_absences_df,
+            warnings=warnings,
         )
+
+    @classmethod
+    def _justification_lookup_keys(
+        cls, student_id: object, first_name: object, last_name: object, full_name: str
+    ) -> List[str]:
+        """Claves (id/nombre) de un alumno que justificó, con su nombre y apellidos de la matrícula."""
+        if not cls._normalize(first_name) and not cls._normalize(last_name):
+            # Sin nombre/apellidos separados (no debería ocurrir): reparto histórico del nombre completo.
+            parts = [p for p in str(full_name).split(" ") if p]
+            first_name = parts[0] if parts else ""
+            last_name = " ".join(parts[1:])
+        return cls._student_lookup_keys(student_id, first_name, last_name)
 
     def analyze_and_export(
         self,
@@ -1129,6 +1171,8 @@ class AbsenceJustificationManager:
         ):
             result.extreme_justified_absences_df.to_excel(extreme_justified_absences_output_path, index=False)
 
+        for warning in result.warnings:
+            print(f"Warning: {warning}")
         print(f"OK: justification summary -> {summary_output_path} ({len(result.summary_df)} rows)")
         print(f"OK: justification detail -> {detailed_output_path} ({len(result.detailed_df)} rows)")
         if attendance_overview_output_path and result.attendance_overview_df is not None:
@@ -1590,14 +1634,8 @@ def _normalize_bonus_text(text: object) -> str:
 
 
 def _normalize_bonus_id(value: object) -> str:
-    if pd.isna(value):
-        return ""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    text = str(value).strip()
-    if re.fullmatch(r"\d+\.0", text):
-        return text[:-2]
-    return text
+    # 'nan'/NaN/'' -> '' (un ID vacío no puede dar el punto extra a otro alumno sin ID).
+    return normalize_id(value)
 
 
 def _parse_bonus_grade(value: object) -> Optional[float]:

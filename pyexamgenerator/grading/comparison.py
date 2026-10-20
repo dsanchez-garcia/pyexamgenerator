@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 
 def _normalize(text: Any) -> str:
     text = str(text).strip().lower()
@@ -103,7 +105,7 @@ class ResultComparator:
 
     @staticmethod
     def _row_key(row: pd.Series, id_col, first_col, last_col) -> str:
-        ident = _clean(row.get(id_col, "")) if id_col else ""
+        ident = normalize_id(row.get(id_col, "")) if id_col else ""
         if ident:
             return f"id::{ident}"
         first = _normalize(row.get(first_col, "")) if first_col else ""
@@ -114,7 +116,7 @@ class ResultComparator:
     @staticmethod
     def _identity_fields(row: pd.Series, id_col, first_col, last_col) -> Dict[str, str]:
         return {
-            "Número de ID": _clean(row.get(id_col, "")) if id_col else "",
+            "Número de ID": normalize_id(row.get(id_col, "")) if id_col else "",
             "Nombre": _clean(row.get(first_col, "")) if first_col else "",
             "Apellido(s)": _clean(row.get(last_col, "")) if last_col else "",
         }
@@ -206,6 +208,9 @@ class ResultComparator:
             for col in value_columns:
                 if col not in merged_df.columns:
                     merged_df[col] = pd.NA
+                # pandas 3 no convierte el tipo al asignar: una columna numérica (o vacía) no acepta
+                # '9,50' ni 'asiste'. Con dtype object cada celda conserva el valor nuevo tal cual.
+                merged_df[col] = merged_df[col].astype(object)
             for key in common:
                 new_row = new.loc[new_index[key]]
                 for col in value_columns:

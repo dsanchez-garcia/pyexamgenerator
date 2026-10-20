@@ -801,7 +801,14 @@ class ExamApp:
         ``work_fn`` may return either:
         - a string (success info), or
         - a dict like {"info": "...", "warnings": ["...", ...]}.
+
+        Solo se ejecuta una tarea de corrección a la vez (comparten ficheros de salida): si ya hay una
+        en marcha se avisa y no se lanza otra. ``work_fn`` no debe leer variables de Tk (se ejecuta en
+        otro hilo): los datos de entrada se capturan antes de llamar a este método.
         """
+        if not self._grad_try_begin_job():
+            return
+
         def worker():
             try:
                 self.root.after(0, lambda: self.update_status(status_msg))
@@ -826,29 +833,71 @@ class ExamApp:
                 if result_msg:
                     self.root.after(0, lambda m=result_msg: messagebox.showinfo("Corrección", m))
             except Exception as exc:  # noqa: BLE001 - surfaced to the user
-                err = str(exc)
+                err = self._grad_error_text(exc)
                 self.root.after(0, lambda: self.update_status("Error en la corrección."))
                 self.root.after(0, lambda e=err: messagebox.showerror("Error", e))
+            finally:
+                self._grad_end_job()
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _grad_api(self):
+    def _grad_try_begin_job(self) -> bool:
+        """Marca el inicio de una tarea de corrección; False (y aviso) si ya hay otra en marcha."""
+        if getattr(self, "_grad_job_running", False):
+            messagebox.showwarning(
+                "Corrección en curso",
+                "Ya hay una tarea de corrección en marcha. Espera a que termine antes de lanzar otra.",
+            )
+            return False
+        self._grad_job_running = True
+        return True
+
+    def _grad_end_job(self) -> None:
+        self._grad_job_running = False
+
+    @staticmethod
+    def _grad_error_text(exc: Exception) -> str:
+        """Texto de error para el usuario (un KeyError solo mostraría el nombre de la columna entre comillas)."""
+        if isinstance(exc, KeyError):
+            missing = exc.args[0] if exc.args else exc
+            return (f"Falta la columna '{missing}' en alguno de los ficheros de entrada. "
+                    "Revisa el mapeo de columnas y los ficheros seleccionados.")
+        return str(exc)
+
+    def _grad_api(self, out_dir: Optional[str] = None):
         from pyexamgenerator.grading import ExamCorrectionAPI
-        out = self.grad_out_var.get().strip() or None
-        return ExamCorrectionAPI(default_output_dir=out)
+        out = out_dir if out_dir is not None else (self.grad_out_var.get().strip() or None)
+        return ExamCorrectionAPI(default_output_dir=out or None)
 
     def _grad_enrollment_list(self):
         return [p for p in self.grad_enrollment_var.get().split(";") if p.strip()]
 
-    def _grad_merged_enrollment(self, out_dir: str) -> str:
-        """Merges the selected enrollment files into ``<out_dir>/matriculados.xlsx`` and returns its path."""
+    def _grad_merged_enrollment(self, out_dir: str, paths: Optional[List[str]] = None,
+                                cols: Optional[dict] = None) -> str:
+        """Fusiona los matriculados en ``<out_dir>/matriculados_fusionados.xlsx`` y devuelve su ruta.
+
+        El mapeo de columnas de la GUI se usa para leer los ficheros de origen; la matrícula fusionada
+        usa siempre los nombres canónicos (Apellido(s), Nombre, Número de ID, Dirección de correo).
+        Nunca se escribe sobre uno de los ficheros de origen (p. ej. un 'matriculados.xlsx' del profesor).
+        ``paths``/``cols`` deben pasarse ya leídos cuando se llama desde un hilo de trabajo.
+        """
         from pyexamgenerator.grading import EnrollmentMerger
-        paths = self._grad_enrollment_list()
+        paths = list(paths) if paths is not None else self._grad_enrollment_list()
+        cols = cols if cols is not None else self._grad_columns()
         if not paths:
             raise ValueError("Selecciona al menos un fichero de matriculados.")
         os.makedirs(out_dir, exist_ok=True)
-        merged = os.path.join(out_dir, "matriculados.xlsx")
-        EnrollmentMerger(paths).export(merged)
+        sources = {os.path.normcase(os.path.abspath(p)) for p in paths}
+        merged = os.path.join(out_dir, "matriculados_fusionados.xlsx")
+        suffix = 2
+        while os.path.normcase(os.path.abspath(merged)) in sources:
+            merged = os.path.join(out_dir, f"matriculados_fusionados_{suffix}.xlsx")
+            suffix += 1
+        EnrollmentMerger(
+            paths,
+            first_name_col=cols.get("first_name_col"), last_name_col=cols.get("last_name_col"),
+            id_col=cols.get("id_col"), email_col=cols.get("email_col"),
+        ).export(merged)
         return merged
 
     def _grad_columns(self) -> dict:
@@ -1019,6 +1068,21 @@ class ExamApp:
         tree.bind("<Double-1>", edit_type_cell)
         type_entry.focus_set()
 
+    @staticmethod
+    def _grad_parse_weight_value(raw: str, entry: str) -> float:
+        """Convierte un peso ('0.6', '0,6', '60%') a número; ValueError con la entrada si no es válido."""
+        text = str(raw).strip().replace(",", ".")
+        percent = text.endswith("%")
+        if percent:
+            text = text[:-1].strip()
+        try:
+            value = float(text)
+        except ValueError:
+            raise ValueError(
+                f"Peso no válido '{raw}' en la entrada '{entry}'. Usa un número (0.6, 0,6 o 60%)."
+            ) from None
+        return value / 100.0 if percent else value
+
     def _grad_parse_final_files(self) -> list:
         sources = []
         for item in self.grad_final_files_var.get().replace("\n", ";").split(";"):
@@ -1028,7 +1092,7 @@ class ExamApp:
             parts = [p.strip() for p in item.split("|")]
             source = {"path": parts[0]}
             if len(parts) > 1 and parts[1]:
-                source["weight"] = float(parts[1].replace(",", "."))
+                source["weight"] = self._grad_parse_weight_value(parts[1], item)
             if len(parts) > 2 and parts[2]:
                 source["label"] = parts[2]
             sources.append(source)
@@ -1041,7 +1105,7 @@ class ExamApp:
             if not item or "|" not in item:
                 continue
             col, weight = item.rsplit("|", 1)
-            weights[col.strip()] = float(weight.strip().replace(",", "."))
+            weights[col.strip()] = self._grad_parse_weight_value(weight, item)
         return weights
 
     def _grad_add_final_file(self) -> None:
@@ -1068,24 +1132,24 @@ class ExamApp:
             messagebox.showerror("OCR no disponible", "El OCR requiere el extra:\n\npip install pyexamgenerator[grading]")
             return
         cols = self._grad_columns()
+        enrollment = self._grad_enrollment_list()
         forced = self._grad_parse_forced()
         temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
 
         def work():
-            matric = self._grad_merged_enrollment(out)
+            # La matrícula fusionada (leída con el mapeo de columnas) usa los nombres canónicos, que son
+            # los que se pasan al corrector (valores por defecto de ImageGradingConfig).
+            matric = self._grad_merged_enrollment(out, enrollment, cols)
             cfg = ImageGradingConfig(
                 xml_paths=xmls, image_paths=images, enrollment_path=matric,
-                enrollment_paths=self._grad_enrollment_list(),
                 output_answers="respuestas.xlsx", output_grades="calificaciones_manuscritos.xlsx",
                 output_incidents="incidencias.xlsx", output_dir=out,
                 forced_type_by_image=forced, prompt_missing_type=False, interactive_review=False,
                 aggressive_recovery=True, aggressive_min_ratio=0.10,
                 aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
-                id_col=cols["id_col"], first_name_col=cols["first_name_col"],
-                last_name_col=cols["last_name_col"], email_col=cols["email_col"],
                 temp_image_dir=temp_image_dir,
             )
-            api = self._grad_api()
+            api = self._grad_api(out)
             api.grade_from_images(cfg)
 
             warning_msgs: List[str] = []
@@ -1114,17 +1178,37 @@ class ExamApp:
             messagebox.showerror("Faltan datos", "Necesitas matriculados, una plantilla XML, el xlsx de respuestas y carpeta de salida.")
             return
         cols = self._grad_columns()
+        enrollment = self._grad_enrollment_list()
 
         def work():
-            matric = self._grad_merged_enrollment(out)
+            matric = self._grad_merged_enrollment(out, enrollment, cols)
+            # Con varias plantillas, cada fila se corrige con la de su tipo (columna Tipo_Examen...).
+            # La matrícula fusionada usa los nombres de columna canónicos (valores por defecto).
             cfg = ExcelGradingConfig(
-                exam_xml_path=xmls[0], answers_xlsx_path=answers, enrollment_xlsx_path=matric,
+                exam_xml_path=xmls[0], exam_xml_paths=xmls, answers_xlsx_path=answers,
+                enrollment_xlsx_path=matric,
                 output_path="calificaciones_desde_respuestas.xlsx", output_dir=out,
-                last_name_col=cols["last_name_col"], first_name_col=cols["first_name_col"],
-                id_col=cols["id_col"], email_col=cols["email_col"],
             )
-            self._grad_api().grade_from_excel(cfg)
-            return f"Corrección desde respuestas completada. Resultados en:\n{out}"
+            api = self._grad_api(out)
+            api.grade_from_excel(cfg)
+
+            warning_msgs: List[str] = []
+            incidents_df = api.results.get("excel_grading_incidents")
+            if isinstance(incidents_df, pd.DataFrame) and not incidents_df.empty:
+                incidents_path = api.results.get("excel_grading_incidents_path") or os.path.join(
+                    out, "incidencias_respuestas.xlsx")
+                examples = "\n".join(
+                    f"- Fila {row['Fila']}: {row['Nombre_Leido'] or row['ID_Leido'] or '-'} ({row['Tipo']})"
+                    for _, row in incidents_df.head(5).iterrows()
+                )
+                warning_msgs.append(
+                    f"{len(incidents_df)} fila(s) del fichero de respuestas no se corrigieron:\n"
+                    f"{examples}\nRevisa: {incidents_path}"
+                )
+            return {
+                "info": f"Corrección desde respuestas completada. Resultados en:\n{out}",
+                "warnings": warning_msgs,
+            }
 
         self._grad_run_async("Corrigiendo desde respuestas…", work)
 
@@ -1138,24 +1222,31 @@ class ExamApp:
             messagebox.showerror("Faltan datos", "Necesitas matriculados, asistencias, justificaciones y carpeta de salida.")
             return
         cols = self._grad_columns()
+        enrollment = self._grad_enrollment_list()
+        schedule = self.grad_schedule_var.get().strip() or None
+        quizzes = self.grad_quizzes_var.get().strip() or None
         sheet_raw = self.grad_sched_sheet_var.get().strip()
         schedule_sheet = int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0)
         header_raw = self.grad_att_header_var.get().strip()
         header_row = int(header_raw) if header_raw.lstrip("-").isdigit() else 3
 
         def work():
-            matric = self._grad_merged_enrollment(out)
+            matric = self._grad_merged_enrollment(out, enrollment, cols)
             cfg = AbsenceJustificationConfig(
                 attendance_xlsx_path=attendance, justifications_xlsx_path=justif,
-                enrollment_xlsx_path=matric, schedule_xlsx_path=self.grad_schedule_var.get().strip() or None,
-                schedule_sheet=schedule_sheet, quizzes_xlsx_path=self.grad_quizzes_var.get().strip() or None,
+                enrollment_xlsx_path=matric, schedule_xlsx_path=schedule,
+                schedule_sheet=schedule_sheet, quizzes_xlsx_path=quizzes,
                 output_dir=out, attendance_header_row=header_row,
                 sender_col=cols["sender_col"], subject_col=cols["subject_col"], message_col=cols["message_col"],
                 first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
                 id_col=cols["id_col"], email_col=cols["email_col"],
             )
-            self._grad_api().process_absence_justifications(cfg)
-            return f"Asistencia/justificaciones analizadas. Resultados en:\n{out}"
+            api = self._grad_api(out)
+            api.process_absence_justifications(cfg)
+            return {
+                "info": f"Asistencia/justificaciones analizadas. Resultados en:\n{out}",
+                "warnings": list(api.results.get("attendance_warnings") or []),
+            }
 
         self._grad_run_async("Analizando asistencia y justificaciones…", work)
 
@@ -1169,15 +1260,16 @@ class ExamApp:
             return
         ocr_grades = self.grad_ocr_grades_var.get().strip() or os.path.join(out, "calificaciones_manuscritos.xlsx")
         append_unmatched_students = bool(self.grad_append_unmatched_var.get())
+        enrollment = self._grad_enrollment_list()
 
         def work():
             cfg = OCRIntegrationConfig(
                 general_xlsx_path=theory, ocr_xlsx_path=ocr_grades,
                 output_path="teoria_integrada.xlsx", output_dir=out,
-                enrollment_paths=self._grad_enrollment_list(),
+                enrollment_paths=enrollment,
                 append_unmatched_students=append_unmatched_students,
             )
-            api = self._grad_api()
+            api = self._grad_api(out)
             api.integrate_ocr_grades(cfg)
 
             warning_msgs: List[str] = []
@@ -1241,14 +1333,15 @@ class ExamApp:
             return
         integrated = self.grad_integrated_var.get().strip() or os.path.join(out, "teoria_integrada.xlsx")
         attquiz = self.grad_attquiz_var.get().strip() or os.path.join(out, "asistencias_con_cuestionarios.xlsx")
+        theory_grade_col = self.grad_total_col_var.get().strip() or None
 
         def work():
             cfg = TheoryBonusConfig(
                 theory_xlsx_path=integrated, attendance_quiz_xlsx_path=attquiz,
                 output_path="calificaciones_examen_teoria.xlsx", output_dir=out,
-                theory_grade_col=self.grad_total_col_var.get().strip() or None, cap_to_10=True,
+                theory_grade_col=theory_grade_col, cap_to_10=True,
             )
-            self._grad_api().apply_theory_bonus(cfg)
+            self._grad_api(out).apply_theory_bonus(cfg)
             return f"Punto extra aplicado. Resultados en:\n{out}"
 
         self._grad_run_async("Aplicando punto extra…", work)
@@ -1266,14 +1359,22 @@ class ExamApp:
 
         if mode == "by_column":
             source = self.grad_final_source_var.get().strip()
-            weights = self._grad_parse_weights()
+            try:
+                weights = self._grad_parse_weights()
+            except ValueError as exc:
+                messagebox.showerror("Peso no válido", str(exc))
+                return
             if not source or not weights:
                 messagebox.showerror("Faltan datos", "Indica el fichero y las columnas con su peso (Columna|peso ; …).")
                 return
             cfg = FinalGradeConfig(mode="by_column", source_path=source, weights=weights,
                                    output_path="calificaciones_finales_ponderadas.xlsx", output_dir=out, cap_to_10=cap)
         else:
-            sources = self._grad_parse_final_files()
+            try:
+                sources = self._grad_parse_final_files()
+            except ValueError as exc:
+                messagebox.showerror("Peso no válido", str(exc))
+                return
             if not sources:
                 messagebox.showerror("Faltan datos", "Añade al menos un examen (Fichero|peso ; …).")
                 return
@@ -1282,7 +1383,7 @@ class ExamApp:
                                    first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"])
 
         def work():
-            self._grad_api().compute_final_grade(cfg)
+            self._grad_api(out).compute_final_grade(cfg)
             return f"Nota final calculada en:\n{out}"
 
         self._grad_run_async("Calculando nota final ponderada…", work)
@@ -1315,7 +1416,7 @@ class ExamApp:
                 merged_output_path="resultados_combinados.xlsx", output_dir=out,
                 id_col=cols["id_col"], first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
             )
-            result = self._grad_api().compare_results(cfg)
+            result = self._grad_api(out).compare_results(cfg)
             s = result.summary
             message = (f"Comparación: {s['changed_cells']} celdas cambiadas en {s['changed_students']} alumno(s), "
                        f"{s['added']} nuevo(s), {s['removed']} ausente(s).\nInforme en: {out}")
@@ -1344,6 +1445,16 @@ class ExamApp:
             "attendance_header_row": self.grad_att_header_var.get(),
             "compare_existing": self.grad_cmp_existing_var.get(),
             "compare_new": self.grad_cmp_new_var.get(),
+            "compare_value_cols": self.grad_cmp_value_cols_var.get(),
+            "compare_add_new": bool(self.grad_cmp_addnew_var.get()),
+            "ocr_grades": self.grad_ocr_grades_var.get(),
+            "integrated_theory": self.grad_integrated_var.get(),
+            "attendance_quiz": self.grad_attquiz_var.get(),
+            "final_mode": self.grad_final_mode_var.get(),
+            "final_files": self.grad_final_files_var.get(),
+            "final_source": self.grad_final_source_var.get(),
+            "final_weights": self.grad_final_weights_var.get(),
+            "final_cap": bool(self.grad_final_cap_var.get()),
             "append_unmatched_ocr": bool(self.grad_append_unmatched_var.get()),
             "columns": self._grad_columns(),
         }
@@ -1373,11 +1484,13 @@ class ExamApp:
         path = self.grad_session_path_var.get().strip()
         if not path:
             path = filedialog.askopenfilename(
-                title="Cargar sesión de corrección", filetypes=[("Sesión", "*.json *.pkl"), ("Todos", "*.*")])
+                title="Cargar sesión de corrección",
+                filetypes=[("Sesión (JSON)", "*.json"), ("Todos", "*.*")])
         if not path:
             return
         try:
-            session = GradingSession.load(path)
+            # Siempre desde el .json: cargar un .pkl ajeno podría ejecutar código (mismo contenido).
+            session = GradingSession.load(path, allow_pickle=False)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Error", f"No se pudo cargar la sesión: {exc}")
             return
@@ -1393,18 +1506,31 @@ class ExamApp:
             "ocr_temp_dir": self.grad_ocr_temp_dir_var,
             "schedule_sheet": self.grad_sched_sheet_var, "attendance_header_row": self.grad_att_header_var,
             "compare_existing": self.grad_cmp_existing_var, "compare_new": self.grad_cmp_new_var,
+            "compare_value_cols": self.grad_cmp_value_cols_var,
+            "ocr_grades": self.grad_ocr_grades_var, "integrated_theory": self.grad_integrated_var,
+            "attendance_quiz": self.grad_attquiz_var,
+            "final_mode": self.grad_final_mode_var, "final_files": self.grad_final_files_var,
+            "final_source": self.grad_final_source_var, "final_weights": self.grad_final_weights_var,
         }
+        # Una clave presente en la sesión se aplica aunque esté vacía: si no, quedarían rutas de la
+        # sesión anterior (p. ej. las imágenes de otro examen).
         for key, var in setters.items():
-            if gi.get(key):
-                var.set(str(gi[key]))
+            if key in gi:
+                var.set("" if gi[key] is None else str(gi[key]))
 
-        append_unmatched_raw = gi.get("append_unmatched_ocr", None)
-        if append_unmatched_raw is not None:
-            if isinstance(append_unmatched_raw, str):
-                parsed_bool = append_unmatched_raw.strip().lower() in {"1", "true", "yes", "si", "sí"}
-            else:
-                parsed_bool = bool(append_unmatched_raw)
-            self.grad_append_unmatched_var.set(parsed_bool)
+        def _as_bool(raw) -> bool:
+            if isinstance(raw, str):
+                return raw.strip().lower() in {"1", "true", "yes", "si", "sí"}
+            return bool(raw)
+
+        bool_setters = {
+            "append_unmatched_ocr": self.grad_append_unmatched_var,
+            "compare_add_new": self.grad_cmp_addnew_var,
+            "final_cap": self.grad_final_cap_var,
+        }
+        for key, var in bool_setters.items():
+            if gi.get(key, None) is not None:
+                var.set(_as_bool(gi[key]))
 
         columns = gi.get("columns") or {}
         col_setters = {
@@ -1467,10 +1593,15 @@ class ExamApp:
 
         forced = self._grad_parse_forced()
         temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
+        append_unmatched_students = bool(self.grad_append_unmatched_var.get())
 
         pipeline_cols = self._grad_columns()
         header_raw = self.grad_att_header_var.get().strip()
         pipeline_cols["attendance_header_row"] = int(header_raw) if header_raw.lstrip("-").isdigit() else 3
+
+        # Una sola tarea a la vez: dos pipelines compartirían (y borrarían) la carpeta _intermedios.
+        if not self._grad_try_begin_job():
+            return
 
         def worker():
             try:
@@ -1479,7 +1610,12 @@ class ExamApp:
                 work = os.path.join(out_dir, "_intermedios")
                 os.makedirs(work, exist_ok=True)
                 matric = os.path.join(work, "matriculados.xlsx")
-                EnrollmentMerger(enrollment).export(matric)
+                # El mapeo de columnas se aplica al leer los matriculados; la fusión usa nombres canónicos.
+                EnrollmentMerger(
+                    enrollment,
+                    first_name_col=pipeline_cols["first_name_col"], last_name_col=pipeline_cols["last_name_col"],
+                    id_col=pipeline_cols["id_col"], email_col=pipeline_cols["email_col"],
+                ).export(matric)
 
                 self.root.after(0, lambda: self.update_status("Corrigiendo… OCR de hojas (puede tardar)."))
                 grader = ImageExamGrader(
@@ -1509,7 +1645,7 @@ class ExamApp:
                     general_xlsx_path=theory,
                     ocr_xlsx_path=os.path.join(work, "calificaciones_manuscritos.xlsx"),
                     enrollment_paths=enrollment,
-                    append_unmatched_students=bool(self.grad_append_unmatched_var.get()),
+                    append_unmatched_students=append_unmatched_students,
                 )
                 integrated = ocr_integrator.integrate(os.path.join(work, "teoria_integrada.xlsx"))
 
@@ -1591,9 +1727,11 @@ class ExamApp:
                 except Exception:
                     pass
             except Exception as exc:
-                err = str(exc)
+                err = self._grad_error_text(exc)
                 self.root.after(0, lambda: self.update_status("Error en la corrección."))
                 self.root.after(0, lambda: messagebox.showerror("Error", err))
+            finally:
+                self._grad_end_job()
 
         threading.Thread(target=worker, daemon=True).start()
 

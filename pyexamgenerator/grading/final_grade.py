@@ -18,6 +18,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 
 def _normalize(text: Any) -> str:
     text = str(text).strip().lower()
@@ -84,26 +86,65 @@ class FinalGradeCalculator:
 
     @staticmethod
     def _identity_key(id_value: Any, first: Any, last: Any) -> str:
-        ident = _clean(id_value)
+        ident = normalize_id(id_value)
         if ident:
             return f"id::{ident}"
         return f"name::{_normalize(first)}::{_normalize(last)}"
 
+    @staticmethod
+    def _resolve_column(columns: Sequence[str], overrides: Sequence[Any], candidates: Sequence[str]) -> Optional[str]:
+        """Usa el nombre indicado solo si existe en *este* fichero; si no, autodetecta con los candidatos."""
+        explicit = [str(o).strip() for o in overrides if o and str(o).strip()]
+        return _find_column(columns, [*explicit, *candidates])
+
+    @staticmethod
+    def _unique_labels(sources: Sequence[Dict[str, Any]]) -> List[str]:
+        """Etiqueta única por fichero: dos ficheros con el mismo nombre no pueden compartir columna."""
+        stems = [Path(str(s["path"])).stem for s in sources]
+        default_counts: Dict[str, int] = {}
+        for source, stem in zip(sources, stems):
+            if not source.get("label"):
+                default_counts[stem] = default_counts.get(stem, 0) + 1
+
+        labels: List[str] = []
+        used = set()
+        for source, stem in zip(sources, stems):
+            label = str(source.get("label") or "").strip()
+            if not label:
+                label = stem
+                parent = Path(str(source["path"])).parent.name
+                if default_counts.get(stem, 0) > 1 and parent:
+                    # Mismo nombre de fichero en carpetas distintas (p. ej. parcial1/ y parcial2/).
+                    label = f"{parent}_{stem}"
+            base, suffix = label, 2
+            while label in used:
+                label = f"{base}_{suffix}"
+                suffix += 1
+            used.add(label)
+            labels.append(label)
+        return labels
+
     def compute_by_files(self, sources: Sequence[Dict[str, Any]]) -> pd.DataFrame:
-        """Weights one grade column per file. ``sources`` items: ``{path, label?, weight?, grade_col?, id_col?}``."""
+        """Weights one grade column per file. ``sources`` items: ``{path, label?, weight?, grade_col?, id_col?}``.
+
+        Column names given to the calculator (or per source) are used only in the files that contain them;
+        other files are auto-detected. Rows without ID join the student with the same name in another file
+        when that name belongs to exactly one ID. Repeated labels (e.g. two files with the same name in
+        different folders) are made unique.
+        """
         if not sources:
             raise ValueError("Debe indicar al menos un examen (fichero) para la nota final.")
 
+        labels = self._unique_labels(sources)
         parsed = []
-        for source in sources:
+        for index, (source, label) in enumerate(zip(sources, labels)):
             path = source["path"]
             df = pd.read_excel(path)
             columns = list(df.columns)
-            label = str(source.get("label") or Path(path).stem)
             weight = float(source.get("weight", 1.0))
-            id_col = source.get("id_col") or self.id_col or _find_column(columns, _ID_CANDIDATES)
-            first_col = self.first_name_col or _find_column(columns, _FIRST_CANDIDATES)
-            last_col = self.last_name_col or _find_column(columns, _LAST_CANDIDATES)
+            id_col = self._resolve_column(columns, [source.get("id_col"), self.id_col], _ID_CANDIDATES)
+            first_col = self._resolve_column(columns, [self.first_name_col], _FIRST_CANDIDATES)
+            last_col = self._resolve_column(columns, [self.last_name_col], _LAST_CANDIDATES)
             grade_col = source.get("grade_col") or _find_column(columns, _GRADE_CANDIDATES)
             if grade_col is None:
                 raise ValueError(
@@ -111,6 +152,7 @@ class FinalGradeCalculator:
                 )
             parsed.append(
                 {
+                    "index": index,
                     "label": label,
                     "weight": weight,
                     "df": df,
@@ -123,41 +165,53 @@ class FinalGradeCalculator:
 
         total_weight = sum(p["weight"] for p in parsed) or 1.0
 
-        registry: Dict[str, Dict[str, Any]] = {}
-        order: List[str] = []
+        # 1) Leer todas las filas; 2) una fila sin ID se une al alumno con ese mismo nombre si este
+        #    corresponde a un único ID (si el nombre es ambiguo, la fila queda aparte).
+        entries = []
+        ids_by_name: Dict[str, set] = {}
         for p in parsed:
             for _, row in p["df"].iterrows():
-                id_value = row.get(p["id_col"], "") if p["id_col"] else ""
+                ident = normalize_id(row.get(p["id_col"], "")) if p["id_col"] else ""
                 first = row.get(p["first_col"], "") if p["first_col"] else ""
                 last = row.get(p["last_col"], "") if p["last_col"] else ""
-                key = self._identity_key(id_value, first, last)
-                if key in {"id::", "name::::"}:
-                    continue
-                if key not in registry:
-                    registry[key] = {
-                        "Número de ID": _clean(id_value),
-                        "Nombre": _clean(first),
-                        "Apellido(s)": _clean(last),
-                        "_grades": {},
-                    }
-                    order.append(key)
-                record = registry[key]
-                if not record["Número de ID"]:
-                    record["Número de ID"] = _clean(id_value)
-                if not record["Nombre"]:
-                    record["Nombre"] = _clean(first)
-                if not record["Apellido(s)"]:
-                    record["Apellido(s)"] = _clean(last)
-                grade = _to_float_grade(row.get(p["grade_col"], ""))
-                if grade is not None:
-                    record["_grades"][p["label"]] = grade
+                name_key = f"{_normalize(_clean(first))}::{_normalize(_clean(last))}"
+                if ident and name_key != "::":
+                    ids_by_name.setdefault(name_key, set()).add(ident)
+                entries.append((p, row, ident, first, last, name_key))
+
+        registry: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+        for p, row, ident, first, last, name_key in entries:
+            if not ident and len(ids_by_name.get(name_key, ())) == 1:
+                ident = next(iter(ids_by_name[name_key]))
+            key = self._identity_key(ident, _clean(first), _clean(last))
+            if key in {"id::", "name::::"}:
+                continue
+            if key not in registry:
+                registry[key] = {
+                    "Número de ID": ident,
+                    "Nombre": _clean(first),
+                    "Apellido(s)": _clean(last),
+                    "_grades": {},
+                }
+                order.append(key)
+            record = registry[key]
+            if not record["Número de ID"]:
+                record["Número de ID"] = ident
+            if not record["Nombre"]:
+                record["Nombre"] = _clean(first)
+            if not record["Apellido(s)"]:
+                record["Apellido(s)"] = _clean(last)
+            grade = _to_float_grade(row.get(p["grade_col"], ""))
+            if grade is not None:
+                record["_grades"][p["index"]] = grade
 
         rows_out = []
         for key in order:
             record = registry[key]
             final_grade = 0.0
             for p in parsed:
-                grade = record["_grades"].get(p["label"])
+                grade = record["_grades"].get(p["index"])
                 final_grade += (p["weight"] / total_weight) * (0.0 if grade is None else grade)
             if self.cap_to_10:
                 final_grade = min(final_grade, 10.0)
@@ -167,7 +221,7 @@ class FinalGradeCalculator:
                 "Apellido(s)": record["Apellido(s)"],
             }
             for p in parsed:
-                grade = record["_grades"].get(p["label"])
+                grade = record["_grades"].get(p["index"])
                 out_row[f"Nota_{p['label']}"] = "" if grade is None else round(grade, 4)
             out_row["Nota_Final"] = round(final_grade, 4)
             rows_out.append(out_row)
