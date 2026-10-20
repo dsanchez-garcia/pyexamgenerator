@@ -32,7 +32,7 @@ Antes de poder usar la aplicación, necesitamos prepararlo todo. Esto solo se ha
         ```
         setx GEMINI_API_KEY "pega_aqui_tu_clave"
         ```
-        Cierra y vuelve a abrir la Línea de Comandos para que el cambio surta efecto. ¡La aplicación la detectará automáticamente al iniciarse! (Si prefieres no usar variables de entorno, también puedes pegar la clave en la aplicación y pulsar **"Guardar Clave"**; se guardará en un archivo `config.json` en tu carpeta de trabajo. Si existen las dos, la variable de entorno tiene prioridad.)
+        Cierra y vuelve a abrir la Línea de Comandos para que el cambio surta efecto. ¡La aplicación la detectará automáticamente al iniciarse! (Si prefieres no usar variables de entorno, también puedes pegar la clave en la aplicación y pulsar **"Guardar Clave"**; se guardará en el archivo `config.json` de tu carpeta de configuración de usuario: `%APPDATA%\pyexamgenerator` en Windows (para abrirla, escribe esa ruta en la barra de direcciones del Explorador de archivos) o `~/.config/pyexamgenerator` en macOS y Linux. Así la clave no queda en tu carpeta de trabajo y la aplicación la encuentra sea cual sea la carpeta desde la que la abras. Si existen las dos, la variable de entorno tiene prioridad.)
 
 ## Parte 1: Cómo iniciar pyexamgenerator
 

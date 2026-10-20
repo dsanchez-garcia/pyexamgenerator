@@ -55,12 +55,16 @@ La clave de API solo es necesaria para generar preguntas **con API**. Si prefier
 
 2.  **Configura la clave**. Tienes dos opciones:
 
-    *   **(Recomendado) Usar una Variable de Entorno:** Es el método más seguro. Crea la variable de entorno de tu proveedor (tabla anterior) con el valor de tu clave. La aplicación la detectará automáticamente al iniciarse y, si también hay una clave guardada en `config.json`, la variable de entorno tiene prioridad.
+    *   **(Recomendado) Usar una Variable de Entorno:** Es el método más seguro. Crea la variable de entorno de tu proveedor (tabla anterior) con el valor de tu clave. La aplicación la detectará automáticamente al iniciarse y, si también hay una clave guardada con **"Guardar Clave"**, la variable de entorno tiene prioridad.
     *   **(Alternativa) Guardar en la Aplicación:**
         *   Abre la aplicación `pyexamgenerator`.
         *   Ve a la pestaña **"Generar Preguntas"**, sección **"Proveedor de IA, Clave API y Modelo"**.
         *   Elige el **"Proveedor"** e introduce tu clave en el campo **"Clave API"** (el botón **"Obtener clave..."** abre la página del proveedor donde se crean las claves).
-        *   Haz clic en el botón **"Guardar Clave"**. La clave del proveedor seleccionado (junto con el modelo elegido) se guardará en un archivo `config.json` en la carpeta desde la que ejecutaste la aplicación. La clave se guarda sin cifrar, así que no compartas ese archivo.
+        *   Haz clic en el botón **"Guardar Clave"**. La clave del proveedor seleccionado (junto con el modelo elegido) se guardará en el archivo `config.json` de tu carpeta de configuración de usuario, que es la misma sea cual sea la carpeta desde la que abras la aplicación:
+            *   Windows: `%APPDATA%\pyexamgenerator\config.json` (normalmente `C:\Users\<usuario>\AppData\Roaming\pyexamgenerator\config.json`).
+            *   macOS y Linux: `~/.config/pyexamgenerator/config.json`.
+        *   La clave se guarda sin cifrar; donde el sistema lo permite, el archivo solo es accesible para tu usuario. No lo compartas ni lo copies a carpetas compartidas o sincronizadas en la nube.
+        *   Las versiones anteriores guardaban `config.json` en la carpeta desde la que se ejecutaba la aplicación. Mientras no exista el nuevo archivo, la aplicación sigue leyendo el antiguo de la carpeta de trabajo, y la próxima vez que pulses **"Guardar Clave"** copia su contenido a la nueva ubicación. El archivo antiguo no se borra: elimínalo tú cuando ya no lo necesites.
 
     El menú **Ayuda > Configurar API Key (Ayuda)...** de la aplicación resume qué variable de entorno usa cada proveedor.
 

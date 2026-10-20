@@ -68,6 +68,14 @@ pyexamgenerator.tooltip module
    :undoc-members:
    :show-inheritance:
 
+pyexamgenerator.user\_config module
+-----------------------------------
+
+.. automodule:: pyexamgenerator.user_config
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 pyexamgenerator.web\_chat\_assistant module
 -------------------------------------------
 

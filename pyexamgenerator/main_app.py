@@ -33,6 +33,14 @@ from pyexamgenerator.ai_providers import (
     list_available_models,
     resolve_provider,
 )
+from pyexamgenerator.user_config import (
+    ensure_user_config_dir,
+    get_ai_config_path,
+    get_user_config_dir,
+    parse_ai_config,
+    read_ai_config_file,
+    save_ai_config,
+)
 from pyexamgenerator.web_chat_assistant import WebChatAssistant
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
@@ -126,8 +134,9 @@ class ExamApp:
 
         # Proveedor de IA, claves y modelos. Por proveedor, la clave se toma de su variable de
         # entorno (GEMINI_API_KEY/GOOGLE_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY) y, si no
-        # existe, de config.json.
-        self.ai_config = self.load_ai_config()
+        # existe, del config.json de la configuración de usuario (o, mientras no exista, del de la
+        # carpeta de trabajo, donde lo guardaban las versiones anteriores).
+        self.ai_config = self.load_ai_config()  # También fija self.ai_config_path.
         self.api_keys_by_provider: Dict[str, str] = {}
         self.api_key_sources: Dict[str, str] = {}
         for provider_key, spec in PROVIDERS.items():
@@ -341,7 +350,8 @@ class ExamApp:
     def open_api_key_help(self):
         """Explains where each provider reads its API key and opens the Gemini guide."""
         lines = ["La aplicación busca la clave API de cada proveedor en estas variables de entorno "
-                 "(si no existe, usa la guardada con 'Guardar Clave' en config.json):", ""]
+                 "(si no existe, usa la guardada con 'Guardar Clave' en tu configuración de usuario, "
+                 f"{get_ai_config_path()}):", ""]
         for spec in PROVIDERS.values():
             lines.append(f"• {spec.label}: {' o '.join(spec.env_vars)}  —  crear clave: {spec.api_key_url}")
         lines += ["", "Sin clave API también puedes generar preguntas copiando los prompts en "
@@ -2037,7 +2047,9 @@ class ExamApp:
 
         save_api_key_button = ttk.Button(api_buttons_frame, text="Guardar Clave", command=self.save_current_api_key)
         save_api_key_button.pack(side='left', padx=2)
-        ToolTip(save_api_key_button, text="Guarda la clave del proveedor seleccionado en config.json (carpeta actual).")
+        ToolTip(save_api_key_button, text="Guarda la clave del proveedor seleccionado (y el modelo elegido) en tu "
+                                          f"configuración de usuario:\n{get_ai_config_path()}\n"
+                                          "Si existe la variable de entorno del proveedor, esta tiene prioridad.")
 
         self.load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
         self.load_models_button.pack(side='left', padx=2)
@@ -2171,8 +2183,11 @@ class ExamApp:
         source = self.api_key_sources.get(provider)
         if source == "env":
             info = "Clave cargada desde la variable de entorno " + " / ".join(spec.env_vars) + "."
+        elif source == "config" and self._ai_config_is_legacy():
+            info = (f"Clave cargada desde {self.ai_config_path} (ubicación de versiones anteriores); "
+                    "pulsa 'Guardar Clave' para guardarla en tu configuración de usuario.")
         elif source == "config":
-            info = "Clave cargada desde config.json."
+            info = f"Clave cargada desde tu configuración de usuario ({get_ai_config_path()})."
         elif source == "typed":
             info = "Clave introducida en esta sesión (sin guardar)."
         else:
@@ -2347,59 +2362,36 @@ class ExamApp:
 
     def load_ai_config(self) -> Dict[str, Any]:
         """
-        Loads the AI configuration (keys and models per provider) from ``config.json``.
+        Loads the AI configuration (keys and models per provider).
 
-        The legacy format ``{"api_key": "..."}`` (Gemini key) is still understood.
+        It is read from the per-user ``config.json`` (see
+        :func:`~pyexamgenerator.user_config.get_user_config_dir`) or, while that file does not
+        exist, from the ``config.json`` of the working folder used by previous versions. The path
+        read is stored in ``ai_config_path`` (``None`` if there was no file). The legacy format
+        ``{"api_key": "..."}`` (Gemini key) is still understood.
 
         Returns:
             Dict[str, Any]: ``{"provider": str, "api_keys": {...}, "models": {...}}``.
         """
-        config: Dict[str, Any] = {}
-        try:
-            with open('config.json', 'r', encoding='utf-8') as f:
-                loaded = json.load(f)
-            if isinstance(loaded, dict):
-                config = loaded
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            pass
-        api_keys = config.get("api_keys") if isinstance(config.get("api_keys"), dict) else {}
-        if config.get("api_key") and not api_keys.get("gemini"):
-            api_keys["gemini"] = config["api_key"]
-        models = config.get("models") if isinstance(config.get("models"), dict) else {}
-        try:
-            provider = resolve_provider(config.get("provider"))
-        except ValueError:
-            provider = "gemini"
-        return {
-            "provider": provider,
-            "api_keys": {k: v for k, v in api_keys.items() if k in PROVIDERS and is_valid_api_key(v)},
-            "models": {k: v for k, v in models.items() if k in PROVIDERS and isinstance(v, str) and v.strip()},
-        }
+        config, self.ai_config_path = read_ai_config_file()
+        return parse_ai_config(config)
 
-    def _save_ai_config(self) -> None:
-        """Writes the AI configuration to ``config.json`` keeping any other existing keys."""
-        try:
-            with open('config.json', 'r', encoding='utf-8') as f:
-                existing = json.load(f)
-            if not isinstance(existing, dict):
-                existing = {}
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            existing = {}
-        # Keys and models of other providers (e.g. written by a newer version) are kept.
-        api_keys = existing.get("api_keys") if isinstance(existing.get("api_keys"), dict) else {}
-        models = existing.get("models") if isinstance(existing.get("models"), dict) else {}
-        api_keys.update(self.ai_config.get("api_keys", {}))
-        models.update(self.ai_config.get("models", {}))
-        existing.update({
-            "provider": self.ai_config.get("provider", "gemini"),
-            "api_keys": api_keys,
-            "models": models,
-        })
-        # Legacy key read by previous versions.
-        if self.ai_config.get("api_keys", {}).get("gemini"):
-            existing["api_key"] = self.ai_config["api_keys"]["gemini"]
-        with open('config.json', 'w', encoding='utf-8') as f:
-            json.dump(existing, f, indent=2, ensure_ascii=False)
+    def _save_ai_config(self) -> str:
+        """
+        Writes the AI configuration to the per-user ``config.json`` keeping any other existing keys.
+
+        While the per-user file does not exist, the content of the ``config.json`` of the working
+        folder (if any) is migrated to it; that file is not deleted.
+
+        Returns:
+            str: Path of the saved file.
+        """
+        self.ai_config_path = save_ai_config(self.ai_config)
+        return self.ai_config_path
+
+    def _ai_config_is_legacy(self) -> bool:
+        """True if the AI configuration was read from the ``config.json`` of the working folder."""
+        return self.ai_config_path is not None and self.ai_config_path != get_ai_config_path()
 
     def load_api_key(self) -> Optional[str]:
         """
@@ -2410,13 +2402,16 @@ class ExamApp:
         """
         return self.load_ai_config()["api_keys"].get("gemini")
 
-    def save_api_key(self, api_key: str, provider: Optional[str] = None) -> None:
+    def save_api_key(self, api_key: str, provider: Optional[str] = None) -> str:
         """
-        Saves the API key of a provider (the selected one by default) to the configuration file.
+        Saves the API key of a provider (the selected one by default) to the per-user configuration file.
 
         Args:
             api_key (str): The API key to save.
             provider (Optional[str]): Provider of the key.
+
+        Returns:
+            str: Path of the saved file.
         """
         provider = resolve_provider(provider) if provider else self._selected_provider()
         self.ai_config.setdefault("api_keys", {})[provider] = api_key
@@ -2424,28 +2419,35 @@ class ExamApp:
         model = self.selected_model_var.get().strip()
         if model:
             self.ai_config.setdefault("models", {})[provider] = model
-        self._save_ai_config()
+        return self._save_ai_config()
 
     def save_current_api_key(self) -> None:
         """
         Saves the API key currently entered in the GUI for the selected provider,
-        together with the selected model.
+        together with the selected model, in the per-user configuration file.
         """
         key_to_save = self.api_key_var.get().strip()
         provider = self._selected_provider()
         if is_valid_api_key(key_to_save):
+            # Claves leídas del config.json de la carpeta de trabajo, que este guardado copia.
+            migrated_from = self.ai_config_path if self._ai_config_is_legacy() and self.ai_config["api_keys"] else None
             try:
-                self.save_api_key(key_to_save, provider)
+                saved_path = self.save_api_key(key_to_save, provider)
             except OSError as e:
-                messagebox.showerror("Error", f"No se pudo guardar config.json: {e}")
+                messagebox.showerror("Error", f"No se pudo guardar la configuración en {get_ai_config_path()}:\n{e}")
                 return
             self.api_key = key_to_save
             self.api_keys_by_provider[provider] = key_to_save
             if self.api_key_sources.get(provider) != "env":
                 self.api_key_sources[provider] = "config"
             self._refresh_provider_widgets()
-            messagebox.showinfo("Info", f"La clave API de {PROVIDERS[provider].label} se ha guardado en "
-                                        f"config.json (carpeta actual).")
+            message = (f"La clave API de {PROVIDERS[provider].label} se ha guardado en tu configuración de "
+                       f"usuario:\n{saved_path}")
+            if migrated_from:
+                message += (f"\n\nTambién se han copiado las claves de {migrated_from}, donde las guardaban las "
+                            "versiones anteriores. Ese archivo no se ha borrado: bórralo cuando ya no lo "
+                            "necesites, porque contiene las claves sin cifrar.")
+            messagebox.showinfo("Info", message)
         else:
             messagebox.showerror("Error", "Por favor, introduce la API key.")
 
@@ -4303,14 +4305,12 @@ class ExamApp:
     @staticmethod
     def _get_exam_template_config_paths() -> Tuple[str, str]:
         local_path = os.path.join(os.getcwd(), "exam_generation_template.json")
-        appdata = os.getenv("APPDATA")
-        if appdata:
-            central_dir = os.path.join(appdata, "pyexamgenerator")
-            os.makedirs(central_dir, exist_ok=True)
-            central_path = os.path.join(central_dir, "exam_generation_template.json")
-        else:
-            central_path = local_path
-        return local_path, central_path
+        # Carpeta de configuración de usuario, la misma que la de config.json.
+        try:
+            central_dir = ensure_user_config_dir()
+        except OSError:
+            central_dir = get_user_config_dir()  # Guardar/cargar saltan una ruta que no se puede usar.
+        return local_path, os.path.join(central_dir, "exam_generation_template.json")
 
     def save_exam_tab_template(self) -> None:
         """Saves current exam-tab values to a JSON template (local first, then central fallback)."""
