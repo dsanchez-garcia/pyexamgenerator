@@ -29,6 +29,8 @@ import re
 import os
 from typing import Callable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
 
+from pyexamgenerator.question_bank_manager import QuestionBankManager
+
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
 WML_NAMESPACE = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
@@ -842,7 +844,8 @@ class ExamGenerator:
             penalty (float): Penalty for incorrect answers in the Moodle XML export.
             xml_use_answer_text (bool): If True, XML stores full question and answer text instead of a/b/c/d.
             check (bool): If True, generates a preview and waits for user confirmation before creating all exams.
-            update_excel (bool): If True, updates the source Excel file with usage statistics.
+            update_excel (bool): If True, updates the source Excel file with usage statistics. Only its
+                first sheet (the question data) is rewritten; any other sheet is kept.
             answer_sheet_instructions (Optional[str]): Text with instructions for the answer sheet.
             template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
             session_output_path (Optional[str]): If set, writes a resumable grading session (``.pkl`` +
@@ -1230,7 +1233,7 @@ class ExamGenerator:
             self.df = self.df.loc[:, ~self.df.columns.str.contains('unnamed', case=False)]
 
             try:
-                self.df.to_excel(bank_excel_path, index=False)
+                QuestionBankManager.write_excel_keeping_other_sheets(self.df, bank_excel_path)
                 print(
                     f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'.")
             except Exception as e:

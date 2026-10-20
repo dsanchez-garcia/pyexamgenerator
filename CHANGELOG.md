@@ -7,6 +7,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Arreglado
+- **El banco de preguntas conserva sus otras hojas al guardarse:** al reescribir el banco (`ExamGenerator.generate_exam_from_excel(..., update_excel=True)` y `QuestionBankManager.save_dataframe_to_excel(...)`, usado por **"Añadir preguntas sin duplicados"**, `update_bank_with_exam(s)` y `unify_question_banks`) ya no se recrea el archivo con una única hoja `Sheet1`: si el XLSX de destino ya existe, solo se sustituye su primera hoja (la de las preguntas), manteniendo su nombre y posición, y el resto de hojas (notas, estadísticas, versiones anteriores...) queda intacto (nuevo método `QuestionBankManager.write_excel_keeping_other_sheets(...)`). Si la escritura falla, el archivo original no se modifica; los archivos nuevos se siguen creando como antes. Pruebas de regresión en `tests/test_bank_extra_sheets.py`.
+
 ## [0.3.0] - 2026-09-15
 
 ### Añadido

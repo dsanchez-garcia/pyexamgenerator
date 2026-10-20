@@ -16,9 +16,11 @@
 
 import pandas as pd
 from docx import Document
+import io
 import os
 import re
 import unicodedata
+import zipfile
 from typing import Optional, List, Tuple
 
 class QuestionBankManager:
@@ -680,6 +682,34 @@ class QuestionBankManager:
 
         return unified_df, stats
 
+    @staticmethod
+    def write_excel_keeping_other_sheets(df: pd.DataFrame, filepath: str) -> None:
+        """Writes ``df`` to ``filepath``, replacing only the data sheet of an existing workbook.
+
+        The bank is always read from the first sheet (the ``pd.read_excel`` default), so when
+        ``filepath`` is an existing workbook only that sheet is replaced, keeping its name and
+        position, and every other sheet (notes, statistics, previous versions...) is left untouched.
+        New files (or existing files that are not a workbook) are written as ``DataFrame.to_excel``
+        does, with a single 'Sheet1' sheet. Errors are propagated to the caller.
+
+        Args:
+            df (pd.DataFrame): The DataFrame to save (the index is not written).
+            filepath (str): The destination Excel file path.
+        """
+        if os.path.isfile(filepath) and zipfile.is_zipfile(filepath):
+            # Work on an in-memory copy: pandas saves the workbook even if writing the cells fails,
+            # so the file is only overwritten once the new workbook has been fully built.
+            with open(filepath, 'rb') as file:
+                buffer = io.BytesIO(file.read())
+            with pd.ExcelWriter(buffer, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                # Same sheet that pd.read_excel reads by default (chartsheets are not counted).
+                data_sheet_name = writer.book.worksheets[0].title
+                df.to_excel(writer, sheet_name=data_sheet_name, index=False)
+            with open(filepath, 'wb') as file:
+                file.write(buffer.getvalue())
+        else:
+            df.to_excel(filepath, index=False)
+
     def save_dataframe_to_excel(
             self,
             df: pd.DataFrame,
@@ -690,10 +720,13 @@ class QuestionBankManager:
         """
         Saves a pandas DataFrame to an Excel file.
 
+        If the destination file already exists, only its first sheet (the question data) is
+        replaced and its other sheets are kept (see :meth:`write_excel_keeping_other_sheets`).
+
         Args:
             df (pd.DataFrame): The DataFrame to save.
             filepath (str): The destination Excel file path.
-            overwrite (bool, optional): If True, overwrites the existing file.
+            overwrite (bool, optional): If True, saves to ``filepath`` itself.
                                          If False, saves to a new file with a suffix.
                                          Defaults to True.
             new_suffix (str, optional): The suffix to add to the filename if
@@ -704,12 +737,12 @@ class QuestionBankManager:
         """
         try:
             if overwrite:
-                df.to_excel(filepath, index=False)
+                self.write_excel_keeping_other_sheets(df, filepath)
                 return filepath
             else:
                 base, ext = os.path.splitext(filepath)
                 new_filepath = f"{base}{new_suffix}{ext}"
-                df.to_excel(new_filepath, index=False)
+                self.write_excel_keeping_other_sheets(df, new_filepath)
                 return new_filepath
         except Exception as e:
             print(f"Error al guardar el archivo Excel: {e}")
