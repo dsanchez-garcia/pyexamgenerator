@@ -133,7 +133,7 @@ class QuestionGenerator:
             api_key (Optional[str]): API key of the provider. Not needed to build prompts or to
                 import answers copied from a web chat. If empty, the environment variable of the
                 provider is used (GEMINI_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY).
-            model_name (Optional[str]): Model to use (e.g. 'gemini-2.5-flash', 'gpt-5',
+            model_name (Optional[str]): Model to use (e.g. 'gemini-flash-latest', 'gpt-6.1-sol',
                 'claude-sonnet-5-5'). Required only to call the API.
             provider (Optional[str]): 'gemini' (default), 'openai' or 'anthropic'. Aliases such
                 as 'google', 'chatgpt' or 'claude' are accepted.
@@ -593,7 +593,7 @@ class QuestionGenerator:
             full_document_context_text (Optional[str]): The full text of the document for context.
             bank_prompt_scope (Optional[str]): Scope for selecting guidance questions ('mismo_tema', 'todos_los_temas').
             questions_from_current_chunk_attempts (Optional[List[Dict]]): Questions already generated for this chunk.
-            for_web_chat (bool): If True, asks for the JSON inside a ```json block (easy to copy
+            for_web_chat (bool): If True, asks for the JSON inside a Markdown ``json`` code block (easy to copy
                 from Google AI Studio, ChatGPT or Claude).
             material_is_attachment (bool): If True, ``working_chunk_text`` describes attached files.
 
@@ -754,7 +754,7 @@ class QuestionGenerator:
         DataFrame with the question-bank columns, without saving anything.
 
         Args:
-            response_text (str): Answer text (JSON array, ```json block, legacy format...).
+            response_text (str): Answer text (JSON array, Markdown ``json`` code block, legacy format...).
             topic (str): Value for the 'Tema' column.
             apply_similarity_filter (bool): If True, questions similar to ``existing_bank_df``
                 are moved to ``rejected_questions_list``.
@@ -1057,7 +1057,7 @@ class QuestionGenerator:
         Args:
             input_mode (str): 'text' embeds the PDF text in the prompt; 'image' and 'pdf'
                 ask the user to attach the file (or fragment) to the chat message.
-            for_web_chat (bool): Ask for the answer inside a ```json block (easy to copy).
+            for_web_chat (bool): Ask for the answer inside a Markdown ``json`` code block (easy to copy).
             attachments_dir (Optional[str]): In 'image'/'pdf' modes with fragments, folder
                 where the PDF fragment of each prompt is written so it can be attached.
             include_full_document_context (bool): In 'text' mode with fragments, also include
@@ -1535,7 +1535,7 @@ class QuestionGenerator:
 # Example of use (uncomment to test)
 # if __name__ == '__main__':
 #     # With the API (provider: 'gemini', 'openai' or 'anthropic'):
-#     generator = QuestionGenerator(api_key="YOUR_API_KEY", model_name="gemini-2.5-flash", provider="gemini")
+#     generator = QuestionGenerator(api_key="YOUR_API_KEY", model_name="gemini-flash-latest", provider="gemini")
 #     questions_df = generator.generate_multiple_choice_questions(
 #         ['TEMA 05_Inspecciones de seguridad.pdf'], prompt_type="PRL",
 #         num_questions_per_chunk_target=10, output_filename="banco_de_preguntas")

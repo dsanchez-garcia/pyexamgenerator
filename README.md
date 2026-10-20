@@ -3,11 +3,12 @@
 [![DOI](https://zenodo.org/badge/1068439434.svg)](https://doi.org/10.5281/zenodo.17337856)
 [![alt text](https://img.shields.io/readthedocs/pyexamgenerator/latest)](https://pyexamgenerator.readthedocs.io/es/latest/)
 
-pyexamgenerator es una suite de aplicaciones de escritorio construida con Python y Tkinter para automatizar y simplificar el ciclo completo de los exámenes: generar preguntas a partir de documentos PDF con la IA de Google Gemini, gestionar bancos centralizados, producir exámenes en múltiples formatos y corregirlos.
+pyexamgenerator es una suite de aplicaciones de escritorio construida con Python y Tkinter para automatizar y simplificar el ciclo completo de los exámenes: generar preguntas a partir de documentos PDF con IA (Google Gemini, ChatGPT o Claude, con o sin clave de API), gestionar bancos centralizados, producir exámenes en múltiples formatos y corregirlos.
 
 ## Características Principales
 
--   **Generación de Preguntas con IA**: Utiliza la API de Google Gemini para crear preguntas de opción múltiple a partir de documentos PDF.
+-   **Generación de Preguntas con IA**: Crea preguntas de opción múltiple a partir de documentos PDF (o imágenes) usando la API de Google Gemini, la de OpenAI (modelos de ChatGPT) o la de Anthropic (modelos de Claude). El material se puede enviar como texto extraído, como imágenes de las páginas o como el propio PDF.
+-   **Generación sin API**: Si no tienes clave de API, la aplicación prepara los prompts para que los pegues en Google AI Studio, ChatGPT o Claude desde el navegador y convierte las respuestas que copies en los mismos archivos de revisión.
 -   **Gestión de Bancos de Preguntas**: Importa, fusiona y gestiona preguntas en formato Excel, evitando duplicados.
 -   **Creación de Exámenes Personalizados**: Genera múltiples versiones de un examen (ej. Tipo A, Tipo B) con preguntas y respuestas barajadas.
 -   **Exportación Múltiple**: Guarda los exámenes en formato `.docx` profesional y en formato XML para auto-corrección en Moodle.
@@ -18,7 +19,7 @@ pyexamgenerator es una suite de aplicaciones de escritorio construida con Python
 
 ### Requisitos Previos
 
--   **Python 3.8 o superior**. Durante la instalación de Python, asegúrate de marcar la casilla "Add Python to PATH".
+-   **Python 3.9 o superior**. Durante la instalación de Python, asegúrate de marcar la casilla "Add Python to PATH".
 
 ### Instalación del Paquete
 
@@ -28,19 +29,40 @@ Puedes instalar pyexamgenerator directamente desde PyPI usando pip. Abre tu term
 pip install pyexamgenerator
 ```
 
+Esta instalación incluye todo lo necesario para generar preguntas con la API de Google Gemini y para el flujo sin API. Si quieres usar la API de OpenAI o la de Anthropic, instala además su librería con el extra correspondiente:
+
+```bash
+pip install pyexamgenerator[openai]     # API de OpenAI (modelos de ChatGPT)
+pip install pyexamgenerator[anthropic]  # API de Anthropic (modelos de Claude)
+pip install pyexamgenerator[ia]         # ambas
+```
+
+> En algunas terminales (por ejemplo, zsh en macOS) hay que poner el paquete entre comillas: `pip install "pyexamgenerator[ia]"`.
+
 ## Configuración Inicial: La Clave de API
 
-Antes del primer uso, necesitas tu propia clave de API de Google Gemini.
+La clave de API solo es necesaria para generar preguntas **con API**. Si prefieres no usarla, puedes trabajar **sin API**, copiando los prompts en Google AI Studio, ChatGPT o Claude desde el navegador (ver la Fase 1 más abajo).
 
-1.  **Obtén tu clave de API** siguiendo las instrucciones oficiales en la [documentación de Google AI Studio](https://ai.google.dev/gemini-api/docs/api-key).
+1.  **Obtén tu clave de API** del proveedor que vayas a usar:
+
+    | Proveedor | Dónde se crea la clave | Variable de entorno |
+    | --- | --- | --- |
+    | Google Gemini | [Google AI Studio](https://aistudio.google.com/app/apikey) (tiene un nivel gratuito con límites; consulta la [documentación de Google AI Studio](https://ai.google.dev/gemini-api/docs/api-key)) | `GEMINI_API_KEY` (o `GOOGLE_API_KEY`) |
+    | OpenAI (ChatGPT) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` |
+    | Anthropic (Claude) | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
+
+    Ten en cuenta que el uso de la API de OpenAI y de la de Anthropic se factura aparte de las suscripciones de ChatGPT o de Claude.
+
 2.  **Configura la clave**. Tienes dos opciones:
 
-    *   **(Recomendado) Usar una Variable de Entorno:** Es el método más seguro. Crea una variable de entorno llamada `GEMINI_API_KEY` con el valor de tu clave. La aplicación la detectará automáticamente al iniciarse.
+    *   **(Recomendado) Usar una Variable de Entorno:** Es el método más seguro. Crea la variable de entorno de tu proveedor (tabla anterior) con el valor de tu clave. La aplicación la detectará automáticamente al iniciarse y, si también hay una clave guardada en `config.json`, la variable de entorno tiene prioridad.
     *   **(Alternativa) Guardar en la Aplicación:**
         *   Abre la aplicación `pyexamgenerator`.
-        *   Ve a la pestaña **"Generar Preguntas"**.
-        *   Introduce tu clave en el campo **"Clave API de Gemini"**.
-        *   Haz clic en el botón **"Guardar Clave"**. La clave se guardará en un archivo `config.json` local.
+        *   Ve a la pestaña **"Generar Preguntas"**, sección **"Proveedor de IA, Clave API y Modelo"**.
+        *   Elige el **"Proveedor"** e introduce tu clave en el campo **"Clave API"** (el botón **"Obtener clave..."** abre la página del proveedor donde se crean las claves).
+        *   Haz clic en el botón **"Guardar Clave"**. La clave del proveedor seleccionado (junto con el modelo elegido) se guardará en un archivo `config.json` en la carpeta desde la que ejecutaste la aplicación. La clave se guarda sin cifrar, así que no compartas ese archivo.
+
+    El menú **Ayuda > Configurar API Key (Ayuda)...** de la aplicación resume qué variable de entorno usa cada proveedor.
 
 ## Uso mediante la interfaz
 
@@ -59,13 +81,18 @@ El proceso de uso de la aplicación se divide en tres fases principales, cada un
 
 Aquí es donde se crea el contenido inicial a partir de tus documentos.
 
-1.  **Selecciona un Prompt**: Elige una plantilla de instrucciones para la IA (ej. "PRL") o crea la tuya propia.
-2.  **Selecciona los PDFs**: Haz clic en "Seleccionar PDFs" para elegir los documentos que servirán como fuente de conocimiento.
+1.  **Selecciona un Prompt**: Elige una plantilla de instrucciones para la IA (ej. "PRL") o crea la tuya propia. Puedes retocar el texto de **"Prompt Seleccionado"** para una sola generación; para guardarlo de forma permanente usa **"Editar"**.
+2.  **Selecciona los Archivos Fuente**: Haz clic en **"Seleccionar Archivos"** para elegir los PDFs (o imágenes) que servirán como fuente de conocimiento y elige el **"Modo de entrada"**:
+    *   `text`: extrae el texto del PDF y lo incluye en el prompt (recomendado para PDFs con texto seleccionable).
+    *   `image`: envía las páginas como imágenes (útil con esquemas, tablas o PDFs escaneados).
+    *   `pdf`: adjunta el propio PDF (o cada fragmento) como documento.
 3.  **Configura la Generación**:
-    *   Define cuántas **preguntas objetivo** quieres por cada PDF.
+    *   Define cuántas **preguntas objetivo** quieres por cada PDF (o por cada fragmento, si activas **"Procesar PDF por fragmentos"**).
     *   (Opcional) Activa el **filtro de duplicados** seleccionando tu banco de preguntas principal para evitar generar preguntas repetidas.
-4.  **Carga y Selecciona un Modelo**: Haz clic en **"Cargar Modelos"** y selecciona uno de la tabla (ej. `gemini-2.5-flash`).
-5.  **Genera**: Haz clic en **"Generar Preguntas"**. La aplicación creará un archivo `.xlsx` y un `.docx` con las nuevas preguntas, marcadas como "pendiente de revisar".
+4.  **Elige Proveedor, Clave y Modelo**: En la sección **"Proveedor de IA, Clave API y Modelo"**, selecciona el **"Proveedor"** (Google Gemini, OpenAI o Anthropic), comprueba la **"Clave API"** y elige un modelo en el desplegable **"Modelo"** (ej. `gemini-flash-latest`). También puedes pulsar **"Cargar Modelos"** para ver en la tabla los modelos disponibles para tu clave y seleccionar uno.
+5.  **Genera**: Haz clic en **"Generar Preguntas"**. La generación se ejecuta en segundo plano (la ventana sigue respondiendo y la barra de estado muestra el progreso) y el botón **"Cancelar"** la detiene tras la petición en curso, guardando lo obtenido. La aplicación creará un archivo `.xlsx` y un `.docx` (`<nombre>_pendiente_de_revisar`) con las nuevas preguntas, marcadas como "Pendiente de revisar". Si procede, creará también `<nombre>_similares_descartadas.docx` (preguntas descartadas por el filtro de similitud) y `<nombre>_no_validas.xlsx` (respuestas del modelo que no se pudieron usar, con el motivo).
+
+**¿Sin clave de API?** En lugar de los pasos 4 y 5, pulsa **"Preparar prompts sin API..."** en la sección **"Generar sin API (Google AI Studio, ChatGPT o Claude en el navegador)"**. Se abrirá un asistente con un prompt por PDF o fragmento: cópialo en el chat, pega la respuesta en el asistente y pulsa **"3. Guardar preguntas (Excel + DOCX)"** para obtener los mismos archivos de revisión.
 
 #### Fase 2: Gestionar el Banco de Preguntas (Pestaña "Gestionar Banco de Preguntas")
 
@@ -117,43 +144,92 @@ A continuación se muestran ejemplos de uso para cada uno de los módulos princi
 
 ### 1. Generar Preguntas con `QuestionGenerator`
 
+#### 1.1. Con API (Gemini, OpenAI o Anthropic)
+
 Este script utiliza la IA para leer uno o más archivos PDF y generar un banco de preguntas, procesando cada página de forma individual para un análisis exhaustivo.
 
 ```python
 # archivo: generar_preguntas.py
 
 from pyexamgenerator import QuestionGenerator
-import os
+from pyexamgenerator.ai_providers import AIProviderError
 
 # --- Configuración ---
-# Se recomienda configurar la API Key como una variable de entorno (GEMINI_API_KEY)
-# api_key = os.getenv("GEMINI_API_KEY") 
+# Se recomienda configurar la API Key como una variable de entorno del proveedor:
+# GEMINI_API_KEY (o GOOGLE_API_KEY), OPENAI_API_KEY o ANTHROPIC_API_KEY.
+# Si no la tienes definida, pásala con QuestionGenerator(api_key="...", ...).
 
 PDF_FILES = ['ruta/a/tu/TEMA_01.pdf', 'ruta/a/tu/TEMA_02.pdf']
 OUTPUT_FILENAME = "banco_generado_script"
-MODEL_NAME = 'models/gemini-2.5-flash' # O el modelo que prefieras
+PROVIDER = "gemini"  # "gemini", "openai" o "anthropic"
+MODEL_NAME = "gemini-flash-latest"  # O el modelo que prefieras del proveedor elegido
 
 # --- Lógica del Script ---
 if __name__ == '__main__':
-    # Asegúrate de pasar la API Key si no usas variables de entorno
-    generator = QuestionGenerator(model_name=MODEL_NAME)
-    
-    print(f"Generando preguntas desde: {PDF_FILES}")
-    
-    questions_df = generator.generate_multiple_choice_questions(
-        pdf_paths=PDF_FILES,
-        prompt_type="PRL",
-        output_filename=OUTPUT_FILENAME,
-        generate_docx=True,
-        process_by_pages=True,  # Activar procesamiento por páginas
-        num_questions_per_chunk_target=2, # Intentar generar 2 preguntas por página
-        pages_per_chunk=1,  # Procesar cada página individualmente
-    )
+    generator = QuestionGenerator(model_name=MODEL_NAME, provider=PROVIDER)
 
-    if questions_df is not None and not questions_df.empty:
-        print(f"\n¡Éxito! Se generaron {len(questions_df)} preguntas.")
-        print(f"Archivos guardados con el prefijo '{OUTPUT_FILENAME}'.")
+    print(f"Generando preguntas desde: {PDF_FILES}")
+
+    try:
+        questions_df = generator.generate_multiple_choice_questions(
+            pdf_paths=PDF_FILES,
+            prompt_type="PRL",
+            output_filename=OUTPUT_FILENAME,
+            generate_docx=True,
+            input_mode="text",  # "text", "image" o "pdf"
+            process_by_pages=True,  # Activar procesamiento por páginas
+            num_questions_per_chunk_target=2, # Intentar generar 2 preguntas por página
+            pages_per_chunk=1,  # Procesar cada página individualmente
+        )
+    except AIProviderError as e:
+        # Clave no válida, cuota excedida, servidores saturados, modelo inexistente...
+        # Las preguntas obtenidas antes del error ya se han guardado.
+        print(f"\nError del proveedor de IA:\n{e}")
+    else:
+        if questions_df is not None and not questions_df.empty:
+            print(f"\n¡Éxito! Se generaron {len(questions_df)} preguntas.")
+            print(f"Archivos guardados: {list(generator.last_output_paths.values())}")
 ```
+
+Para usar otro proveedor basta con cambiar `provider` y `model_name` (se admiten también los alias `"google"`, `"chatgpt"` o `"claude"`). Por ejemplo, con Claude y enviando el PDF como documento adjunto:
+
+```python
+from pyexamgenerator import QuestionGenerator
+
+qg = QuestionGenerator(api_key="...", model_name="claude-opus-5-5", provider="anthropic")
+qg.generate_multiple_choice_questions(["Tema 1.pdf"], prompt_type="PRL", num_questions_per_chunk_target=10,
+                                      input_mode="pdf", output_filename="tema1")
+```
+
+> Recuerda instalar el extra del proveedor (`pip install pyexamgenerator[openai]`, `[anthropic]` o `[ia]`) para usar OpenAI o Anthropic.
+
+#### 1.2. Sin API (Google AI Studio, ChatGPT o Claude en el navegador)
+
+Sin clave de API puedes preparar los prompts, pegarlos tú mismo en el chat y convertir después las respuestas en los mismos archivos de revisión que genera la API:
+
+```python
+# archivo: generar_preguntas_sin_api.py
+
+from pyexamgenerator import QuestionGenerator
+
+qg = QuestionGenerator()  # No necesita clave ni modelo
+
+# 1. Un prompt por PDF/fragmento (admite las mismas opciones de fragmentación que la generación con API)
+prompts = qg.build_generation_prompts(["Tema 1.pdf"], prompt_type="PRL", input_mode="text")
+qg.export_prompts(prompts, output_filename="tema1")   # tema1_prompts.xlsx + carpeta tema1_prompts/
+
+# 2. Pega cada prompt en el chat y copia su respuesta en la columna 'Respuesta' del Excel
+#    (o escribe en esa celda la ruta a un .txt con la respuesta).
+
+# 3. Importa las respuestas: crea tema1_pendiente_de_revisar.xlsx/.docx y, si procede,
+#    tema1_similares_descartadas.docx y tema1_no_validas.xlsx.
+qg.import_questions_from_prompts_file("tema1_prompts.xlsx", output_filename="tema1")
+
+# O directamente con el texto copiado del chat:
+# qg.import_questions_from_responses({"Tema 1": texto_copiado_del_chat}, output_filename="tema1")
+```
+
+> Para aplicar el filtro de similitud al importar, añade `existing_bank_path="ruta/a/tu/banco_principal.xlsx"` (y, si quieres, `similarity_threshold`). En los modos `image` y `pdf`, la columna `Adjuntar` indica el archivo que hay que adjuntar en el chat junto con cada prompt; si procesas el PDF por fragmentos, pasa también `attachments_dir="carpeta"` a `build_generation_prompts` para que escriba allí el PDF de cada fragmento.
 
 ### 2. Gestionar el Banco de Preguntas con `QuestionBankManager`
 

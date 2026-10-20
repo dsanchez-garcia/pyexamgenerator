@@ -80,7 +80,8 @@ class WebChatAssistant(tk.Toplevel):
 
     Args:
         master: Parent window.
-        generator (QuestionGenerator): Generator used to build the prompts (no API key needed).
+        generator (~pyexamgenerator.question_generator.QuestionGenerator): Generator used to build the
+            prompts (no API key needed).
         prompts_df (pd.DataFrame): Result of :meth:`QuestionGenerator.build_generation_prompts`.
         output_dir (str): Folder where the review files are written.
         output_filename (str): Base name of the output files.

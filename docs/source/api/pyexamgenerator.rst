@@ -12,6 +12,14 @@ Subpackages
 Submodules
 ----------
 
+pyexamgenerator.ai\_providers module
+------------------------------------
+
+.. automodule:: pyexamgenerator.ai_providers
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 pyexamgenerator.exam\_generator module
 --------------------------------------
 
@@ -44,10 +52,26 @@ pyexamgenerator.question\_generator module
    :undoc-members:
    :show-inheritance:
 
+pyexamgenerator.question\_parsing module
+----------------------------------------
+
+.. automodule:: pyexamgenerator.question_parsing
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 pyexamgenerator.tooltip module
 ------------------------------
 
 .. automodule:: pyexamgenerator.tooltip
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+pyexamgenerator.web\_chat\_assistant module
+-------------------------------------------
+
+.. automodule:: pyexamgenerator.web_chat_assistant
    :members:
    :undoc-members:
    :show-inheritance:
