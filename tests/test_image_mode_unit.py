@@ -34,5 +34,7 @@ def test_build_generation_prompts_image_mode_returns_prompt_without_api_calls():
 
     assert len(prompts_df) == 1
     prompt_text = prompts_df.iloc[0]["Prompt"]
-    assert "imágenes adjuntas" in prompt_text.lower()
+    # Without an API the user attaches the PDF itself: the prompt names it and asks for a visual reading.
+    assert "documento adjunto (tema imagen 01.pdf)" in prompt_text.lower()
+    assert "contenido visual" in prompt_text.lower()
 

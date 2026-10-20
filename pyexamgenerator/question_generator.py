@@ -43,6 +43,7 @@ from .ai_providers import (
     AIProviderError,
     BaseAIClient,
     InvalidAPIKeyError,
+    InvalidRequestError,
     ModelNotFoundError,
     ProviderNotAvailableError,
     QuotaExceededError,
@@ -50,7 +51,7 @@ from .ai_providers import (
     create_ai_client,
     resolve_provider,
 )
-from .question_parsing import OPTION_LETTERS, parse_questions_response
+from .question_parsing import OPTION_LETTERS, parse_questions_response, question_identity
 
 # QuotaExceededError and ServiceOverloadedError are re-exported here for backward compatibility.
 __all__ = [
@@ -62,6 +63,8 @@ __all__ = [
 ]
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+#: Image formats that not every provider accepts: they are converted to PNG before being sent.
+_IMAGE_EXTENSIONS_TO_CONVERT = {".bmp", ".gif", ".tif", ".tiff"}
 
 #: Columns of the generated question files (same layout as the question bank).
 QUESTION_COLUMNS = [
@@ -81,6 +84,7 @@ _EXCEL_CELL_LIMIT = 32000
 
 _FATAL_PROVIDER_ERRORS = (
     QuotaExceededError, ServiceOverloadedError, InvalidAPIKeyError, ModelNotFoundError, ProviderNotAvailableError,
+    InvalidRequestError,
 )
 
 _FORMAT_INSTRUCTIONS = """1. **Incluye la respuesta correcta:** Para cada pregunta, indica la letra de la opción correcta (A, B, C o D), sin paréntesis.
@@ -96,8 +100,12 @@ Puedes incluir preguntas del tipo: señala la afirmación incorrecta entre las s
 Además, puedes incluir respuestas como todas son correctas, o todas son incorrectas. No uses opciones que dependan de su posición (como "todas las anteriores" o "ninguna de las anteriores"), porque el orden de las opciones se baraja en los exámenes. Las 4 opciones deben ser distintas entre sí."""
 
 _OUTPUT_RULE_API = (
-    "**Responde ÚNICAMENTE con el array JSON**, sin texto adicional antes ni después."
+    "**Responde ÚNICAMENTE con el array JSON**, sin texto adicional antes ni después. Si la petición "
+    "incluye un esquema JSON para la respuesta, sigue ese esquema (con sus nombres de clave)."
 )
+
+_FINAL_REMINDER_API = "Recuerda: responde únicamente con el JSON de las preguntas."
+_FINAL_REMINDER_WEB_CHAT = "Recuerda: responde únicamente con un bloque de código ```json con el array de preguntas."
 
 _OUTPUT_RULE_WEB_CHAT = (
     "**Responde ÚNICAMENTE con un bloque de código ```json que contenga el array JSON completo**, "
@@ -169,6 +177,10 @@ class QuestionGenerator:
         self.invalid_questions_list: List[Dict] = []
         self.last_output_paths: Dict[str, str] = {}
         self.cancelled = False
+        #: Questions discarded because they repeated another one (same statement and options).
+        self.duplicate_questions_count = 0
+        #: Last non-fatal provider error of the last run (shown by the GUI when nothing is generated).
+        self.last_provider_error: Optional[str] = None
         self._progress_callback: Optional[Callable[[str], None]] = None
         self._bank_index_source = None
         self._bank_index: List[Tuple[set, str]] = []
@@ -190,6 +202,14 @@ class QuestionGenerator:
     def client(self) -> Any:
         """Underlying SDK client (kept for backward compatibility)."""
         return self.ai_client.sdk_client
+
+    @client.setter
+    def client(self, sdk_client: Any) -> None:
+        # Previous versions allowed replacing the Gemini SDK client (e.g. with a mock).
+        self._ai_client = create_ai_client(
+            self.provider, self.api_key, self.model_name, sdk_client=sdk_client,
+            max_output_tokens=self.max_output_tokens, temperature=self.temperature,
+        )
 
     def _log(self, message: str) -> None:
         print(message)
@@ -351,6 +371,17 @@ class QuestionGenerator:
                 "Use PDF o imágenes (png/jpg/webp/bmp/gif/tiff)."
             )
 
+        extension = os.path.splitext(source_path)[1].lower()
+        if extension in _IMAGE_EXTENSIONS_TO_CONVERT and fitz is not None:
+            # BMP, TIFF (also multi-page) and GIF are not accepted by every provider: sent as PNG.
+            stem = os.path.splitext(os.path.basename(source_path))[0]
+            with fitz.open(source_path) as image_doc:
+                return [{
+                    "bytes": page.get_pixmap(alpha=False).tobytes("png"),
+                    "mime_type": "image/png",
+                    "name": f"{stem}.png" if image_doc.page_count == 1 else f"{stem}_p{number}.png",
+                } for number, page in enumerate(image_doc, start=1)]
+
         with open(source_path, "rb") as f:
             image_bytes = f.read()
         return [{
@@ -483,13 +514,15 @@ class QuestionGenerator:
 
     def _plan_attachment_chunks(self, source_path: str, input_mode: str, process_by_pages: bool,
                                 pages_per_chunk: int, total_chunks: Optional[int], load_bytes: bool,
-                                attachments_dir: Optional[str] = None) -> List[Dict]:
+                                attachments_dir: Optional[str] = None,
+                                fragment_stem: Optional[str] = None) -> List[Dict]:
         """
         Splits an image/PDF source into chunks of attachments for the 'image' and 'pdf' modes.
 
         Each chunk is ``{"label", "attachments", "files"}``. ``attachments`` holds the bytes to
         send through the API (only when ``load_bytes``); ``files`` lists the files the user must
-        attach in a web chat (fragments are written to ``attachments_dir`` when given).
+        attach in a web chat (fragments are written to ``attachments_dir`` when given, named after
+        ``fragment_stem`` or, by default, after the source file).
         """
         name = os.path.basename(source_path)
         if not source_path.lower().endswith(".pdf"):
@@ -513,7 +546,7 @@ class QuestionGenerator:
         num_pages = self._count_pdf_pages(source_path)
         ranges = self._page_ranges(num_pages, process_by_pages, pages_per_chunk, total_chunks)
         page_images = self._extract_pdf_pages_as_images(source_path) if load_bytes and input_mode == "image" else []
-        stem = os.path.splitext(name)[0]
+        stem = fragment_stem or os.path.splitext(name)[0]
 
         chunks = []
         for start, end in ranges:
@@ -550,6 +583,13 @@ class QuestionGenerator:
     def _attachment_instruction(input_mode: str, file_names: List[str], label: str) -> str:
         names = ", ".join(file_names)
         scope = "" if label in ("documento completo", "imagen") else f" ({label} del documento original)"
+        if input_mode == "image" and any(name.lower().endswith(".pdf") for name in file_names):
+            # Manual workflow: the user attaches the PDF (or fragment) itself to the chat.
+            return (
+                f"IMPORTANTE: Debes basarte ÚNICAMENTE en las páginas del documento adjunto ({names}){scope}, "
+                "analizando su contenido visual (texto, tablas, esquemas e imágenes). "
+                "No inventes información que no aparezca en esas páginas."
+            )
         if input_mode == "image":
             return (
                 "IMPORTANTE: Debes basarte ÚNICAMENTE en las imágenes adjuntas"
@@ -692,6 +732,8 @@ class QuestionGenerator:
             prompt_guidance_from_current_attempts_str.strip(),
             context_section,
             chunk_instruction_and_text_section,
+            # After a long material the model may forget the output rule given at the beginning.
+            _FINAL_REMINDER_WEB_CHAT if for_web_chat else _FINAL_REMINDER_API,
         ]
         return "\n\n".join(section for section in sections if section)
 
@@ -1025,6 +1067,28 @@ class QuestionGenerator:
     # ------------------------------------------------------------------
     # Manual workflow (no API): prompts for the web chats and import of the answers
     # ------------------------------------------------------------------
+    def _validate_sources(self, pdf_paths: List[str], input_mode: str, check_exists: bool = True) -> None:
+        """
+        Checks the source files before any work (and before any paid API call).
+
+        Raises:
+            FileNotFoundError: Some file does not exist (only when ``check_exists``).
+            ValueError: Some file has a format that ``input_mode`` cannot use.
+        """
+        if check_exists:
+            missing = [path for path in pdf_paths if not os.path.isfile(path)]
+            if missing:
+                raise FileNotFoundError("No se encuentran estos archivos fuente:\n" + "\n".join(missing))
+        if input_mode == "text":
+            unsupported = [path for path in pdf_paths if not path.lower().endswith(".pdf")]
+            hint = "En modo 'text' solo se admiten PDF; usa el modo 'image' o 'pdf' para imágenes."
+        else:
+            unsupported = [path for path in pdf_paths
+                           if not path.lower().endswith(".pdf") and not self._is_image_path(path)]
+            hint = f"En modo '{input_mode}' se admiten PDF e imágenes (png/jpg/webp/bmp/gif/tiff)."
+        if unsupported:
+            raise ValueError(f"Formato no soportado: {', '.join(unsupported)}. {hint}")
+
     def build_generation_prompts(
             self,
             pdf_paths: List[str],
@@ -1068,11 +1132,15 @@ class QuestionGenerator:
             'Total fragmentos', 'Páginas', 'Adjuntar', 'Caracteres' and 'Prompt'.
         """
         self._validate_modes(input_mode, chunking_mode)
+        # Existence is checked when a file is read (in 'image'/'pdf' modes without fragments the
+        # prompt only names the file).
+        self._validate_sources(pdf_paths, input_mode, check_exists=False)
         prompts_rows: List[Dict] = []
         self.current_prompt_example_content_type = prompt_example_content_type
         self._load_existing_bank(existing_bank_path)
         guidance_df = self.existing_bank_df if include_similar_questions_in_prompt else None
         guidance_scope = bank_prompt_scope if include_similar_questions_in_prompt else None
+        used_fragment_stems: Dict[str, int] = {}
 
         for pdf_path in pdf_paths:
             current_pdf_topic = self.extract_topic_number_from_path(pdf_path)
@@ -1082,9 +1150,14 @@ class QuestionGenerator:
                     pdf_path, process_by_pages, pages_per_chunk, total_chunks, chunking_mode)
                 use_context = process_by_pages and include_full_document_context and len(chunks) > 1
             else:
+                # Two sources with the same name (T1/apuntes.pdf, T2/apuntes.pdf) must not share
+                # fragment files: the second one gets the suffix _2, _3...
+                stem = os.path.splitext(os.path.basename(pdf_path))[0]
+                used_fragment_stems[stem] = used_fragment_stems.get(stem, 0) + 1
+                fragment_stem = stem if used_fragment_stems[stem] == 1 else f"{stem}_{used_fragment_stems[stem]}"
                 chunks = self._plan_attachment_chunks(
                     pdf_path, input_mode, process_by_pages, pages_per_chunk, total_chunks,
-                    load_bytes=False, attachments_dir=attachments_dir)
+                    load_bytes=False, attachments_dir=attachments_dir, fragment_stem=fragment_stem)
                 full_text, use_context = None, False
 
             for i, chunk in enumerate(chunks):
@@ -1165,7 +1238,8 @@ class QuestionGenerator:
                 response_path = os.path.join(folder, file_name.replace(".txt", "_respuesta.txt"))
                 with open(response_path, "w", encoding="utf-8") as f:
                     f.write(response)
-                response = response_path
+                # Relative to the workbook, so the pair can be moved to another folder.
+                response = os.path.relpath(response_path, output_dir)
             rows.append({
                 "Nº": number,
                 "Tema": row.get("Tema", ""),
@@ -1261,6 +1335,7 @@ class QuestionGenerator:
         self.final_df = pd.DataFrame()
         self.rejected_questions_list = []
         self.invalid_questions_list = []
+        self.duplicate_questions_count = 0
         self._set_similarity_threshold(similarity_threshold)
         self._load_existing_bank(existing_bank_path)
 
@@ -1269,13 +1344,17 @@ class QuestionGenerator:
         for topic, text in self._normalize_responses(responses, default_topic):
             accepted_in_response = 0
             for question in self._analyze_response(text, topic):
-                key = (self._normalize_text(question["Pregunta"]).strip(), question["Tema"])
+                key = (question["Tema"], question_identity(question))
                 if key in seen:
+                    self.duplicate_questions_count += 1
                     continue
                 seen.add(key)
                 accepted.append(question)
                 accepted_in_response += 1
             self._log(f"Tema '{topic}': {accepted_in_response} preguntas aceptadas de esta respuesta.")
+        if self.duplicate_questions_count:
+            self._log(f"Se descartaron {self.duplicate_questions_count} preguntas repetidas (mismo tema, "
+                      "enunciado y opciones).")
 
         self.final_df = pd.DataFrame(accepted, columns=QUESTION_COLUMNS) if accepted else pd.DataFrame()
         self._save_generation_outputs(output_filename, output_dir, generate_docx)
@@ -1301,16 +1380,19 @@ class QuestionGenerator:
             raise ValueError(f"El archivo '{prompts_path}' no tiene una columna 'Respuesta'.")
 
         base_dir = os.path.dirname(os.path.abspath(prompts_path))
+        prompts_folder = os.path.splitext(os.path.abspath(prompts_path))[0]  # <nombre>_prompts/
         responses = []
         for _, row in df.iterrows():
             text = row.get("Respuesta")
             if not isinstance(text, str) or not text.strip():
                 continue
-            candidate = text.strip()
+            candidate = text.strip().strip('"').strip("'").strip()  # Windows "Copiar como ruta" adds quotes.
             if len(candidate) < 400 and "\n" not in candidate:
-                candidate_path = candidate if os.path.isabs(candidate) else os.path.join(base_dir, candidate)
-                if os.path.isfile(candidate_path):
-                    with open(candidate_path, "r", encoding="utf-8-sig") as f:
+                candidates = [candidate] if os.path.isabs(candidate) else [os.path.join(base_dir, candidate)]
+                candidates.append(os.path.join(prompts_folder, os.path.basename(candidate)))
+                existing = next((path for path in candidates if os.path.isfile(path)), None)
+                if existing:
+                    with open(existing, "r", encoding="utf-8-sig") as f:
                         text = f.read()
             responses.append({"Tema": row.get("Tema") or "", "Respuesta": text})
         return self.import_questions_from_responses(responses, **kwargs)
@@ -1392,6 +1474,8 @@ class QuestionGenerator:
             ProviderNotAvailableError: The questions generated before the error are saved first.
         """
         self._validate_modes(input_mode, chunking_mode)
+        # Missing or unsupported files are reported before the first (paid) API call.
+        self._validate_sources(pdf_paths, input_mode)
         if not output_filename:
             output_filename = 'preguntas'
 
@@ -1405,6 +1489,8 @@ class QuestionGenerator:
         self.rejected_questions_list = []  # Accumulates all rejected questions
         self.invalid_questions_list = []
         self.cancelled = False
+        self.duplicate_questions_count = 0
+        self.last_provider_error = None
 
         self._set_similarity_threshold(similarity_threshold)
         self.current_prompt_example_content_type = prompt_example_content_type
@@ -1481,6 +1567,7 @@ class QuestionGenerator:
                             raise
                         except Exception as e_gen:
                             # Other errors are logged and the next attempt is tried.
+                            self.last_provider_error = str(e_gen)
                             self._log(f"    Error durante la generación en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}")
                             if not isinstance(e_gen, AIProviderError):
                                 print(traceback.format_exc())
@@ -1492,27 +1579,33 @@ class QuestionGenerator:
                         time.sleep(1)
                         unique_newly_accepted = []
                         for q_new in self._analyze_response(response_text, current_pdf_topic):
-                            key = self._normalize_text(q_new.get("Pregunta", "")).strip()
-                            # Discard exact repetitions (same statement) within the whole run.
+                            # Discard repetitions (same topic, statement and options) within the run.
+                            key = (q_new["Tema"], question_identity(q_new))
                             if key in accepted_keys:
+                                self.duplicate_questions_count += 1
                                 continue
                             accepted_keys.add(key)
                             unique_newly_accepted.append(q_new)
 
                         questions_accepted_for_this_chunk.extend(unique_newly_accepted)
+                        # Kept at once, so an error in a later attempt does not lose them.
+                        all_accepted.extend(unique_newly_accepted)
                         self._log(
                             f"    Intento {attempts_for_this_chunk}: {len(unique_newly_accepted)} preguntas nuevas aceptadas para este fragmento. Total para fragmento: {len(questions_accepted_for_this_chunk)}/{num_questions_per_chunk_target}")
 
                     if len(questions_accepted_for_this_chunk) < num_questions_per_chunk_target and not self.cancelled:
                         self._log(
                             f"  Advertencia: No se alcanzó el objetivo de {num_questions_per_chunk_target} preguntas para el fragmento {i + 1} después de {max_generation_attempts_per_chunk} intentos. Se obtuvieron {len(questions_accepted_for_this_chunk)}.")
-
-                    all_accepted.extend(questions_accepted_for_this_chunk)
-        except _FATAL_PROVIDER_ERRORS:
+        except Exception:
+            # Fatal provider errors and unexpected ones (unreadable PDF, file locked...): the questions
+            # obtained so far are saved before the error reaches the caller.
             if all_accepted:
                 self._log(f"Guardando las {len(all_accepted)} preguntas obtenidas antes del error...")
                 self.final_df = pd.DataFrame(all_accepted, columns=QUESTION_COLUMNS)
-                self._save_generation_outputs(output_filename, output_dir, generate_docx)
+                try:
+                    self._save_generation_outputs(output_filename, output_dir, generate_docx)
+                except Exception as save_error:
+                    self._log(f"No se pudieron guardar las preguntas obtenidas: {save_error}")
             self._progress_callback = None
             raise
 
@@ -1528,6 +1621,8 @@ class QuestionGenerator:
             self._log(f"Total preguntas rechazadas por similitud (acumulado de todos los intentos): {len(self.rejected_questions_list)}")
         if self.invalid_questions_list:
             self._log(f"Total fragmentos de respuesta no válidos (formato): {len(self.invalid_questions_list)}")
+        if self.duplicate_questions_count:
+            self._log(f"Total preguntas repetidas descartadas: {self.duplicate_questions_count}")
         self._progress_callback = None
 
         return self.final_df

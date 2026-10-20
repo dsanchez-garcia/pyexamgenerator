@@ -112,7 +112,13 @@ _KEY_ALIASES = {
 # Keys of a wrapper object that may contain the list of questions.
 _LIST_WRAPPER_KEYS = ("preguntas", "questions", "items", "data", "resultado", "results")
 
-_FENCED_BLOCK_RE = re.compile(r"```[^\n`]*\n(.*?)(?:```|\Z)", re.DOTALL)
+# Maximum number of unclosed "{" tried by _scan_objects (protects against pathological input).
+_MAX_UNCLOSED_BRACES = 200
+# Maximum nesting followed by _canonical_items.
+_MAX_NESTING = 50
+_OPTION_TEXT_KEYS = ("texto", "text", "opcion", "option", "respuesta", "answer", "contenido", "content",
+                     "valor", "value", "descripcion", "description")
+_OPTION_CORRECT_KEYS = ("correcta", "es correcta", "correct", "is correct", "es_correcta")
 _QUESTION_PREFIX_RE = re.compile(r"^\s*pregunta\s*\d+\s*[:.)-]\s*", re.IGNORECASE)
 _OPTION_LABEL_RE = re.compile(r"^\s*[\(\[]?([A-Da-d])\s*[\)\]\.:\-]\s*")
 _ANSWER_LETTER_RE = re.compile(
@@ -180,7 +186,7 @@ def _loads(text: str) -> Optional[Any]:
         return None
     try:
         return json.loads(text, strict=False)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         pass
     try:
         return ast.literal_eval(text)
@@ -188,7 +194,7 @@ def _loads(text: str) -> Optional[Any]:
         pass
     try:
         return json.loads(_repair_json(text), strict=False)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return None
 
 
@@ -218,12 +224,14 @@ def _find_matching_brace(text: str, start: int) -> int:
     return -1
 
 
-def _canonical_items(obj: Any) -> List[Dict]:
+def _canonical_items(obj: Any, depth: int = 0) -> List[Dict]:
     """Extracts the dictionaries that look like questions from a decoded value."""
+    if depth > _MAX_NESTING:
+        return []
     if isinstance(obj, list):
         items: List[Dict] = []
         for element in obj:
-            items.extend(_canonical_items(element))
+            items.extend(_canonical_items(element, depth + 1))
         return items
     if isinstance(obj, dict):
         normalized_keys = {_normalize_key(k) for k in obj}
@@ -231,17 +239,18 @@ def _canonical_items(obj: Any) -> List[Dict]:
             return [obj]
         for key, value in obj.items():
             if _normalize_key(key) in _LIST_WRAPPER_KEYS and isinstance(value, (list, dict)):
-                return _canonical_items(value)
+                return _canonical_items(value, depth + 1)
         # Single wrapper with an arbitrary name: {"tema 1": [...]}.
         nested = [v for v in obj.values() if isinstance(v, list)]
         if len(nested) == 1:
-            return _canonical_items(nested[0])
+            return _canonical_items(nested[0], depth + 1)
     return []
 
 
 def _scan_objects(text: str) -> List[Dict]:
     """Finds every balanced ``{...}`` that decodes to a question (or a list of them)."""
     items: List[Dict] = []
+    unclosed = 0
     i = 0
     while i < len(text):
         start = text.find("{", i)
@@ -249,6 +258,10 @@ def _scan_objects(text: str) -> List[Dict]:
             break
         end = _find_matching_brace(text, start)
         if end == -1:
+            # Each unclosed "{" scans the rest of the text: a real (truncated) answer has only a few.
+            unclosed += 1
+            if unclosed > _MAX_UNCLOSED_BRACES:
+                break
             i = start + 1
             continue
         found = _canonical_items(_loads(text[start:end + 1]))
@@ -260,9 +273,60 @@ def _scan_objects(text: str) -> List[Dict]:
     return items
 
 
+def _split_segments(text: str) -> List[str]:
+    """
+    Splits ``text`` into the contents of its Markdown code blocks and the text between them.
+
+    Fences are only recognised at the start of a line, so a ``` written inside a JSON string does
+    not end the block. An opening fence found while a block is still open (an answer cut by the
+    output limit followed by the pasted continuation) closes the previous block, so both are read.
+    """
+    segments: List[str] = []
+    current: List[str] = []
+    in_block = False
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if not stripped.startswith("```"):
+            current.append(line)
+            continue
+        rest = stripped[3:]
+        segments.append("".join(current))
+        current = []
+        if in_block and not rest.strip():
+            in_block = False  # Closing fence.
+            continue
+        in_block = True  # Opening fence (with an optional language: ```json).
+        content = rest[re.match(r"[\w+.-]*", rest).end():]
+        if content.rstrip().endswith("```"):
+            segments.append(content.rstrip()[:-3])  # One-line block: ```json [...] ```
+            in_block = False
+        elif content.strip():
+            current.append(content + "\n")
+    segments.append("".join(current))
+    return [segment for segment in segments if segment.strip()]
+
+
+def _extract_from_segment(segment: str) -> List[Dict]:
+    decoded = _canonical_items(_loads(segment))
+    if decoded:
+        return decoded
+    # Arrays embedded in surrounding prose: "Aquí tienes las preguntas: [...]".
+    first_bracket = segment.find("[")
+    last_bracket = segment.rfind("]")
+    if 0 <= first_bracket < last_bracket:
+        decoded = _canonical_items(_loads(segment[first_bracket:last_bracket + 1]))
+        if decoded:
+            return _scan_objects(segment[:first_bracket]) + decoded + _scan_objects(segment[last_bracket + 1:])
+    # Truncated arrays, several arrays or objects mixed with text: every complete object is kept.
+    return _scan_objects(segment)
+
+
 def extract_question_dicts(response_text: str) -> List[Dict]:
     """
     Extracts the raw question dictionaries contained in a model answer.
+
+    Several answers can be pasted one after another (for example a cut answer followed by its
+    continuation, with or without code blocks): the questions of all of them are returned.
 
     Args:
         response_text (str): Text returned by the model or pasted by the user.
@@ -272,30 +336,16 @@ def extract_question_dicts(response_text: str) -> List[Dict]:
     """
     if not response_text or not str(response_text).strip():
         return []
-    text = str(response_text).lstrip("﻿")
-
-    fenced_blocks = [block for block in _FENCED_BLOCK_RE.findall(text) if block.strip()]
-    if fenced_blocks:
-        items: List[Dict] = []
-        for block in fenced_blocks:
-            decoded = _canonical_items(_loads(block))
-            items.extend(decoded if decoded else _scan_objects(block))
-        if items:
-            return items
+    text = str(response_text).lstrip("\ufeff")
 
     decoded = _canonical_items(_loads(text))
     if decoded:
         return decoded
 
-    # Arrays embedded in surrounding prose: "Aquí tienes las preguntas: [...]".
-    first_bracket = text.find("[")
-    last_bracket = text.rfind("]")
-    if 0 <= first_bracket < last_bracket:
-        decoded = _canonical_items(_loads(text[first_bracket:last_bracket + 1]))
-        if decoded:
-            return decoded
-
-    return _scan_objects(text)
+    items: List[Dict] = []
+    for segment in _split_segments(text):
+        items.extend(_extract_from_segment(segment))
+    return items
 
 
 def _to_text(value: Any) -> str:
@@ -306,6 +356,31 @@ def _to_text(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return " ".join(_to_text(v) for v in value if _to_text(v))
     return str(value).strip()
+
+
+def _option_text(option: Any) -> str:
+    """Text of an option, also when it is given as an object: {"letra": "A", "texto": "..."}."""
+    if isinstance(option, dict):
+        normalized = {_normalize_key(key): value for key, value in option.items()}
+        for key in _OPTION_TEXT_KEYS:
+            if _to_text(normalized.get(key)):
+                return _to_text(normalized[key])
+        texts = [_to_text(value) for value in option.values() if isinstance(value, str) and len(value.strip()) > 1]
+        return texts[0] if len(texts) == 1 else ""
+    return _to_text(option)
+
+
+def _letter_marked_correct(options: Any) -> Optional[str]:
+    """Letter of the only option object marked as correct ({"texto": ..., "correcta": true})."""
+    if not isinstance(options, (list, tuple)):
+        return None
+    marked = []
+    for idx, option in enumerate(options[:len(OPTION_LETTERS)]):
+        if isinstance(option, dict):
+            normalized = {_normalize_key(key): value for key, value in option.items()}
+            if any(normalized.get(key) is True for key in _OPTION_CORRECT_KEYS):
+                marked.append(OPTION_LETTERS[idx])
+    return marked[0] if len(marked) == 1 else None
 
 
 def _extract_options(raw: Dict[str, Any], canonical: Dict[str, Any]) -> List[str]:
@@ -332,7 +407,7 @@ def _extract_options(raw: Dict[str, Any], canonical: Dict[str, Any]) -> List[str
                 by_letter[match.group(1).upper()] = value
         options = [by_letter[letter] for letter in OPTION_LETTERS if letter in by_letter]
 
-    cleaned = [_to_text(option) for option in options]
+    cleaned = [_option_text(option) for option in options]
     # Remove "A) ", "b. "... only when every option carries its expected label.
     labels = [_OPTION_LABEL_RE.match(option) for option in cleaned]
     if cleaned and all(
@@ -355,12 +430,12 @@ def _resolve_answer_letter(answer: Any, options: List[str]) -> Optional[str]:
     if not text:
         return None
     valid_letters = OPTION_LETTERS[:len(options)]
+    normalized_options = [_normalize_for_compare(option) for option in options]
 
     def match_option_text() -> Optional[str]:
         normalized_answer = _normalize_for_compare(text)
-        for idx, option in enumerate(options):
-            if normalized_answer and normalized_answer == _normalize_for_compare(option):
-                return OPTION_LETTERS[idx]
+        if normalized_answer and normalized_answer in normalized_options:
+            return OPTION_LETTERS[normalized_options.index(normalized_answer)]
         return None
 
     # The full text of an option ("A partir de 50 trabajadores") must not be read as a letter.
@@ -368,19 +443,31 @@ def _resolve_answer_letter(answer: Any, options: List[str]) -> Optional[str]:
         by_text = match_option_text()
         if by_text:
             return by_text
+    # A letter alone ("B", "Opción C"), a label ("b)", "(c)", "D.") or a letter followed by the
+    # text of that same option ("B) París"). A letter followed by plain words ("A los 18 años",
+    # "B y C") or by the text of another option is not taken as the answer.
     match = _ANSWER_LETTER_RE.match(text)
     if match and match.group(1).upper() in valid_letters:
-        return match.group(1).upper()
+        letter = match.group(1).upper()
+        index = OPTION_LETTERS.index(letter)
+        rest = _normalize_for_compare(text[match.end():].strip(" \t.:;,)-"))
+        option_text = normalized_options[index]
+        after = text[match.end(1):match.end(1) + 1]
+        before = text[match.start(1) - 1:match.start(1)]
+        label_style = after in (")", "]", ".", ":", "-") or before in ("(", "[")
+        other_options = normalized_options[:index] + normalized_options[index + 1:]
+        if not rest or (option_text and rest.startswith(option_text)) or \
+                (label_style and rest not in other_options):
+            return letter
     by_text = match_option_text()
     if by_text:
         return by_text
-    # Short sentences such as "La correcta es la B".
+    # Short sentences that end with the letter, such as "La correcta es la B".
     if len(text) <= 40:
         letters = set(re.findall(r"(?<![A-Za-zÁÉÍÓÚáéíóúÑñ])([A-D])(?![A-Za-zÁÉÍÓÚáéíóúÑñ])", text))
-        if len(letters) == 1:
-            letter = letters.pop()
-            if letter in valid_letters:
-                return letter
+        final = re.search(r"(?<![A-Za-zÁÉÍÓÚáéíóúÑñ])([A-D])[\).]?\s*$", text)
+        if len(letters) == 1 and final and final.group(1) in valid_letters:
+            return final.group(1)
     return None
 
 
@@ -418,6 +505,8 @@ def normalize_question(raw: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], O
         return None, "Hay opciones repetidas: la respuesta correcta sería ambigua al barajar."
 
     letter = _resolve_answer_letter(canonical.get(_ANSWER_KEY), options)
+    if letter is None and _to_text(canonical.get(_ANSWER_KEY)) == "":
+        letter = _letter_marked_correct(canonical.get(_OPTIONS_KEY))
     if letter is None:
         return None, f"Respuesta correcta no válida: {_to_text(canonical.get(_ANSWER_KEY))!r}."
 
@@ -438,22 +527,44 @@ def parse_questions_response(response_text: str) -> Tuple[List[Dict[str, Any]], 
 
     Returns:
         Tuple[List[Dict], List[Dict]]: ``(questions, errors)``. ``questions`` are
-        canonical dictionaries (see :func:`normalize_question`) without repeated
-        statements; ``errors`` lists the discarded fragments as
+        canonical dictionaries (see :func:`normalize_question`) without repetitions (same
+        statement and same options); ``errors`` lists the discarded fragments as
         ``{"Fragmento": ..., "Motivo": ...}``.
     """
     questions: List[Dict[str, Any]] = []
     errors: List[Dict[str, str]] = []
-    seen_statements = set()
+    seen = set()
     for raw in extract_question_dicts(response_text):
-        question, reason = normalize_question(raw)
+        try:
+            question, reason = normalize_question(raw)
+        except RecursionError:
+            question, reason = None, "Estructura demasiado anidada."
         if question is None:
-            fragment = json.dumps(raw, ensure_ascii=False, default=str) if isinstance(raw, dict) else str(raw)
+            try:
+                fragment = json.dumps(raw, ensure_ascii=False, default=str) if isinstance(raw, dict) else str(raw)
+            except (ValueError, RecursionError):
+                fragment = repr(raw)[:300]
             errors.append({"Fragmento": fragment[:300], "Motivo": reason or "Formato no reconocido."})
             continue
-        key = _normalize_for_compare(question[_QUESTION_KEY])
-        if key in seen_statements:
+        key = question_identity(question)
+        if key in seen:
             continue
-        seen_statements.add(key)
+        seen.add(key)
         questions.append(question)
     return questions, errors
+
+
+def question_identity(question: Dict[str, Any]) -> Tuple[str, frozenset]:
+    """
+    Key that identifies a repeated question: the normalised statement plus the set of options.
+
+    Questions such as "Señala la afirmación correcta:" share the statement but not the options,
+    so the statement alone is not enough.
+    """
+    options = question.get(_OPTIONS_KEY)
+    if options is None:
+        options = [question.get(f"Respuesta {letter}", "") for letter in OPTION_LETTERS]
+    return (
+        _normalize_for_compare(question.get(_QUESTION_KEY, "")),
+        frozenset(_normalize_for_compare(_to_text(option)) for option in options),
+    )

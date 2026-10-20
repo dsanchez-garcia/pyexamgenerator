@@ -24,6 +24,7 @@ from pyexamgenerator.ai_providers import (
     PROVIDERS,
     AIProviderError,
     InvalidAPIKeyError,
+    InvalidRequestError,
     ModelNotFoundError,
     ProviderNotAvailableError,
     get_api_key_from_env,
@@ -2132,7 +2133,7 @@ class ExamApp:
             selected_item = selected_items[0]
             # Obtenemos los valores de la fila seleccionada
             item_values = self.models_tree.item(selected_item, 'values')
-            # El primer valor es el nombre técnico (ej. 'models/gemini-2.5-pro')
+            # El primer valor es el nombre técnico (ej. 'models/gemini-3.8-flash' o 'gpt-6.1-sol')
             technical_name = item_values[0]
 
             self.selected_model_var.set(technical_name)
@@ -2246,10 +2247,15 @@ class ExamApp:
                 existing = {}
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             existing = {}
+        # Keys and models of other providers (e.g. written by a newer version) are kept.
+        api_keys = existing.get("api_keys") if isinstance(existing.get("api_keys"), dict) else {}
+        models = existing.get("models") if isinstance(existing.get("models"), dict) else {}
+        api_keys.update(self.ai_config.get("api_keys", {}))
+        models.update(self.ai_config.get("models", {}))
         existing.update({
             "provider": self.ai_config.get("provider", "gemini"),
-            "api_keys": self.ai_config.get("api_keys", {}),
-            "models": self.ai_config.get("models", {}),
+            "api_keys": api_keys,
+            "models": models,
         })
         # Legacy key read by previous versions.
         if self.ai_config.get("api_keys", {}).get("gemini"):
@@ -2557,6 +2563,8 @@ class ExamApp:
                 extra.append(f"{len(generator.rejected_questions_list)} descartadas por similitud")
             if generator.invalid_questions_list:
                 extra.append(f"{len(generator.invalid_questions_list)} respuestas/fragmentos con formato no válido")
+            if generator.duplicate_questions_count:
+                extra.append(f"{generator.duplicate_questions_count} repetidas")
             extra_text = f" ({'; '.join(extra)})" if extra else ""
             if generator.cancelled:
                 self.update_status(f"Generación cancelada: {total} preguntas guardadas.")
@@ -2567,8 +2575,11 @@ class ExamApp:
             else:
                 # This message may appear if, after all attempts and filters, no questions are left.
                 self.update_status("No se generaron preguntas o ninguna pasó los filtros.")
+                last_error = (f"\n\nÚltimo error de la API:\n{generator.last_provider_error}"
+                              if generator.last_provider_error else "")
                 messagebox.showinfo("Resultado", "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, "
-                                                 f"errores de API){extra_text}. Revisa la consola para más detalles.{saved_note}")
+                                                 f"errores de API){extra_text}. Revisa la consola para más detalles."
+                                                 f"{last_error}{saved_note}")
             return
 
         partial = f"\n\nSe guardaron las preguntas obtenidas antes del error.{saved_note}" if saved_paths else ""
@@ -2584,6 +2595,9 @@ class ExamApp:
         elif isinstance(error, ModelNotFoundError):
             self.update_status("Error: modelo no disponible.")
             messagebox.showerror("Modelo no disponible", f"{error}{partial}")
+        elif isinstance(error, InvalidRequestError):
+            self.update_status("Error: la API ha rechazado la petición.")
+            messagebox.showerror("Petición rechazada", f"{error}{partial}")
         elif isinstance(error, ProviderNotAvailableError):
             self.update_status("Error: librería del proveedor no instalada.")
             messagebox.showerror("Librería no instalada", f"{error}{partial}")
@@ -2633,6 +2647,21 @@ class ExamApp:
                                                   "Prueba el modo 'pdf' o 'image').")
             return
 
+        longest = int(prompts_df["Caracteres"].max())
+        longest_text = f"{longest:,}".replace(",", ".")
+        if longest > 50000:
+            context_hint = ""
+            if params["input_mode"] == "text" and params["process_by_pages"] and params["include_full_document_context"]:
+                context_hint = ("\n\nDesmarca 'Incluir el documento completo como contexto en cada fragmento' "
+                                "para que cada prompt lleve solo su fragmento.")
+            if not messagebox.askyesno(
+                    "Prompts muy largos",
+                    f"El prompt más largo tiene {longest_text} caracteres; los chats web pueden convertirlo en "
+                    "un archivo adjunto o rechazarlo en los planes gratuitos. Considera usar fragmentos más "
+                    f"pequeños o el modo 'pdf' (adjuntando el documento).{context_hint}\n\n"
+                    "¿Abrir el asistente de todos modos?"):
+                self.update_status("Preparación de prompts cancelada.")
+                return
         self.update_status(f"{len(prompts_df)} prompts preparados. Cópialos en el chat y pega las respuestas.")
         WebChatAssistant(
             self.root, generator, prompts_df,
@@ -2646,7 +2675,7 @@ class ExamApp:
         )
 
     def import_responses_from_prompts_file(self) -> None:
-        """Imports the answers pasted in the 'Respuesta' column of an exported '*_prompts.xlsx'."""
+        """Imports the answers pasted in the 'Respuesta' column of an exported ``*_prompts.xlsx`` file."""
         prompts_path = filedialog.askopenfilename(
             title="Seleccionar Excel de prompts con las respuestas",
             filetypes=[("Archivos Excel", "*.xlsx")],

@@ -59,6 +59,11 @@ class ModelNotFoundError(AIProviderError):
     pass
 
 
+class InvalidRequestError(AIProviderError):
+    """The provider rejected the request itself (HTTP 400/413/422): repeating it would fail again."""
+    pass
+
+
 class ProviderNotAvailableError(AIProviderError, ImportError):
     """The SDK of the provider is not installed."""
     pass
@@ -170,7 +175,7 @@ def get_api_key_from_env(provider: Optional[str]) -> Optional[str]:
 
 def is_valid_api_key(api_key: Optional[str]) -> bool:
     """True if ``api_key`` looks like a real key (not empty nor the GUI placeholder)."""
-    return bool(api_key and api_key.strip() and api_key.strip() != API_KEY_PLACEHOLDER)
+    return isinstance(api_key, str) and bool(api_key.strip()) and api_key.strip() != API_KEY_PLACEHOLDER
 
 
 def is_provider_installed(provider: Optional[str]) -> bool:
@@ -206,6 +211,25 @@ _AUTH_ERROR_TEXTS = (
     "api key not valid", "api_key_invalid", "invalid x-api-key", "incorrect api key", "invalid api key",
     "could not resolve authentication",
 )
+
+
+_BILLING_ERROR_TEXTS = ("insufficient_quota", "credit balance", "billing", "payment required")
+
+# Words that a provider uses when it rejects the structured-output (JSON schema) option.
+_STRUCTURED_OUTPUT_ERROR_TEXTS = (
+    "json", "schema", "response_format", "text.format", "output_config", "mime", "structured", "format",
+)
+
+
+def _error_type_text(exc: BaseException) -> str:
+    """Error type reported in the body of the SDK exception (e.g. 'overloaded_error'), lowercase."""
+    parts = [str(getattr(exc, "type", "") or "")]
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        error = body.get("error") if isinstance(body.get("error"), dict) else body
+        parts.append(str(error.get("type", "") or ""))
+        parts.append(str(error.get("code", "") or ""))
+    return " ".join(parts).lower()
 
 
 def _is_auth_error(exc: BaseException) -> bool:
@@ -318,8 +342,14 @@ class BaseAIClient:
     def _should_retry_without_structured_output(self, exc: BaseException) -> bool:
         if not self.structured_output or _is_auth_error(exc):
             return False
-        # 400: rejected by the API; TypeError/ValueError: unknown parameter in an old SDK.
-        return _status_code(exc) == 400 or isinstance(exc, (TypeError, ValueError))
+        # TypeError/ValueError: unknown parameter in an old SDK (no request was sent).
+        if isinstance(exc, (TypeError, ValueError)):
+            return True
+        # 400 mentioning the output format: the model does not support the JSON schema. Other 400s
+        # (no credit, document too large...) would fail again, so they are not repeated.
+        lowered = str(exc).lower()
+        return _status_code(exc) == 400 and not any(text in lowered for text in _BILLING_ERROR_TEXTS) \
+            and any(text in lowered for text in _STRUCTURED_OUTPUT_ERROR_TEXTS)
 
     def list_models(self) -> List[Dict[str, Any]]:
         """
@@ -348,15 +378,19 @@ class BaseAIClient:
             "anthropic": "un modelo más ligero (p. ej. 'claude-haiku-5-5')",
         }[self.provider]
 
+        error_type = _error_type_text(exc)
         if _is_auth_error(exc):
             code = code if code in (401, 403) else 401
-        elif code is None:
-            # No HTTP status available: infer it from the message.
-            if any(text in lowered for text in ("resource_exhausted", "rate limit", "quota")):
+        elif any(text in lowered or text in error_type for text in _BILLING_ERROR_TEXTS):
+            code = 429  # No credit or billing problem (Anthropic answers it with a 400).
+        elif code is None or code < 400:
+            # No HTTP error status (e.g. an error event in the middle of a stream): use the message.
+            if any(text in lowered or text in error_type
+                   for text in ("resource_exhausted", "rate limit", "rate_limit", "quota")):
                 code = 429
-            elif any(text in lowered for text in ("overloaded", "unavailable")):
+            elif any(text in lowered or text in error_type for text in ("overloaded", "unavailable", "api_error")):
                 code = 503
-            elif any(text in lowered for text in ("not_found", "model_not_found", "not found")):
+            elif any(text in lowered or text in error_type for text in ("not_found", "model_not_found", "not found")):
                 code = 404
 
         if code in (401, 403):
@@ -391,6 +425,16 @@ class BaseAIClient:
                 f"El modelo '{self.model_name}' no existe o no está disponible para tu clave de {label}.\n"
                 "Pulsa 'Cargar Modelos' y elige uno de la lista.\n\n"
                 f"Detalle: {message}"
+            )
+        if code in (400, 413, 422):
+            return InvalidRequestError(
+                f"{label} ha rechazado la petición (Error {code}).\n\n"
+                "Causas habituales:\n"
+                "1. El documento o las imágenes son demasiado grandes: activa 'Procesar PDF por fragmentos' "
+                "con menos páginas por fragmento.\n"
+                "2. El modelo no admite el tipo de archivo enviado (prueba el modo 'text' o otro modelo).\n"
+                "3. El texto supera el límite del modelo: usa fragmentos o desmarca el contexto completo."
+                f"\n\nDetalle: {message}"
             )
         return AIProviderError(f"Error de {label}: {message}")
 

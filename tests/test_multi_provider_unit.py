@@ -12,6 +12,7 @@ from pyexamgenerator.ai_providers import (
     BaseAIClient,
     GeminiClient,
     InvalidAPIKeyError,
+    InvalidRequestError,
     ModelNotFoundError,
     OpenAIClient,
     QuotaExceededError,
@@ -276,7 +277,8 @@ def test_anthropic_client_streams_and_joins_text_blocks():
     (503, ServiceOverloadedError),
     (529, ServiceOverloadedError),
     (404, ModelNotFoundError),
-    (400, AIProviderError),
+    (400, InvalidRequestError),
+    (413, InvalidRequestError),
 ])
 def test_provider_errors_are_translated(status, expected):
     class FakeSDKError(Exception):
@@ -432,3 +434,253 @@ def test_parser_accepts_structured_output_schema_keys():
     assert errors == []
     assert questions[0]["Respuesta correcta"] == "C"
     assert questions[0]["Texto relevante"] == "t"
+
+
+# ---------------------------------------------------------------------------
+# Regressions found in the review of the multi-provider work
+# ---------------------------------------------------------------------------
+def _q(statement, answer="A", options=None):
+    return {"Pregunta": statement, "Opciones": options or [f"{statement} {c}" for c in "abcd"],
+            "Respuesta correcta": answer, "Texto relevante": ""}
+
+
+def test_parser_reads_a_cut_fenced_answer_followed_by_its_continuation():
+    first = "```json\n" + json.dumps([_q("P1"), _q("P2"), _q("P3")], indent=2)
+    first = first[: first.index('"P3 c"')]  # output limit reached: no closing fence
+    continuation = "```json\n" + json.dumps([_q("P3"), _q("P4")], indent=2) + "\n```"
+
+    questions, _ = parse_questions_response(first + "\n\n" + continuation)
+
+    assert [q["Pregunta"] for q in questions] == ["P1", "P2", "P3", "P4"]
+
+
+def test_parser_keeps_unfenced_and_fenced_answers_pasted_together():
+    text = json.dumps([_q("P1"), _q("P2")]) + "\n\nMás:\n```json\n" + json.dumps([_q("P3")]) + "\n```"
+
+    assert len(parse_questions_response(text)[0]) == 3
+
+
+def test_parser_backticks_inside_a_json_string_do_not_end_the_block():
+    items = [_q("P0"), {**_q("P1"), "Texto relevante": "usa ``` para el código"}, _q("P2"), _q("P3")]
+    text = "```json\n" + json.dumps(items, indent=2) + "\n```"
+
+    assert len(parse_questions_response(text)[0]) == 4
+
+
+def test_parser_keeps_generic_statements_with_different_options():
+    text = json.dumps([_q("Señala la afirmación correcta:", "A", ["a1", "b1", "c1", "d1"]),
+                       _q("Señala la afirmación correcta:", "C", ["a2", "b2", "c2", "d2"]),
+                       _q("Señala la afirmación correcta:", "C", ["b2", "a2", "d2", "c2"])])
+
+    questions, _ = parse_questions_response(text)
+
+    assert len(questions) == 2  # the third one repeats the second (same options, other order)
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ("A los 18 años", None),           # option text that only starts with a preposition
+    ("B y C", None),                   # two letters
+    ("B) dos", "B"),                   # letter followed by its own option text
+    ("La correcta es la D", "D"),
+    ("Opción C", "C"),
+])
+def test_parser_answer_letter_resolution(answer, expected):
+    options = ["uno", "dos", "A los 18 años de edad", "cuatro"]
+    questions, errors = parse_questions_response(json.dumps([_q("¿P?", answer, options)]))
+
+    if expected is None:
+        assert questions == [] and len(errors) == 1
+    else:
+        assert questions[0]["Respuesta correcta"] == expected
+
+
+def test_parser_accepts_options_given_as_objects():
+    text = json.dumps([{"Pregunta": "¿P?", "Opciones": [
+        {"letra": "A", "texto": "uno"}, {"letra": "B", "texto": "dos", "correcta": True},
+        {"letra": "C", "texto": "tres"}, {"letra": "D", "texto": "cuatro"}]}])
+
+    questions, errors = parse_questions_response(text)
+
+    assert errors == []
+    assert questions[0]["Opciones"] == ["uno", "dos", "tres", "cuatro"]
+    assert questions[0]["Respuesta correcta"] == "B"
+
+
+def test_parser_survives_pathological_input_quickly():
+    import time
+
+    start = time.perf_counter()
+    assert parse_questions_response("[" * 5000) == ([], [])
+    assert parse_questions_response("{" * 20000) == ([], [])
+    assert time.perf_counter() - start < 5
+
+
+@pytest.mark.skipif(not SAMPLE_PDF.exists(), reason="sample PDF not available")
+def test_partial_results_of_the_current_chunk_are_saved_on_a_fatal_error(tmp_path):
+    fake = FakeClient([json.dumps([_q("P1"), _q("P2"), _q("P3")]), QuotaExceededError("429")])
+    generator = QuestionGenerator(ai_client=fake)
+
+    with pytest.raises(QuotaExceededError):
+        generator.generate_multiple_choice_questions(
+            [str(SAMPLE_PDF)], "PRL", num_questions_per_chunk_target=5, output_dir=str(tmp_path),
+            output_filename="p")
+
+    saved = pd.read_excel(tmp_path / "p_pendiente_de_revisar.xlsx")
+    assert saved["Pregunta"].tolist() == ["P1", "P2", "P3"]
+
+
+@pytest.mark.skipif(not SAMPLE_PDF.exists(), reason="sample PDF not available")
+def test_sources_are_validated_before_any_api_call(tmp_path):
+    unsupported = tmp_path / "notas.docx"
+    unsupported.write_bytes(b"PK")
+    fake = FakeClient([json.dumps([_q("Q1")])])
+    generator = QuestionGenerator(ai_client=fake)
+
+    with pytest.raises(ValueError):
+        generator.generate_multiple_choice_questions(
+            [str(SAMPLE_PDF), str(unsupported)], "PRL", output_dir=str(tmp_path), input_mode="pdf")
+    with pytest.raises(FileNotFoundError):
+        generator.generate_multiple_choice_questions(
+            [str(SAMPLE_PDF), str(tmp_path / "no_existe.pdf")], "PRL", output_dir=str(tmp_path))
+    assert fake.calls == []
+
+
+@pytest.mark.skipif(not SAMPLE_PDF.exists(), reason="sample PDF not available")
+def test_unexpected_errors_keep_the_questions_obtained(tmp_path):
+    fake = FakeClient([json.dumps([_q("P1")]), json.dumps([_q("P2")])])
+    generator = QuestionGenerator(ai_client=fake)
+    real_analyze = generator._analyze_response
+    calls = {"n": 0}
+
+    def analyze_then_fail(text, topic):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("archivo bloqueado")
+        return real_analyze(text, topic)
+
+    generator._analyze_response = analyze_then_fail
+    with pytest.raises(OSError):
+        generator.generate_multiple_choice_questions(
+            [str(SAMPLE_PDF)], "PRL", num_questions_per_chunk_target=1, output_dir=str(tmp_path),
+            output_filename="u", process_by_pages=True, pages_per_chunk=2)
+
+    assert pd.read_excel(tmp_path / "u_pendiente_de_revisar.xlsx")["Pregunta"].tolist() == ["P1"]
+
+
+@pytest.mark.parametrize("message, expected, requests", [
+    ("Your credit balance is too low to access the Anthropic API.", QuotaExceededError, 1),
+    ("prompt is too long: 250000 tokens > 200000 maximum", InvalidRequestError, 1),
+    ("output_config.format: json_schema is not supported for this model", InvalidRequestError, 2),
+])
+def test_rejected_requests_are_not_repeated(message, expected, requests):
+    calls = []
+
+    class BadRequest(Exception):
+        status_code = 400
+
+    def stream(**kwargs):
+        calls.append(kwargs)
+        raise BadRequest(message)
+
+    client = AnthropicClient("key", "claude-opus-5-5", sdk_client=SimpleNamespace(messages=SimpleNamespace(stream=stream)))
+
+    with pytest.raises(expected):
+        client.generate("prompt")
+    assert len(calls) == requests
+
+
+@pytest.mark.skipif(not SAMPLE_PDF.exists(), reason="sample PDF not available")
+def test_a_rejected_request_stops_the_run_instead_of_repeating_it(tmp_path):
+    fake = FakeClient([InvalidRequestError("400")] * 10)
+    generator = QuestionGenerator(ai_client=fake)
+
+    with pytest.raises(InvalidRequestError):
+        generator.generate_multiple_choice_questions(
+            [str(SAMPLE_PDF)], "PRL", output_dir=str(tmp_path), process_by_pages=True, pages_per_chunk=2)
+    assert len(fake.calls) == 1
+
+
+def test_overloaded_error_in_the_middle_of_a_stream_is_classified():
+    class StreamError(Exception):
+        status_code = 200
+        body = {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+
+    client = AnthropicClient("key", "claude-opus-5-5", sdk_client=SimpleNamespace())
+
+    assert type(client.translate_error(StreamError("Overloaded"))) is ServiceOverloadedError
+
+
+@pytest.mark.skipif(not SAMPLE_PDF.exists(), reason="sample PDF not available")
+def test_same_named_sources_get_distinct_fragment_files(tmp_path):
+    import shutil
+
+    for folder in ("T1", "T2"):
+        (tmp_path / folder).mkdir()
+        shutil.copy(SAMPLE_PDF, tmp_path / folder / "apuntes.pdf")
+    prompts = QuestionGenerator().build_generation_prompts(
+        [str(tmp_path / "T1" / "apuntes.pdf"), str(tmp_path / "T2" / "apuntes.pdf")], "PRL",
+        input_mode="pdf", process_by_pages=True, pages_per_chunk=2, attachments_dir=str(tmp_path / "adj"))
+
+    assert prompts["Adjuntar"].nunique() == len(prompts) == 4
+
+
+def test_long_answers_round_trip_with_relative_folders(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    generator = QuestionGenerator()
+    prompts = pd.DataFrame([{"PDF": "a.pdf", "Tema": "T", "Fragmento": 1, "Total fragmentos": 1, "Páginas": "",
+                             "Adjuntar": "", "Caracteres": 1, "Prompt": "p"}])
+    long_answer = json.dumps([{**_q(f"P{i}"), "Texto relevante": "x" * 700} for i in range(50)])
+
+    paths = generator.export_prompts(prompts, output_dir="salida", output_filename="rt", responses=[long_answer])
+    df = generator.import_questions_from_prompts_file(paths["xlsx"], output_dir="salida", output_filename="imp")
+    assert len(df) == 50
+
+    # The workbook and its folder can be moved together.
+    import shutil
+    shutil.move("salida", "movida")
+    df = generator.import_questions_from_prompts_file("movida/rt_prompts.xlsx", output_dir="movida",
+                                                      output_filename="imp2")
+    assert len(df) == 50
+
+
+def test_bmp_images_are_converted_to_png(tmp_path):
+    import struct
+
+    pytest.importorskip("fitz")
+    # Minimal 2x2 24-bit BMP (rows padded to 4 bytes).
+    pixels = (b"\x00\x00\xff" * 2 + b"\x00\x00") * 2
+    header = b"BM" + struct.pack("<IHHI", 54 + len(pixels), 0, 0, 54)
+    dib = struct.pack("<IiiHHIIiiII", 40, 2, 2, 1, 24, 0, len(pixels), 2835, 2835, 0, 0)
+    image = tmp_path / "esquema.bmp"
+    image.write_bytes(header + dib + pixels)
+
+    items = QuestionGenerator()._load_source_as_image_items(str(image))
+
+    assert items[0]["mime_type"] == "image/png"
+    assert items[0]["bytes"].startswith(b"\x89PNG")
+
+
+def test_sdk_client_can_still_be_replaced():
+    sdk = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kw: SimpleNamespace(text="[]")))
+    generator = QuestionGenerator(api_key="k", model_name="gemini-flash-latest")
+
+    generator.client = sdk
+
+    assert generator.client is sdk
+    assert generator.ai_client.generate("prompt") == "[]"
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ("b) Dos (paráfrasis)", "B"),       # label-style letter with paraphrased text
+    ("(c)", "C"),
+    ("D.", "D"),
+    ("B) cuatro", None),                # the label contradicts the text of another option
+])
+def test_parser_label_style_answers(answer, expected):
+    options = ["uno", "dos", "tres", "cuatro"]
+    questions, errors = parse_questions_response(json.dumps([_q("¿P?", answer, options)]))
+
+    if expected is None:
+        assert questions == [] and len(errors) == 1
+    else:
+        assert questions[0]["Respuesta correcta"] == expected
