@@ -45,7 +45,18 @@ class QuestionBankManager:
             questions = []
             current_question = {}
             state = None  # To track what information we are reading
+            # Campos que pueden seguir en los párrafos siguientes (p. ej. si se pulsó Intro al revisar en Word).
+            multiline_fields = {
+                "pregunta": "Pregunta",
+                "respuesta_a": "Respuesta A",
+                "respuesta_b": "Respuesta B",
+                "respuesta_c": "Respuesta C",
+                "respuesta_d": "Respuesta D",
+                "texto_relevante": "Texto relevante",
+            }
 
+            # Tras cada palabra clave se toma el resto del párrafo (text[len(clave):]) en lugar de usar
+            # replace(), que también borraría la clave si aparece dentro del texto (p. ej. "C) Las opciones A) y C)").
             for paragraph in document.paragraphs:
                 text = paragraph.text.strip()
                 if text.startswith("Pregunta "):
@@ -55,29 +66,35 @@ class QuestionBankManager:
                     current_question = {"Número de pregunta": number.replace("Pregunta ", "").strip(), "Pregunta": statement.strip()}
                     state = "pregunta"
                 elif text.startswith("Tema:"):
-                    current_question["Tema"] = text.replace("Tema:", "").strip()
+                    current_question["Tema"] = text[len("Tema:"):].strip()
                     state = "tema"
                 elif text.startswith("Estado:"):
-                    current_question["Estado"] = text.replace("Estado:", "").strip()
+                    current_question["Estado"] = text[len("Estado:"):].strip()
                     state = "estado"
                 elif text.startswith("A)"):
-                    current_question["Respuesta A"] = text.replace("A)", "").strip()
+                    current_question["Respuesta A"] = text[len("A)"):].strip()
                     state = "respuesta_a"
                 elif text.startswith("B)"):
-                    current_question["Respuesta B"] = text.replace("B)", "").strip()
+                    current_question["Respuesta B"] = text[len("B)"):].strip()
                     state = "respuesta_b"
                 elif text.startswith("C)"):
-                    current_question["Respuesta C"] = text.replace("C)", "").strip()
+                    current_question["Respuesta C"] = text[len("C)"):].strip()
                     state = "respuesta_c"
                 elif text.startswith("D)"):
-                    current_question["Respuesta D"] = text.replace("D)", "").strip()
+                    current_question["Respuesta D"] = text[len("D)"):].strip()
                     state = "respuesta_d"
                 elif text.startswith("Respuesta correcta:"):
-                    current_question["Respuesta correcta"] = text.replace("Respuesta correcta:", "").strip().upper()
+                    current_question["Respuesta correcta"] = text[len("Respuesta correcta:"):].strip().upper()
                     state = "respuesta_correcta"
                 elif text.startswith("Texto relevante:"):
-                    current_question["Texto relevante"] = text.replace("Texto relevante:", "").strip()
+                    current_question["Texto relevante"] = text[len("Texto relevante:"):].strip()
                     state = "texto_relevante"
+                elif text and state in multiline_fields:
+                    # Párrafo sin palabra clave: continúa el enunciado, la opción o el texto relevante que se
+                    # estaba leyendo (antes se descartaba). Se une con un salto de línea, como se ve en Word.
+                    field = multiline_fields[state]
+                    previous_text = current_question.get(field, "")
+                    current_question[field] = f"{previous_text}\n{text}" if previous_text else text
 
             if current_question:
                 questions.append(current_question)
@@ -125,6 +142,10 @@ class QuestionBankManager:
             duplicate_check_columns (Optional[List[str]]): List of column names used to
                                                             identify duplicate questions.
                                                             Defaults to checking question and all answers.
+                                                            Values are compared normalized (trimmed,
+                                                            case-insensitive, repeated spaces collapsed) and
+                                                            the answer columns as a set (any order), like
+                                                            :meth:`unify_question_banks`.
             add_only_acceptable (bool, optional): If True, only adds questions with 'Aceptable' status.
                                                   Defaults to False (adds all).
 
@@ -157,35 +178,37 @@ class QuestionBankManager:
             else:
                 print("Advertencia: La columna 'Estado' no se encontró en el archivo a añadir. No se pudo aplicar el filtro.")
 
-        added_count = 0
-        existing_count = len(df_existing)
+        if duplicate_check_columns is None:
+            duplicate_check_columns = ['Pregunta', 'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D']
+        answer_columns = {'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D'}
 
-        # Iterate through each question in the reviewed file
+        def duplicate_key(row: pd.Series):
+            # Mismo criterio que unify_question_banks: textos normalizados (sin espacios sobrantes ni
+            # mayúsculas) y, si se comparan las respuestas, como conjunto (sin importar su orden).
+            other_values = tuple(
+                self._normalize_text(row.get(col, "")) for col in duplicate_check_columns if col not in answer_columns
+            )
+            answers = frozenset(
+                value for value in (
+                    self._normalize_text(row.get(col, "")) for col in duplicate_check_columns if col in answer_columns
+                ) if value != ""
+            )
+            return other_values, answers
+
+        # Claves del banco existente calculadas una sola vez; las preguntas que se van añadiendo también
+        # cuentan, así que los duplicados dentro del propio archivo revisado solo se añaden una vez.
+        seen_keys = {duplicate_key(row) for _, row in df_existing.iterrows()}
+        rows_to_add = []
         for index, row_reviewed in df_reviewed.iterrows():
-            is_duplicate = False
-            # Compare it against every question in the existing bank
-            for index_existing, row_existing in df_existing.iterrows():
-                match = True
-                # Check all specified columns for a perfect match
-                for col in duplicate_check_columns:
-                    # Logic to handle different scenarios of matching, including NaN values
-                    if col in row_reviewed and col in row_existing and pd.notna(row_reviewed[col]) and pd.notna(row_existing[col]) and row_reviewed[col] != row_existing[col]:
-                        match = False
-                        break
-                    elif (col in row_reviewed and col not in row_existing) or \
-                            (col not in row_reviewed and col in row_existing) or \
-                            (col in row_reviewed and col in row_existing and pd.isna(row_reviewed[col]) and pd.notna(row_existing[col])) or \
-                            (col in row_reviewed and col in row_existing and pd.notna(row_reviewed[col]) and pd.isna(row_existing[col])):
-                        match = False
-                        break
-                if match:
-                    is_duplicate = True
-                    break
+            key = duplicate_key(row_reviewed)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            rows_to_add.append(index)
 
-            # If no duplicate was found after checking the entire existing bank, add the question
-            if not is_duplicate:
-                df_existing = pd.concat([df_existing, pd.DataFrame([row_reviewed])], ignore_index=True)
-                added_count += 1
+        added_count = len(rows_to_add)
+        if rows_to_add:
+            df_existing = pd.concat([df_existing, df_reviewed.loc[rows_to_add]], ignore_index=True)
 
         return added_count, df_existing
 
@@ -311,6 +334,11 @@ class QuestionBankManager:
         """
         if usage_column_name not in df_bank.columns:
             df_bank[usage_column_name] = 0
+        elif (not pd.api.types.is_numeric_dtype(df_bank[usage_column_name])
+              or pd.api.types.is_bool_dtype(df_bank[usage_column_name])):
+            # Con pandas 3 una columna de uso con texto (p. ej. una 'x' escrita a mano) o con VERDADERO/FALSO
+            # no admite el valor 1; se pasa a 'object' para marcarla sin perder lo que ya tenía.
+            df_bank[usage_column_name] = df_bank[usage_column_name].astype(object)
 
         def _normalize(series: pd.Series) -> pd.Series:
             return series.astype(str).str.strip()
@@ -332,7 +360,10 @@ class QuestionBankManager:
         # Recompute the aggregated usage column from every per-exam '_uso' column.
         usage_columns = [col for col in df_bank.columns if col.endswith('_uso')]
         if usage_columns:
-            df_bank['Veces usada en examen'] = df_bank[usage_columns].sum(axis=1)
+            # Las celdas vacías o con texto no numérico cuentan como 0 usos (antes el texto se "sumaba").
+            df_bank['Veces usada en examen'] = (
+                df_bank[usage_columns].apply(pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
+            )
 
         # Keep 'Veces usada en examen' right after 'Texto relevante' for readability, mirroring the
         # column layout used by the exam generator.
@@ -739,7 +770,9 @@ class QuestionBankManager:
         if output_dir is None:
             output_dir = os.path.dirname(docx_path)
 
-        os.makedirs(output_dir, exist_ok=True)
+        # Con un nombre sin carpeta ('revisadas.docx') dirname() es '' (carpeta actual) y makedirs('') falla.
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
         full_output_path = os.path.join(output_dir, excel_output_filename)
 
@@ -767,7 +800,8 @@ class QuestionBankManager:
             reviewed_excel_path (str): The path to the XLSX file containing the revised questions.
 
         Returns:
-            Optional[str]: The path to the updated XLSX file if the operation is successful, otherwise None.
+            Optional[str]: The path to the updated XLSX file (``<existing>_actualizado.xlsx``, next to the
+            existing bank, which is left untouched) if the operation is successful, otherwise None.
         """
         added_count, updated_df = self.add_questions_without_duplicates(
             existing_excel_path, reviewed_excel_path
@@ -775,10 +809,11 @@ class QuestionBankManager:
 
         if added_count >= 0:
             print(f"Se añadieron {added_count} preguntas sin duplicados.")
-            # Save the updated DataFrame to a new file
-            save_path: str = "banco_de_preguntas_actualizado.xlsx"
-            self.save_dataframe_to_excel(updated_df, save_path, overwrite=False)
-            print(f"Banco de preguntas actualizado guardado en: {save_path}")
+            # Se guarda en un archivo nuevo junto al banco ('<banco>_actualizado.xlsx', como propone la GUI) y
+            # se devuelve la ruta realmente escrita (antes se devolvía un nombre que no llegaba a crearse).
+            save_path = self.save_dataframe_to_excel(updated_df, existing_excel_path, overwrite=False)
+            if save_path:
+                print(f"Banco de preguntas actualizado guardado en: {save_path}")
             return save_path
         else:
             print("Ocurrió un error al añadir las preguntas.")

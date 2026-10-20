@@ -25,6 +25,7 @@ import pandas as pd
 import random
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
+import html
 import re
 import os
 from typing import Callable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
@@ -48,7 +49,7 @@ class ExamGenerator:
         """
         Initializes the pyexamgenerator instance.
         """
-        # Added self.df attribute to persist the DataFrame between calls.
+        # Banco leído en la última llamada a generate_exam_from_excel (se vuelve a leer en cada llamada).
         self.df = None
         # Records (one per generated exam type) with the paths of every output file, so a grading
         # session can later be resumed directly from the generated exams.
@@ -189,6 +190,149 @@ class ExamGenerator:
         safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(exam or "examen")).strip('_') or "examen"
         safe_course_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(course or "curso")).strip('_') or "curso"
         return f'{safe_exam_name}_{safe_course_name}_uso'
+
+    # Columnas con las cuatro opciones de respuesta de cada pregunta.
+    _ANSWER_COLUMNS: Tuple[str, ...] = ('Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D')
+
+    @staticmethod
+    def _cell_to_text(value) -> str:
+        """Convierte una celda del banco en texto: '' si está vacía (None/NaN) y ``str()`` en otro caso.
+
+        ElementTree no sabe serializar números (p. ej. opciones 1995/2000 escritas como número en Excel)
+        ni NaN, así que todo texto del banco que se escribe en el XML de Moodle pasa por aquí.
+        """
+        if isinstance(value, str):
+            return value
+        try:
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return str(value)
+
+    @classmethod
+    def _is_blank(cls, value) -> bool:
+        """True si la celda está vacía (None, NaN o solo espacios)."""
+        return cls._cell_to_text(value).strip() == ""
+
+    @classmethod
+    def _moodle_html_text(cls, value) -> str:
+        """Prepara un texto del banco para un campo con ``format='html'`` del XML de Moodle.
+
+        Moodle interpreta ese texto como HTML, así que se escapan '&', '<' y '>' (p. ej. 'x < y' o '<p>'
+        se muestran tal cual en lugar de tomarse como etiquetas) y los saltos de línea pasan a '<br>'.
+        """
+        text = cls._cell_to_text(value).replace('\r\n', '\n').replace('\r', '\n')
+        return html.escape(text, quote=False).replace('\n', '<br>')
+
+    @staticmethod
+    def _normalize_correct_letter(value) -> Optional[str]:
+        """Devuelve la letra (A-D) de 'Respuesta correcta' en mayúscula, o None si no es válida.
+
+        Admite mayúsculas o minúsculas, espacios alrededor y formatos habituales como 'b)', '(b)' o 'B.'.
+        """
+        if not isinstance(value, str):
+            return None
+        match = re.fullmatch(r'\(?\s*([A-Da-d])\s*[).]?', value.strip())
+        return match.group(1).upper() if match else None
+
+    @classmethod
+    def _topic_key(cls, topic) -> str:
+        """Normaliza un tema para compararlo sin depender del tipo de la celda.
+
+        Un tema escrito como número en Excel se lee como 1 (o 1.0 si la columna tiene celdas vacías), y en
+        el diccionario de la interfaz llega como '1': todos se tratan como el mismo tema. Vacío da ''.
+        """
+        if isinstance(topic, float) and topic.is_integer():
+            topic = int(topic)
+        return cls._cell_to_text(topic).strip()
+
+    @staticmethod
+    def _safe_filename_component(value) -> str:
+        """Sustituye por '_' los caracteres no válidos en nombres de archivo (\\ / : * ? " < > | y de control).
+
+        Solo se usa para los nombres de los archivos generados; títulos y cabeceras mantienen el texto original.
+        """
+        return re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', str(value))
+
+    @staticmethod
+    def _usage_counts(df: pd.DataFrame) -> pd.Series:
+        """Devuelve 'Veces usada en examen' como número; si falta la columna o la celda está vacía, cuenta 0."""
+        if 'Veces usada en examen' not in df.columns:
+            return pd.Series(0, index=df.index)
+        return pd.to_numeric(df['Veces usada en examen'], errors='coerce').fillna(0)
+
+    @classmethod
+    def _describe_question(cls, row: pd.Series, index=None) -> str:
+        """Identifica una pregunta en los mensajes de error (fila del Excel, número, tema y enunciado)."""
+        parts = []
+        if index is not None and pd.api.types.is_integer(index):
+            # El banco se lee con read_excel: la fila 1 es la cabecera y el índice 0 es la fila 2.
+            parts.append(f"fila {int(index) + 2} del Excel")
+        number = row.get('Número de pregunta')
+        if not cls._is_blank(number):
+            parts.append(f"nº {cls._cell_to_text(number)}")
+        topic = row.get('Tema')
+        if not cls._is_blank(topic):
+            parts.append(f"tema '{cls._cell_to_text(topic)}'")
+        statement = cls._cell_to_text(row.get('Pregunta')).strip()
+        if statement:
+            parts.append(f"«{statement[:60]}{'...' if len(statement) > 60 else ''}»")
+        return " - ".join(parts) or "pregunta sin identificar"
+
+    def _validate_selected_questions(self, exam_df: pd.DataFrame) -> pd.DataFrame:
+        """Comprueba las preguntas seleccionadas y normaliza su 'Respuesta correcta' (letra A-D en mayúscula).
+
+        Antes de escribir ningún archivo se verifica que cada pregunta tenga enunciado, las cuatro opciones
+        y una letra de respuesta correcta válida, para indicar qué preguntas hay que corregir en el banco
+        en lugar de fallar con un error genérico de pandas.
+
+        Returns:
+            pd.DataFrame: Copia de ``exam_df`` (con el mismo índice) y la letra correcta normalizada.
+
+        Raises:
+            ValueError: Si faltan columnas obligatorias o alguna pregunta tiene datos incompletos.
+        """
+        required_columns = ['Pregunta', *self._ANSWER_COLUMNS, 'Respuesta correcta']
+        missing_columns = [col for col in required_columns if col not in exam_df.columns]
+        if missing_columns:
+            raise ValueError(
+                f"Al banco de preguntas le faltan columnas obligatorias: {', '.join(missing_columns)}."
+            )
+
+        validated_df = exam_df.copy()
+        normalized_letters = []
+        problems = []
+        for index, row in validated_df.iterrows():
+            row_problems = []
+            if self._is_blank(row['Pregunta']):
+                row_problems.append("falta el enunciado ('Pregunta')")
+            for column in self._ANSWER_COLUMNS:
+                if self._is_blank(row[column]):
+                    row_problems.append(f"falta la opción '{column}'")
+            letter = self._normalize_correct_letter(row['Respuesta correcta'])
+            if letter is None:
+                row_problems.append(
+                    "'Respuesta correcta' debe ser una letra de la A a la D "
+                    f"(valor actual: '{self._cell_to_text(row['Respuesta correcta'])}')"
+                )
+            normalized_letters.append(letter)
+            if row_problems:
+                problems.append(f"- {self._describe_question(row, index)}: {'; '.join(row_problems)}.")
+
+        if problems:
+            max_lines = 15
+            message_lines = [
+                f"Hay {len(problems)} pregunta(s) seleccionada(s) con datos incompletos o no válidos. "
+                "Corrígelas en el banco (o cambia su estado) y vuelve a generar el examen:",
+                *problems[:max_lines],
+            ]
+            if len(problems) > max_lines:
+                message_lines.append(f"- ... y {len(problems) - max_lines} más.")
+            raise ValueError("\n".join(message_lines))
+
+        validated_df['Respuesta correcta'] = normalized_letters
+        return validated_df
 
     @staticmethod
     def _questions_over_usage_threshold(exam_df: pd.DataFrame, threshold: int) -> pd.DataFrame:
@@ -351,21 +495,34 @@ class ExamGenerator:
         Raises:
             ValueError: If a topic does not have enough 'Aceptable' questions for the requested quantity.
         """
-        selected_questions = []
+        # Los temas se comparan normalizados (1, 1.0 y '1' son el mismo tema, ver _topic_key). Las cantidades
+        # de claves que corresponden al mismo tema se suman para no seleccionar dos veces la misma pregunta.
+        requested_per_topic: Dict[str, int] = {}
         for topic, quantity in questions_per_topic.items():
+            topic_key = self._topic_key(topic)
+            requested_per_topic[topic_key] = requested_per_topic.get(topic_key, 0) + quantity
+        acceptable_topic_keys = self.acceptable_df['Tema'].map(self._topic_key)
+
+        selected_questions = []
+        for topic, quantity in requested_per_topic.items():
             if verbose:
                 print(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
-            topic_questions = self.acceptable_df[self.acceptable_df['Tema'] == topic]
+            topic_questions = self.acceptable_df[acceptable_topic_keys == topic]
             # Per-topic check: raise a clear error if there are not enough questions for a topic.
             if len(topic_questions) < quantity:
                 raise ValueError(
-                    f"No hay suficientes preguntas 'Aceptables' para el tema '{topic}'. "
+                    f"No hay suficientes preguntas 'Aceptables' para el tema '{topic or '(sin tema)'}'. "
                     f"Se solicitaron {quantity}, pero solo hay {len(topic_questions)} disponibles."
                 )
             if selection_method == "primeras":
                 topic_questions = topic_questions.head(quantity).copy()
             elif selection_method == "menos usadas":
-                topic_questions = topic_questions.sort_values(by='Veces usada en examen').head(quantity).copy()
+                # Las preguntas sin usos registrados (sin columna 'Veces usada en examen' o con la celda
+                # vacía, p. ej. las añadidas después al banco) cuentan como 0 usos y se eligen primero.
+                # Orden estable: a igualdad de usos se mantiene el orden del banco.
+                usage_counts = self._usage_counts(topic_questions)
+                least_used_index = usage_counts.sort_values(kind='stable').index[:quantity]
+                topic_questions = topic_questions.loc[least_used_index].copy()
             else:  # 'azar' (default).
                 topic_questions = topic_questions.sample(n=quantity).copy()
             selected_questions.append(topic_questions)
@@ -393,7 +550,10 @@ class ExamGenerator:
         Raises:
             ValueError: If `total_questions` exceeds the number of available questions.
         """
-        topic_counts = acceptable_df['Tema'].value_counts().to_dict()
+        # Se cuenta por tema normalizado (1, 1.0 y '1' son el mismo tema); las preguntas sin tema se
+        # siguen dejando fuera del reparto, como hacía value_counts() con las celdas vacías.
+        topic_keys = acceptable_df['Tema'].map(ExamGenerator._topic_key)
+        topic_counts = topic_keys[topic_keys != ''].value_counts().to_dict()
         topics = sorted(topic_counts.keys(), key=lambda topic: str(topic))
         total_available = int(sum(topic_counts.values()))
         if total_questions > total_available:
@@ -459,6 +619,11 @@ class ExamGenerator:
         df['Texto respuesta correcta'] = df.apply(
             lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"] if pd.notnull(
                 row['Respuesta correcta']) else None, axis=1)
+        if shuffle_answers:
+            # Al barajar se escribe texto en cualquier columna de opciones: con pandas 3 una columna leída
+            # como numérica (p. ej. opciones 10/20/30) no lo admite, así que se pasan a tipo 'object'.
+            for column in ['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'Respuesta correcta']:
+                df[column] = df[column].astype(object)
         for index, row in df.iterrows():
             pregunta_num = row['Número de pregunta'] if renumber else index + 1
             formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
@@ -651,8 +816,12 @@ class ExamGenerator:
             category_text += f" {exam} -"
         if exam_type:
             category_text += f" {exam_type} -"
-        if xml_cat_additional_text:
-            category_text += f" {xml_cat_additional_text}"
+        additional_text = str(xml_cat_additional_text).strip() if xml_cat_additional_text is not None else ""
+        if additional_text:
+            category_text += f" {additional_text}"
+        else:
+            # Sin texto adicional se quita el ' -' final, igual que en suggest_moodle_config (lo que muestra la GUI).
+            category_text = category_text.rstrip(" -")
 
         self.text.text = category_text
         for _, row in df.iterrows():
@@ -666,37 +835,39 @@ class ExamGenerator:
             self.text = SubElement(self.name, 'text')
             self.text.text = f"Pregunta {formatted_pregunta_num}"
 
+            # Con el texto completo, enunciado y respuestas pasan por _moodle_html_text: se convierten a
+            # texto (números o celdas vacías) y se escapan como HTML, porque el XML declara format='html'.
             questiontext = SubElement(self.question, 'questiontext', format='html')
             questiontext_text = SubElement(questiontext, 'text')
-            questiontext_text.text = row.get('Pregunta', '') if xml_use_answer_text else f"Pregunta {formatted_pregunta_num}"
+            questiontext_text.text = self._moodle_html_text(row.get('Pregunta', '')) if xml_use_answer_text else f"Pregunta {formatted_pregunta_num}"
 
             if correct_answer == 'a':
                 self.answer_a = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_a = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_a, 'text')
-            self.text.text = row.get('Respuesta A', '') if xml_use_answer_text else 'a'
+            self.text.text = self._moodle_html_text(row.get('Respuesta A', '')) if xml_use_answer_text else 'a'
 
             if correct_answer == 'b':
                 self.answer_b = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_b = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_b, 'text')
-            self.text.text = row.get('Respuesta B', '') if xml_use_answer_text else 'b'
+            self.text.text = self._moodle_html_text(row.get('Respuesta B', '')) if xml_use_answer_text else 'b'
 
             if correct_answer == 'c':
                 self.answer_c = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_c = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_c, 'text')
-            self.text.text = row.get('Respuesta C', '') if xml_use_answer_text else 'c'
+            self.text.text = self._moodle_html_text(row.get('Respuesta C', '')) if xml_use_answer_text else 'c'
 
             if correct_answer == 'd':
                 self.answer_d = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_d = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_d, 'text')
-            self.text.text = row.get('Respuesta D', '') if xml_use_answer_text else 'd'
+            self.text.text = self._moodle_html_text(row.get('Respuesta D', '')) if xml_use_answer_text else 'd'
 
         self.xml_str = minidom.parseString(tostring(self.quiz)).toprettyxml(indent="  ")
         with open(file_name, 'w', encoding='utf-8') as f:
@@ -819,6 +990,8 @@ class ExamGenerator:
                 If None, uses the same directory as the bank_excel_path.
             exam_names (Optional[list]): A list of names for the exam versions (e.g., ['1A', '1B']).
             questions_per_topic (Optional[dict]): A dictionary specifying how many questions to select from each topic.
+                If None (and no `total_questions`), every 'Aceptable' question is used. An empty dictionary, or one
+                whose quantities are all 0, selects no question and raises ValueError.
             selection_method (str): Method for selecting questions within each topic: 'azar' (random),
                 'primeras' (first N), 'menos usadas' (least used).
             total_questions (Optional[int]): If provided (and > 0), selects this exact total number of
@@ -858,8 +1031,9 @@ class ExamGenerator:
         self.generated_exams = []
         self.generation_cancelled = False
 
-        if self.df is None:
-            self.df = self.read_questions_from_excel(bank_excel_path)
+        # El banco se lee siempre de nuevo: la misma instancia (la de la GUI) puede generar exámenes de otro
+        # banco o del mismo banco editado en Excel, y con update_excel se escribe self.df sobre bank_excel_path.
+        self.df = self.read_questions_from_excel(bank_excel_path)
 
         if self.df is None:
             return
@@ -899,10 +1073,21 @@ class ExamGenerator:
                 if verbose:
                     print(f"Verbose: Reparto equitativo del total {total_questions_int}: {computed_per_topic}")
                 self.exam_df = self._select_questions_by_topic(computed_per_topic, selection_method, verbose)
-        elif questions_per_topic:
+        elif questions_per_topic is not None:
             self.exam_df = self._select_questions_by_topic(questions_per_topic, selection_method, verbose)
         else:
             self.exam_df = self.acceptable_df.copy()
+
+        # Un diccionario vacío o con todas las cantidades a 0 (p. ej. todos los temas a 0 en la GUI) no
+        # selecciona ninguna pregunta: se avisa en lugar de fallar más adelante o de usar todo el banco.
+        if self.exam_df.empty:
+            raise ValueError(
+                "No se ha seleccionado ninguna pregunta para el examen: indica al menos una pregunta en "
+                "algún tema o un número total de preguntas mayor que 0."
+            )
+
+        # Comprueba enunciado, opciones y letra correcta de las preguntas elegidas antes de escribir archivos.
+        self.exam_df = self._validate_selected_questions(self.exam_df)
 
         if verbose:
             print(f"Verbose: Tipo de self.exam_df antes del bucle: {type(self.exam_df)}")
@@ -939,6 +1124,12 @@ class ExamGenerator:
                 else:
                     print(warning_message)
 
+        if output_dir is None:
+            output_dir = os.path.dirname(bank_excel_path)
+        # Con una ruta relativa sin carpeta ('banco.xlsx') dirname() es '' (carpeta actual) y makedirs('') falla.
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
         if check:
             preview_exam_df = self.exam_df.copy()
             preview_exam_df['Número de pregunta'] = range(1, len(preview_exam_df) + 1)
@@ -958,21 +1149,24 @@ class ExamGenerator:
             preview_paragraph = preview_document.add_paragraph(preview_full_exam_text)
             preview_paragraph.runs[0].font.size = Pt(font_size)
             preview_document = self.add_page_number(preview_document)
-            preview_document.save(f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx')
+            # La previsualización se guarda junto a los exámenes (no en la carpeta de trabajo actual).
+            preview_filename = "examen_previsualizacion_" + "_".join(
+                self._safe_filename_component(part) for part in (subject, exam, course)
+            ) + "_completo.docx"
+            preview_path = os.path.join(output_dir, preview_filename)
+            preview_document.save(preview_path)
 
-            print(
-                f"Se ha generado un examen de previsualización: examen_previsualizacion_{subject}_{exam}_{course}_completo.docx")
-            review = input("¿El examen es correcto? (sí/no): ").lower()
+            print(f"Se ha generado un examen de previsualización: {preview_path}")
+            review = input("¿El examen es correcto? (sí/no): ").strip().lower()
 
-            if review == 'sí':
+            if review in ('sí', 'si', 's'):
                 try:
-                    os.remove(f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx')
-                    print("Archivo de previsualización eliminado.")
-                except OSError as e:
+                    os.remove(preview_path)
                     print("Archivo de previsualización eliminado.")
                 except OSError as e:
                     print(f"Error al eliminar el archivo de previsualización: {e}")
             else:
+                self.generation_cancelled = True
                 print("Generación de exámenes cancelada.")
                 return
 
@@ -983,9 +1177,6 @@ class ExamGenerator:
             num_exams_to_generate = len(exam_names)
             exam_name_list = exam_names
 
-        if output_dir is None:
-            output_dir = os.path.dirname(bank_excel_path)
-        os.makedirs(output_dir, exist_ok=True)
         usage_column_name = self._generation_usage_column_name(exam, course)
 
         for i in range(num_exams_to_generate):
@@ -999,7 +1190,11 @@ class ExamGenerator:
                 "exam_type": exam_type_name or "",
             }
 
-            base_filename = f'examen_{subject}_{exam}_{course}_{exam_type_name}'
+            # En el nombre de archivo se sustituyen caracteres no válidos (p. ej. 'Física I/II' o 'Parcial 1: T1');
+            # los títulos y cabeceras del examen mantienen el texto original.
+            base_filename = "examen_" + "_".join(
+                self._safe_filename_component(part) for part in (subject, exam, course, exam_type_name)
+            )
 
             docx_path = os.path.join(output_dir, f'{base_filename}.docx')
             full_docx_path = os.path.join(output_dir, f'{base_filename}_completo.docx')
@@ -1198,12 +1393,16 @@ class ExamGenerator:
         if update_excel:
             if usage_column_name not in self.df.columns:
                 self.df[usage_column_name] = 0
+            elif (not pd.api.types.is_numeric_dtype(self.df[usage_column_name])
+                  or pd.api.types.is_bool_dtype(self.df[usage_column_name])):
+                # Con pandas 3 una columna de uso con texto (p. ej. una 'x' escrita a mano) o con VERDADERO/FALSO
+                # no admite el valor 1; se pasa a 'object' para marcarla sin perder lo que ya tenía.
+                self.df[usage_column_name] = self.df[usage_column_name].astype(object)
 
-            used_question_numbers = self.exam_df['Número de pregunta'].tolist()
-            for question_number in used_question_numbers:
-                original_index = self.df[self.df['Número de pregunta'] == question_number].index
-                if not original_index.empty:
-                    self.df.loc[original_index, usage_column_name] = 1
+            # Se marcan las filas seleccionadas por su índice: self.exam_df conserva el índice de self.df
+            # (filtrar, muestrear y concatenar lo mantienen). 'Número de pregunta' no sirve como clave porque
+            # se repite al añadir o unificar bancos (cada archivo generado empieza en 1) y puede no existir.
+            self.df.loc[self.exam_df.index, usage_column_name] = 1
 
             usage_columns = [col for col in self.df.columns if col.endswith('_uso')]
 
@@ -1214,7 +1413,10 @@ class ExamGenerator:
                     self.df['Veces usada en examen'] = 0
             else:
                 print(f"Sumando las siguientes columnas de uso: {usage_columns}")
-                self.df['Veces usada en examen'] = self.df[usage_columns].sum(axis=1)
+                # Las celdas vacías o con texto no numérico cuentan como 0 usos.
+                self.df['Veces usada en examen'] = (
+                    self.df[usage_columns].apply(pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
+                )
 
             if 'Veces usada en examen' in self.df.columns and 'Texto relevante' in self.df.columns:
                 veces_usada_col = self.df.pop('Veces usada en examen')
