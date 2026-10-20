@@ -3921,16 +3921,32 @@ class ExamApp:
                 self.update_status("Generacion de examenes cancelada.")
                 messagebox.showinfo("Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
                 return
+            bank_error = getattr(self.exam_generator, "last_bank_update_error", None)
+            if bank_error:
+                # Los exámenes se generaron, pero el uso de las preguntas no se guardó en el banco.
+                self.update_status("Exámenes generados, pero el banco no se actualizó.")
+                messagebox.showwarning(
+                    "Banco no actualizado",
+                    "Los exámenes se han generado, pero no se pudo guardar el uso de las preguntas en el banco "
+                    f"('Actualizar Excel').\n\nDetalle: {bank_error}\n\nCierra el archivo si está abierto en "
+                    "Excel y vuelve a generar con 'Actualizar Excel', o registra el uso más tarde con "
+                    "'Actualizar Banco con Exámenes Existentes' en la pestaña Gestionar Banco de Preguntas."
+                )
+                return
             self.update_status("Exámenes generados.")
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
 
         except (NoAcceptableQuestionsError, ValueError) as e:
-            # Capturamos nuestro error personalizado y el ValueError del bucle
-            error_message = (
-                "No se pudo generar el examen. Revisa el estado de las preguntas en tu banco.\n\n"
-                "Es posible que no haya preguntas 'Aceptables' o que estés solicitando más preguntas "
-                "de las disponibles para un tema."
-            )
+            # Capturamos nuestro error personalizado y el ValueError del bucle. Los errores de validación
+            # (preguntas incompletas, selección vacía...) ya explican el problema por sí mismos.
+            if isinstance(e, NoAcceptableQuestionsError) or "Aceptables" in str(e):
+                error_message = (
+                    "No se pudo generar el examen. Revisa el estado de las preguntas en tu banco.\n\n"
+                    "Es posible que no haya preguntas 'Aceptables' o que estés solicitando más preguntas "
+                    "de las disponibles para un tema."
+                )
+            else:
+                error_message = "No se pudo generar el examen."
             detailed_error = f"Detalle del error: {e}"
 
             self.update_status("Error: No se encontraron preguntas aceptables o suficientes.")

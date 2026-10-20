@@ -1030,6 +1030,8 @@ class ExamGenerator:
         # Start a fresh list of generated-exam records for this run.
         self.generated_exams = []
         self.generation_cancelled = False
+        # Error al guardar el banco con update_excel (None si no hubo error): los exámenes ya están creados.
+        self.last_bank_update_error = None
 
         # El banco se lee siempre de nuevo: la misma instancia (la de la GUI) puede generar exámenes de otro
         # banco o del mismo banco editado en Excel, y con update_excel se escribe self.df sobre bank_excel_path.
@@ -1436,6 +1438,7 @@ class ExamGenerator:
                 print(
                     f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'.")
             except Exception as e:
+                self.last_bank_update_error = str(e)
                 print(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
 
     def _save_grading_session(self, session_output_path: str, subject: Optional[str] = None,

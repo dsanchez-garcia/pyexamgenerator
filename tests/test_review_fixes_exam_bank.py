@@ -517,3 +517,28 @@ def test_bare_relative_bank_path_without_output_dir(tmp_path, monkeypatch):
     )
 
     assert (tmp_path / "examen_Geo_E_25-26_A.docx").exists()
+
+
+def test_failed_bank_update_is_reported(tmp_path, monkeypatch):
+    """QG-8: si no se puede guardar el banco con update_excel, el error queda disponible para la GUI."""
+    bank_path = tmp_path / "bank.xlsx"
+    pd.DataFrame([{
+        "Número de pregunta": 1, "Tema": "T1", "Estado": "Aceptable", "Pregunta": "¿P?",
+        "Respuesta A": "a", "Respuesta B": "b", "Respuesta C": "c", "Respuesta D": "d",
+        "Respuesta correcta": "A", "Texto relevante": "t",
+    }]).to_excel(bank_path, index=False)
+    generator = ExamGenerator()
+    real_to_excel = pd.DataFrame.to_excel
+
+    def failing_to_excel(self, path, *args, **kwargs):
+        if str(path) == str(bank_path):
+            raise PermissionError("El archivo está abierto en Excel")
+        return real_to_excel(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_excel", failing_to_excel)
+    generator.generate_exam_from_excel(
+        bank_excel_path=str(bank_path), output_dir=str(tmp_path), subject="S", exam="E", course="C",
+        exam_names=["A"], export_moodle_xml=False, update_excel=True,
+    )
+
+    assert "abierto en Excel" in generator.last_bank_update_error
