@@ -178,21 +178,28 @@ búscalas por nombre de función si no coinciden.
   (`gui/question_tab.py`, `gui/bank_tab.py`, `gui/exam_tab.py`, `gui/grading_tab.py`) y extraer la
   lógica pura a `gui_logic.py` testeable (parsers de pesos, penalización, preguntas por tema,
   mapeos de plantilla/sesión, constructor de avisos OCR).
-- [ ] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
+- [x] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
   *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*
+  — hecho en `0375766` (`_create_scrollable_tab` y un mapa de campos para guardar y cargar).
 - [ ] **ARC-3 (P2)** Nombres de columna repetidos como literales en todos los módulos (`'Pregunta'`,
   `'Respuesta A'`, `'Estado'`, `'Veces usada en examen'`, `'_uso'`, `'Número de ID'`…). Crear
   `pyexamgenerator/schema.py` con constantes y usarlo en todas partes.
-- [ ] **ARC-4 (P2)** Helpers duplicados en `grading` con reglas ligeramente distintas (`_normalize`,
+- [x] **ARC-4 (P2)** Helpers duplicados en `grading` con reglas ligeramente distintas (`_normalize`,
   `_find_column`, `_parse_grade`, `_clean` en `data.py`, `comparison.py`, `final_grade.py`,
-  `integrations.py`, `attendance.py`, `extraction.py`). Unificar en `grading/_text.py`.
+  `integrations.py`, `attendance.py`, `extraction.py`). Unificar en `grading/_text.py`. — hecho en
+  `27023c8` (de paso, las filas sin ID ni nombre ya no cuentan como un alumno en la nota final ni en
+  la comparación).
 - [ ] **ARC-5 (P2)** Módulos de `grading` que son concatenaciones de ficheros antiguos (imports a
   mitad de fichero, bloques `if __name__ == "__main__"` intermedios en `integrations.py:1108`,
   `extraction.py:841`). Dividir `attendance.py` (1.890 líneas) y `extraction.py` (1.590).
   *Nota: `extraction.py` también define dos veces las funciones de módulo `_parse_args` y `main`
   (restos de la concatenación); gana la segunda.*
-  *Parcial (`d1c6542`): quitados los imports repetidos a mitad de fichero.*
+  *Parcial (`d1c6542`): quitados los imports repetidos a mitad de fichero. `d1f1dbb`: eliminada la
+  primera copia de `_parse_args`/`main` (al ejecutar el módulo corrían las dos), los imports que
+  quedaban a mitad de fichero suben a la cabecera y cada bloque `__main__` queda al final. Falta
+  dividir `attendance.py` y `extraction.py` (conviene acordar antes los módulos nuevos y mantener
+  las rutas de import actuales).*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
 - [x] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
@@ -269,7 +276,7 @@ búscalas por nombre de función si no coinciden.
   numéricas o vacías, y el borrado de la previsualización con `check=True` (`d1c6542`).
   Completado en `5b8f42e` (filtro de duplicados, `primeras`, `NoAcceptableQuestionsError`) y
   `b53bbcd` (`check=True` con callback, consola y sin terminal).*
-- [ ] **TST-4 (P2)** Sin tests en `grading`: `PIRBonusCalculator` (incluido GRD-1),
+- [x] **TST-4 (P2)** Sin tests en `grading`: `PIRBonusCalculator` (incluido GRD-1),
   `AbsenceJustificationManager.analyze`, `MoodleGradeIntegrator.deduplicate_by_id` (GRD-4),
   `FinalGradeCalculator` con IDs mixtos/NaN (GRD-3), `export_steps_dir` + `manifest.json`,
   asistencia de 2027 (GRD-2). OCR: fixture sintético de hoja de respuestas con `RapidOCR` simulado.
@@ -278,6 +285,7 @@ búscalas por nombre de función si no coinciden.
   (extractor simulado), la detección de temas y la regla de cuestionarios del punto extra (`59fa202`,
   `0ab8970`), y `AbsenceJustificationManager.analyze` completo con `export_steps_dir` y
   `manifest.json` (`5410d6b`). Falta un fixture sintético de hoja de respuestas para el OCR.*
+  — hecho en `ed07b5b` (hojas PNG sintéticas con un RapidOCR simulado, de la imagen a la nota).
 - [ ] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
   *Parcial: `tests/test_gui_smoke.py` construye la ventana real (Windows y Linux con xvfb) y prueba
   prompts, clave de API, lista de ficheros, errores de entrada, la tarea única de corrección, las
@@ -305,9 +313,10 @@ búscalas por nombre de función si no coinciden.
 - [x] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
   `grading/api.py` y los dataclasses de configuración. — hecho en `b08fab8` (job `mypy` en la CI;
   ir añadiendo módulos a `[tool.mypy]`).
-- [ ] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa
+- [x] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa
   `setx Path`, que trunca el PATH a 1.024 caracteres. Considerar `py -m pip install -e .` y
-  documentar el PATH manualmente, o usar PowerShell.
+  documentar el PATH manualmente, o usar PowerShell. — hecho en `ca7376e` (`add_user_path.ps1`;
+  `docs/dev/DEVELOPMENT.md` indica qué usar en Linux/macOS).
 - [x] **DEV-4 (P3)** `sync_branch.bat` ejecuta `git clean -fd` sin confirmación (borra ficheros no
   versionados que no estén ignorados). Pedir confirmación o eliminar el paso. — hecho en `f4c3851`.
 
