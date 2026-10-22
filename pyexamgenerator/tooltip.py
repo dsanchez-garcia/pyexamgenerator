@@ -23,6 +23,11 @@ class ToolTip(object):
     This is a standard helper class for providing hover-text functionality.
     """
 
+    # Tooltips currently shown, hidden together when their window is hidden or closed.
+    _shown = set()
+    # Toplevel windows that already have the handler that hides them (one per window).
+    _watched_toplevels = set()
+
     def __init__(self, widget, text=''):
         """
         Initializes the ToolTip.
@@ -43,12 +48,36 @@ class ToolTip(object):
         self.widget.bind("<Leave>", self.hidetip, add="+")
         self.widget.bind("<ButtonPress>", self.hidetip, add="+")
         self.widget.bind("<FocusOut>", self.hidetip, add="+")
+        self.widget.bind("<Unmap>", self.hidetip, add="+")
         self.widget.bind("<Destroy>", self.hidetip, add="+")
 
         # If the toplevel/root is closed or hidden, force-hide lingering tooltips.
         self.root = self.widget.winfo_toplevel()
-        self.root.bind("<Unmap>", self.hidetip, add="+")
-        self.root.bind("<Destroy>", self.hidetip, add="+")
+        self._watch_toplevel(self.root)
+
+    @classmethod
+    def _watch_toplevel(cls, toplevel):
+        """Hides the shown tooltips when ``toplevel`` is hidden or closed.
+
+        A single handler per window: a binding on a toplevel also runs for the events of every
+        widget inside it, so one handler per tooltip ran (tooltips x widgets) times on each
+        <Unmap>/<Destroy> (changing tabs, closing the window) and was never removed.
+        """
+        key = str(toplevel)
+        if key in cls._watched_toplevels:
+            return
+        cls._watched_toplevels.add(key)
+
+        def on_toplevel_event(event):
+            if str(event.widget) != key:
+                return  # an event of a widget inside the window
+            for tooltip in list(cls._shown):
+                tooltip.hidetip()
+            if str(event.type) == "Destroy":
+                cls._watched_toplevels.discard(key)
+
+        toplevel.bind("<Unmap>", on_toplevel_event, add="+")
+        toplevel.bind("<Destroy>", on_toplevel_event, add="+")
 
     def showtip(self, event=None):
         """
@@ -81,6 +110,7 @@ class ToolTip(object):
 
         # Position the tooltip window at the calculated coordinates
         tw.wm_geometry("+%d+%d" % (x, y))
+        ToolTip._shown.add(self)
 
         # This commented-out line could be used to add a delay before the tooltip appears.
         # self.id = self.widget.after(1000, self.showtip) # Optional delay
@@ -92,6 +122,7 @@ class ToolTip(object):
         """
         tw = self.tipwindow
         self.tipwindow = None
+        ToolTip._shown.discard(self)
         if tw is not None:
             try:
                 tw.destroy()

@@ -318,3 +318,27 @@ def test_full_pipeline_button_uses_the_library_pipeline(app, grading_backend):
     assert cfg.attendance_header_row == 4
     assert grading_backend.calls["opened"] == grading_backend.out
     assert app.status_text.get() == "Corrección completada."
+
+
+def test_tooltips_add_a_single_handler_to_their_window(tk_root):
+    """GUI-8: cada tooltip enlazaba <Unmap>/<Destroy> en la ventana, y esos manejadores se ejecutan
+    con los eventos de todos los widgets de la ventana (cambiar de pestaña, cerrar)."""
+    from pyexamgenerator.tooltip import ToolTip
+
+    window = tk.Toplevel(tk_root)
+    try:
+        labels = [ttk.Label(window, text=f"Campo {i}") for i in range(30)]
+        tooltips = [ToolTip(label, text=f"Ayuda {i}") for i, label in enumerate(labels)]
+
+        for sequence in ("<Unmap>", "<Destroy>"):
+            handlers = [line for line in window.bind(sequence).splitlines() if line.strip()]
+            assert len(handlers) == 1
+
+        tooltips[3].showtip()
+        assert tooltips[3].tipwindow is not None
+        labels[5].event_generate("<Unmap>")  # another widget hidden: the tooltip stays
+        assert tooltips[3].tipwindow is not None
+        window.event_generate("<Unmap>")  # the window hidden: the tooltip goes away
+        assert tooltips[3].tipwindow is None
+    finally:
+        window.destroy()
