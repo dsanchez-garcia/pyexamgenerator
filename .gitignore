@@ -4,6 +4,15 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Cachés de herramientas de desarrollo y documentación compilada
+.pytest_cache/
+.tox/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+docs/build/
+
 # Entornos virtuales
 venv/
 .venv/
@@ -12,9 +21,10 @@ env/
 venv.bak/
 env.bak/
 
-# Archivos de configuración de IDEs
+# Archivos de configuración de IDEs y ajustes locales de agentes de IA
 .idea/
 .vscode/
+.claude/settings.local.json
 
 # Archivos generados por la aplicación
 *.xlsx
@@ -36,8 +46,16 @@ Thumbs.db
 # Backup de onedrive
 onedrive_backup
 
+# Borradores y artefactos locales de preparación para depósito RODIN
+deposito_rodin/
+
 # Corrección de exámenes (grading): datos de alumnos y salidas (no subir nunca)
 outputs/
 _intermedios/
+prueba_error/
 *.jpg
 *.jpeg
+
+# Excepción: ficheros de prueba de tests/fixtures/ (xlsx, docx, xml, jpg...), que deben ser
+# SINTÉTICOS. Nunca pongas ahí datos reales de alumnos.
+!tests/fixtures/**
