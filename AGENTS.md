@@ -57,11 +57,13 @@ pyexamgenerator/
   __init__.py              versión (__version__, fuente única) + API pública
   question_generator.py    QuestionGenerator: PDFs/imágenes → preguntas con Gemini
   question_bank_manager.py QuestionBankManager: DOCX revisado ↔ XLSX, fusión, uso, unificación
+  _text.py                 helpers compartidos: strip_accents, safe_filename_part
   exam_generator.py        ExamGenerator: banco XLSX → exámenes DOCX/XLSX/Moodle XML
   main_app.py              GUI Tkinter (clase ExamApp, ~3.900 líneas) y entry point main()
   tooltip.py               ToolTip para la GUI
   grading/                 corrección de exámenes (ver ARCHITECTURE.md)
     api.py                 ExamCorrectionAPI + dataclasses *Config
+    _ids.py                normalize_id: comparar IDs de alumno (úsalo siempre)
     extraction.py          OCR (único módulo que importa cv2/numpy/rapidocr)
     graders.py, integrations.py, attendance.py, final_grade.py, comparison.py, data.py, session.py
 tests/                     pytest; todos los datos se generan en tmp_path
@@ -129,8 +131,8 @@ setup.py                   empaquetado (extra opcional [grading] para OCR)
 No ejecutes sin que el usuario lo pida explícitamente:
 
 - `dist_upload.bat` / `dist_upload_test.bat` (publican en PyPI/TestPyPI) ni `twine upload`.
-- `sync_branch.bat` (hace `git clean -fd`) ni `install_current_version.bat --add-path` (modifica el
-  PATH del usuario).
+- `sync_branch.bat` (borra ficheros no versionados con `git clean -fd`, tras pedir confirmación) ni
+  `install_current_version.bat --add-path` (modifica el PATH del usuario).
 - `git push`, crear tags de versión, cambiar `__version__`, `CITATION.cff` o `.zenodo.json`.
 - Subir la versión mínima de Python o añadir dependencias obligatorias (las pesadas van en extras).
 
@@ -162,7 +164,7 @@ Antes de dar una tarea por terminada:
 - Los tipos de examen pueden ser `A`/`B` o `1A`/`1B`; el tipo se infiere del sufijo del nombre del
   XML (`..._1A.xml`).
 - La GUI tiene pruebas de humo en `tests/test_gui_smoke.py`: construyen la ventana real sin mostrarla
-  y se saltan donde no hay pantalla (p. ej. la CI de Linux). Usa su fixture `app`: crea una sola raíz
+  y se saltan donde no hay pantalla (la CI de Linux las ejecuta con `xvfb-run`). Usa su fixture `app`: crea una sola raíz
   Tk por módulo (crear `tk.Tk()` varias veces en un proceso falla de forma intermitente en Windows con
   «Can't find a usable tk.tcl») y registra los diálogos en `app.shown_messages` en lugar de quedarse
   bloqueada en ellos. Si cambias `main_app.py`, ejecútalas y describe lo que no pudiste probar a mano.

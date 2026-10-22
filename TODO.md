@@ -77,15 +77,15 @@ búscalas por nombre de función si no coinciden.
   `question_generator.py:456-473` (`IndexError`/`AttributeError` no capturados por pregunta). — hecho en `7d7fabb`.
 - [x] **BUG-10 (P2)** `generate_excel_from_docx` devuelve una ruta distinta de la que escribe —
   `question_bank_manager.py:778-781`. Devolver lo que devuelve `save_dataframe_to_excel`. — hecho en `8111c5b`.
-- [ ] **BUG-11 (P2)** Nombres de archivo de examen sin sanear — `exam_generator.py:1002`.
-  `/`, `:` o `?` en asignatura/examen rompen en Windows; `None` produce `examen_None_...`.
-- [ ] **BUG-12 (P2)** Categoría Moodle con `" -"` final en el XML pero no en
-  `suggest_moodle_config` — `exam_generator.py:649-655` vs `:108-113`. Un único helper.
-- [ ] **BUG-13 (P3)** Placeholders `{{...}}` de la plantilla DOCX partidos entre *runs* de Word no se
-  sustituyen, y una plantilla inexistente se ignora en silencio — `exam_generator.py:1256-1271`.
-- [ ] **BUG-14 (P3)** `output_filename` por defecto genera
+- [x] **BUG-11 (P2)** Nombres de archivo de examen sin sanear — `exam_generator.py:1002`.
+  `/`, `:` o `?` en asignatura/examen rompen en Windows; `None` produce `examen_None_...`. — hecho en `e7a49a1`.
+- [x] **BUG-12 (P2)** Categoría Moodle con `" -"` final en el XML pero no en
+  `suggest_moodle_config` — `exam_generator.py:649-655` vs `:108-113`. Un único helper. — hecho en `e7a49a1`.
+- [x] **BUG-13 (P3)** Placeholders `{{...}}` de la plantilla DOCX partidos entre *runs* de Word no se
+  sustituyen, y una plantilla inexistente se ignora en silencio — `exam_generator.py:1256-1271`. — hecho en `e7a49a1`.
+- [x] **BUG-14 (P3)** `output_filename` por defecto genera
   `preguntas_pendiente_de_revisar_pendiente_de_revisar.xlsx` — `question_generator.py:1022`;
-  `split('.pdf')` sensible a mayúsculas en `question_generator.py:125` (usar `os.path.splitext`).
+  `split('.pdf')` sensible a mayúsculas en `question_generator.py:125` (usar `os.path.splitext`). — hecho en `e7a49a1`.
 
 ### Corrección (`grading`)
 
@@ -113,25 +113,30 @@ búscalas por nombre de función si no coinciden.
   `self.id_col`. — hecho en `9ae14f6`.
 - [x] **GRD-8 (P1)** Una imagen ilegible aborta todo el lote OCR — `grading/extraction.py:703,759`;
   `prompt_missing_type=True` por defecto llama a `input()` (bloquea fuera de terminal). — hecho en `9ae14f6`.
-- [ ] **GRD-9 (P2)** Nombres compuestos rompen la búsqueda de justificaciones —
-  `grading/attendance.py:1046-1049,1063-1066` («María José García» → `maria_josegarcia`).
+- [x] **GRD-9 (P2)** Nombres compuestos rompen la búsqueda de justificaciones —
+  `grading/attendance.py:1046-1049,1063-1066` («María José García» → `maria_josegarcia`). — hecho en `45dd6f5`.
 - [ ] **GRD-10 (P2)** Detección de temas distinta entre PIR (`"ley 31_95"`, `attendance.py:1269`) y
   asistencia (`ley3195`, `:239`).
 - [ ] **GRD-11 (P2)** Reglas del bonus ignoran la config — `attendance.py:1836` (solo `T02..T11`),
   `:1764` (+1.0 fijo), `:742,746` (7.5 fijo) frente a `bonus_points`/`min_quiz_grade`.
 - [ ] **GRD-12 (P2)** `_name_match` fija `Nombre`/`Apellido(s)` — `grading/integrations.py:615-622`;
   `:865` sobrescribe una nota Moodle existente sin incidencia.
+  *Parcial (`45dd6f5`): `_name_match` usa las columnas detectadas y exige nombre y apellidos (con
+  `Apellidos` emparejaba solo por el nombre de pila). Falta avisar cuando el OCR sobrescribe una
+  nota que ya existía.*
 - [ ] **GRD-13 (P2)** La fachada relee todos los ficheros aunque no se exporten pasos —
   `grading/api.py:429-461,568-574,645,675,777`; `cfg.xlsx_files` se itera dos veces (falla con
   generadores).
 - [ ] **GRD-14 (P2)** `_resolve_output_path` descarta rutas absolutas explícitas
   (`grading/api.py:232`); `run_moodle_plus_ocr_pipeline` muta los config del llamador (`:523-529`).
-- [ ] **GRD-15 (P2)** «Sobrescribir en su sitio» sin copia de seguridad (`grading/api.py:750`) y
-  `comparison.py:213` reemplaza valores por NaN cuando el fichero nuevo tiene celdas vacías.
-- [ ] **GRD-16 (P2)** Dos ficheros con el mismo nombre en carpetas distintas colisionan en la nota
-  final — `grading/final_grade.py:102`.
-- [ ] **GRD-17 (P3)** `grade_from_images`, `merge_enrollment_sources`, `calculate_pir_bonus` y
-  `export_theory_topic_reports` no llaman a `session.record_workflow` (sesiones incompletas).
+  *Parcial (`37de35a`): `run_moodle_plus_ocr_pipeline` ya no modifica los config. Falta respetar
+  rutas absolutas (hay que cambiar también las clases de trabajo, que hacen lo mismo).*
+- [x] **GRD-15 (P2)** «Sobrescribir en su sitio» sin copia de seguridad (`grading/api.py:750`) y
+  `comparison.py:213` reemplaza valores por NaN cuando el fichero nuevo tiene celdas vacías. — hecho en `37de35a`.
+- [x] **GRD-16 (P2)** Dos ficheros con el mismo nombre en carpetas distintas colisionan en la nota
+  final — `grading/final_grade.py:102`. — hecho en `37de35a`.
+- [x] **GRD-17 (P3)** `grade_from_images`, `merge_enrollment_sources`, `calculate_pir_bonus` y
+  `export_theory_topic_reports` no llaman a `session.record_workflow` (sesiones incompletas). — hecho en `37de35a`.
 
 ## 3. GUI (`main_app.py`)
 
@@ -146,10 +151,12 @@ búscalas por nombre de función si no coinciden.
   de modelos (`:2000`), generación de exámenes (`:3413`). Los botones de corrección no se
   deshabilitan: dos clics en «Pipeline completo» lanzan dos hilos sobre la misma carpeta
   `_intermedios` (`:1602`). Un helper común «deshabilitar → hilo → rehabilitar en `finally`».
-- [ ] **GUI-4 (P2)** Elegir ficheros dos veces concatena rutas sin separador (`:2199`) y separar por
-  `,` rompe nombres de Windows con comas (`:2221`).
-- [ ] **GUI-5 (P2)** `float()`/`read_excel` fuera de `try` (`:1056,1069,1294,1301,3371,3386`): el
-  error solo sale por consola.
+  *Parcial (`80735e8`): solo una tarea de corrección a la vez. Falta llevar a un hilo la generación
+  con Gemini, la carga de modelos y la generación de exámenes.*
+- [x] **GUI-4 (P2)** Elegir ficheros dos veces concatena rutas sin separador (`:2199`) y separar por
+  `,` rompe nombres de Windows con comas (`:2221`). — hecho en `063ec17`.
+- [x] **GUI-5 (P2)** `float()`/`read_excel` fuera de `try` (`:1056,1069,1294,1301,3371,3386`): el
+  error solo sale por consola. — hecho en `063ec17`.
 - [ ] **GUI-6 (P2)** El binding de la rueda del ratón rompe el scroll de `Treeview`/`Text` internos
   (`:1667-1672,1978,2788`).
 - [ ] **GUI-7 (P2)** `run_grading` (`:1453-1623`) reimplementa el pipeline completo a mano; moverlo a
@@ -214,9 +221,9 @@ búscalas por nombre de función si no coinciden.
 - [ ] **PKG-2 (P2)** Migrar `setup.py` → `pyproject.toml` (PEP 621) con extras `dev`, `docs`,
   `grading`; centralizar configuración de pytest y ruff. Mantener la versión única en
   `pyexamgenerator/__init__.py` (dinámica).
-- [ ] **PKG-3 (P2)** `ttkwidgets` es dependencia obligatoria solo por un import no usado
+- [x] **PKG-3 (P2)** `ttkwidgets` es dependencia obligatoria solo por un import no usado
   (`main_app.py:30`). Eliminar import y dependencia. Igual con `Document` (`:25`) y el fallback
-  `importlib_metadata` (`:37-42`, y `importlib-metadata; python_version < "3.8"` en `setup.py`).
+  `importlib_metadata` (`:37-42`, y `importlib-metadata; python_version < "3.8"` en `setup.py`). — hecho en `2fd7db2`.
 - [ ] **PKG-4 (P2)** `PyPDF2` está deprecado (avisa en cada test). Migrar a `pypdf`.
 - [ ] **PKG-5 (P2)** `requirements-dev.txt` duplica las dependencias de `setup.py`. Sustituir por
   `pip install -e .[dev,grading,docs]` cuando exista PKG-2.
@@ -242,10 +249,10 @@ búscalas por nombre de función si no coinciden.
   `QuestionBankManager.read_questions_from_docx`, `generate_excel_from_docx`,
   `add_reviewed_questions_to_existing_excel`; `ExamGenerator` con `update_excel=True`, `check=True`,
   `primeras`, `menos usadas`, `questions_per_topic`, `NoAcceptableQuestionsError`.
-  *Parcial: ya cubiertos `_analyze_gemini_response`, `read_questions_from_docx` (con ida y vuelta),
-  `add_reviewed_questions_to_existing_excel`, `update_excel=True`, `menos usadas`, `questions_per_topic`
-  y respuestas numéricas o vacías en el XML. Faltan `generate_multiple_choice_questions` con cliente
-  simulado, `filter_generated_questions_duplicates`, `check=True`, `primeras` y
+  *Parcial: ya cubiertos `_analyze_gemini_response`, `generate_multiple_choice_questions` (cliente
+  simulado), `read_questions_from_docx` (ida y vuelta), `add_reviewed_questions_to_existing_excel`,
+  `update_excel=True`, `menos usadas`, `questions_per_topic`, plantillas DOCX y XML con respuestas
+  numéricas o vacías. Faltan `filter_generated_questions_duplicates`, `check=True`, `primeras` y
   `NoAcceptableQuestionsError`.*
 - [ ] **TST-4 (P2)** Sin tests en `grading`: `PIRBonusCalculator` (incluido GRD-1),
   `AbsenceJustificationManager.analyze`, `MoodleGradeIntegrator.deduplicate_by_id` (GRD-4),
@@ -256,10 +263,11 @@ búscalas por nombre de función si no coinciden.
   (extractor simulado). Faltan `AbsenceJustificationManager.analyze` completo, `export_steps_dir` y un
   fixture sintético de hoja de respuestas.*
 - [ ] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
-  *Parcial (`0fa3771`, `dac098a`): `tests/test_gui_smoke.py` construye la ventana real y prueba el
-  diálogo de prompts y la clave de API (se salta sin pantalla). Falta extraer `gui_logic.py`.*
-- [ ] **TST-6 (P3)** Añadir configuración de pytest (`testpaths = tests`, marcadores `ocr` e
-  `integration`, `filterwarnings`).
+  *Parcial: `tests/test_gui_smoke.py` construye la ventana real (Windows y Linux con xvfb) y prueba
+  prompts, clave de API, lista de ficheros, errores de entrada y la tarea única de corrección. Falta
+  extraer `gui_logic.py`.*
+- [x] **TST-6 (P3)** Añadir configuración de pytest (`testpaths = tests`, marcadores `ocr` e
+  `integration`, `filterwarnings`). — hecho en `63e1da2`.
 - [ ] **TST-7 (P3)** Renombrar `test_v023_features.py` / `test_v030_features.py` por funcionalidad
   (`test_moodle_xml.py`, `test_bank_usage.py`…). `test_exam_order_integration.py` mezcla
   tabuladores con espacios.
@@ -276,8 +284,8 @@ búscalas por nombre de función si no coinciden.
 - [ ] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa
   `setx Path`, que trunca el PATH a 1.024 caracteres. Considerar `py -m pip install -e .` y
   documentar el PATH manualmente, o usar PowerShell.
-- [ ] **DEV-4 (P3)** `sync_branch.bat` ejecuta `git clean -fd` sin confirmación (borra ficheros no
-  versionados que no estén ignorados). Pedir confirmación o eliminar el paso.
+- [x] **DEV-4 (P3)** `sync_branch.bat` ejecuta `git clean -fd` sin confirmación (borra ficheros no
+  versionados que no estén ignorados). Pedir confirmación o eliminar el paso. — hecho en `f4c3851`.
 
 ## 8. Repositorio y documentación
 

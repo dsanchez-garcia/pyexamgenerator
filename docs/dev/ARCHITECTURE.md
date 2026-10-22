@@ -171,8 +171,13 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 - `__init__` carga la clave (`GEMINI_API_KEY` → `config.json`), crea ~70 variables Tkinter y
   construye las pestañas: `create_question_tab`, `create_manage_bank_tab`, `create_exam_tab`,
   `create_grading_tab`, y el menú «Ayuda».
-- Hilos: solo la pestaña de corrección usa hilos (`_grad_run_async`, `run_grading`); el resto
-  (incluidas las llamadas a Gemini) se ejecuta en el hilo principal (`GUI-3`).
+- Hilos: solo la pestaña de corrección usa hilos (`_grad_run_async`, `run_grading`), y solo una
+  tarea a la vez (`_grad_try_start_job` / `_grad_finish_job`); el resto (incluidas las llamadas a
+  Gemini) se ejecuta en el hilo principal (`GUI-3`). Los hilos devuelven resultados con
+  `root.after`, que exige el `mainloop` en marcha (en los tests, ver
+  `test_only_one_grading_job_runs_at_a_time`).
+- Listas de rutas en un campo: separadas por `;` (`ExamApp._split_paths`); los nombres de fichero
+  pueden contener comas.
 - Los `messagebox.show*` se sustituyen por diálogos con texto copiable.
 - Ficheros persistidos:
 
@@ -197,7 +202,11 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `test_grading_bonus_and_attendance.py` | punto extra PIR y columnas de asistencia |
 | `test_grading_ids.py` | `normalize_id`; nota final, comparación, matrícula y asistencias con IDs float o vacíos |
 | `test_grading_ocr_robustness.py` | emparejamiento OCR, hojas ilegibles o sin tipo, carpeta temporal (requiere `[grading]`) |
-| `test_gui_smoke.py` | ventana real de la GUI, diálogo de prompts y clave de API (se salta sin pantalla) |
+| `test_grading_matching.py` | emparejamiento por nombre (justificaciones, integración OCR con `Apellidos`) |
+| `test_grading_api_workflows.py` | fachada: configs sin efectos secundarios, combinar con copia, nota final con nombres repetidos, sesión |
+| `test_exam_generator_outputs.py` | nombres de fichero seguros, categoría de Moodle, plantillas DOCX (runs partidos, cabeceras) |
+| `test_question_generator_flow.py` | flujo completo de generación con un cliente de Gemini simulado |
+| `test_gui_smoke.py` | ventana real de la GUI: prompts, clave de API, lista de ficheros, errores de entrada y una sola tarea de corrección (se salta sin pantalla; en la CI de Linux usa xvfb) |
 | `test_package_smoke.py` | compila todos los módulos (incluida la GUI) |
 | `test_image_mode_unit.py` | utilidades de `input_mode='image'` |
 | `test_v023_features.py` | estado sin mayúsculas, XML no blanco, placeholders de plantilla DOCX |
