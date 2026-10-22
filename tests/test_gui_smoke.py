@@ -202,17 +202,21 @@ def test_only_one_grading_job_runs_at_a_time(app):
     assert not app._grad_job_running
 
 
-def _run_in_mainloop(app, action, timeout_ms=15000):
-    """Calls ``action`` inside mainloop and keeps it running until the grading job ends.
+def _run_in_mainloop(app, action, done=None, timeout_ms=15000):
+    """Calls ``action`` inside mainloop and keeps it running until ``done()`` is true (by default,
+    until the grading job ends).
 
     Worker threads talk to Tk with ``root.after``, which only works while mainloop is running.
     """
+    if done is None:
+        def done():
+            return not getattr(app, "_grad_job_running", False)
 
     def poll():
-        if getattr(app, "_grad_job_running", False):
-            app.root.after(20, poll)
-        else:
+        if done():
             app.root.quit()
+        else:
+            app.root.after(20, poll)
 
     def start():
         action()
@@ -342,3 +346,123 @@ def test_tooltips_add_a_single_handler_to_their_window(tk_root):
         assert tooltips[3].tipwindow is None
     finally:
         window.destroy()
+
+
+def test_question_generation_runs_in_the_background(app, monkeypatch, tmp_path):
+    """GUI-3: la generación con Gemini bloqueaba la ventana hasta terminar (minutos)."""
+    import threading
+
+    import pandas as pd
+
+    import pyexamgenerator.main_app as main_app
+
+    release = threading.Event()
+    seen = {}
+
+    class FakeQuestionGenerator:
+        def __init__(self, api_key, model_name):
+            seen["model"] = model_name
+
+        def generate_multiple_choice_questions(self, **kwargs):
+            seen["thread"] = threading.current_thread()
+            release.wait(timeout=10)
+            return pd.DataFrame({"Pregunta": ["¿Primera?", "¿Segunda?"]})
+
+    monkeypatch.setattr(main_app, "QuestionGenerator", FakeQuestionGenerator)
+    app.api_key_var.set("clave-de-prueba")
+    app.selected_model_var.set("models/gemini-de-prueba")
+    app.pdf_files_var.set(str(tmp_path / "tema1.pdf"))
+    button_states = []
+
+    def while_generating():
+        # The window keeps processing events while Gemini works, with the button disabled.
+        button_states.append(str(app.generate_questions_button.cget("state")))
+        release.set()
+
+    def start():
+        app.generate_questions()
+        app.root.after(50, while_generating)
+
+    _run_in_mainloop(app, start, done=lambda: bool(app.shown_messages))
+
+    assert seen["model"] == "models/gemini-de-prueba"
+    assert seen["thread"] is not threading.main_thread()
+    assert button_states == ["disabled"]
+    assert str(app.generate_questions_button.cget("state")) == "normal"
+    assert app.shown_messages == [("info", "Éxito", "Preguntas generadas y guardadas (2 en total).")]
+
+
+def test_model_list_is_loaded_in_the_background(app, monkeypatch):
+    """GUI-3: «Cargar Modelos» esperaba a la red con la ventana congelada."""
+    import threading
+
+    import pyexamgenerator.main_app as main_app
+
+    seen = {}
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.models = self
+
+        def list(self):
+            seen["thread"] = threading.current_thread()
+            return [
+                SimpleNamespace(name="models/gemini-de-prueba", display_name="Gemini de prueba", version="1",
+                                input_token_limit=1000, output_token_limit=100, description="Línea 1\nLínea 2"),
+                SimpleNamespace(name="models/otro-modelo"),
+            ]
+
+    monkeypatch.setattr(main_app.genai, "Client", FakeClient)
+    app.api_key_var.set("clave-de-prueba")
+
+    _run_in_mainloop(app, app.populate_models_table,
+                     done=lambda: str(app.load_models_button.cget("state")) == "normal")
+
+    assert seen["thread"] is not threading.main_thread()
+    rows = [app.models_tree.item(item, "values") for item in app.models_tree.get_children()]
+    assert [row[0] for row in rows] == ["models/gemini-de-prueba"]
+    assert rows[0][-1] == "Línea 1 Línea 2"
+    assert app.status_text.get().startswith("Se cargaron 1 modelos")
+
+
+def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app, monkeypatch, tmp_path):
+    """GUI-3: la generación de exámenes bloqueaba la ventana; la alerta de uso de preguntas, que se
+    pide desde el hilo de trabajo, debe mostrarse en el hilo principal."""
+    import threading
+
+    import pandas as pd
+
+    import pyexamgenerator.main_app as main_app
+
+    seen = {}
+
+    class FakeExamGenerator:
+        generation_cancelled = False
+
+        def generate_exam_from_excel(self, **kwargs):
+            seen["thread"] = threading.current_thread()
+            seen["answer"] = kwargs["usage_warning_callback"](pd.DataFrame(), 3, "Hay preguntas muy usadas.")
+            self.generation_cancelled = not seen["answer"]
+
+    def askyesno(title, message, **kwargs):
+        seen["dialog_thread"] = threading.current_thread()
+        return False  # the user cancels the generation
+
+    monkeypatch.setattr(main_app, "ExamGenerator", FakeExamGenerator)
+    monkeypatch.setattr(messagebox, "askyesno", askyesno)
+    bank = tmp_path / "banco.xlsx"
+    pd.DataFrame({"Tema": ["Tema 01"], "Pregunta": ["¿?"]}).to_excel(bank, index=False)
+    app.excel_filepath.set(str(bank))
+    app.selection_method_var.set("diccionario")
+    app.questions_per_topic.set("Tema 01:1")
+    app.usage_alert_enabled_var.set(True)
+
+    _run_in_mainloop(app, app.generate_exams, done=lambda: bool(app.shown_messages))
+
+    assert seen["thread"] is not threading.main_thread()
+    assert seen["dialog_thread"] is threading.main_thread()
+    assert seen["answer"] is False
+    assert app.shown_messages == [
+        ("info", "Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
+    ]
+    assert str(app.generate_exams_button.cget("state")) == "normal"

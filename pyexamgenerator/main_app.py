@@ -483,6 +483,64 @@ class ExamApp:
         """
         self.status_text.set(message)
 
+    def _run_in_background(self, status_msg: str, work_fn, on_success, on_error, widgets=()) -> None:
+        """Runs ``work_fn()`` in a worker thread so the window keeps responding.
+
+        ``widgets`` (e.g. the button that launched the task) stay disabled until the task ends, so
+        it cannot be launched twice. ``work_fn`` runs outside the Tk main thread: it must not read
+        Tk variables nor touch widgets (read every value before; to ask the user, use
+        :meth:`_call_in_main_thread`). Then ``on_success(result)`` or ``on_error(exception)`` runs
+        in the main thread and the widgets are enabled again in every case.
+        """
+        for widget in widgets:
+            widget.configure(state="disabled")
+        self.update_status(status_msg)
+
+        def finish(callback, value):
+            try:
+                callback(value)
+            finally:
+                for widget in widgets:
+                    try:
+                        widget.configure(state="normal")
+                    except tk.TclError:
+                        pass  # the window was closed meanwhile
+
+        def worker():
+            try:
+                result = work_fn()
+            except Exception as exc:  # noqa: BLE001 - handed to on_error in the main thread
+                self.root.after(0, lambda e=exc: finish(on_error, e))
+            else:
+                self.root.after(0, lambda r=result: finish(on_success, r))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _call_in_main_thread(self, fn):
+        """Runs ``fn()`` in the Tk main thread and returns its result.
+
+        For worker threads that need to ask the user: dialogs must be created in the main thread.
+        The calling thread waits for the answer.
+        """
+        if threading.current_thread() is threading.main_thread():
+            return fn()
+        done = threading.Event()
+        outcome: Dict[str, Any] = {}
+
+        def run():
+            try:
+                outcome["value"] = fn()
+            except Exception as exc:  # noqa: BLE001 - re-raised in the calling thread
+                outcome["error"] = exc
+            finally:
+                done.set()
+
+        self.root.after(0, run)
+        done.wait()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome.get("value")
+
     def create_grading_tab(self) -> None:
         """Crea la pestaña 'Corregir Exámenes' dividida en secciones independientes, cada una con su botón.
 
@@ -1799,9 +1857,9 @@ class ExamApp:
         save_api_key_button.pack(side='left', padx=2)
         ToolTip(save_api_key_button, text="Guarda la clave de API actual en la configuración.")
 
-        load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
-        load_models_button.pack(side='left', padx=2)
-        ToolTip(load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
+        self.load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
+        self.load_models_button.pack(side='left', padx=2)
+        ToolTip(self.load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
 
         # Nueva tabla para los modelos
         models_table_frame = ttk.Frame(model_api_frame)
@@ -1872,9 +1930,9 @@ class ExamApp:
         ToolTip(output_dir_button, "Abrir diálogo para seleccionar el directorio de salida.")
 
         # Row 9: Generate Button
-        generate_button = ttk.Button(config_frame, text="Generar Preguntas", command=self.generate_questions)
-        generate_button.grid(row=9, column=0, columnspan=3, pady=10)
-        ToolTip(generate_button, "Iniciar el proceso de generación de preguntas con la configuración actual.")
+        self.generate_questions_button = ttk.Button(config_frame, text="Generar Preguntas", command=self.generate_questions)
+        self.generate_questions_button.grid(row=9, column=0, columnspan=3, pady=10)
+        ToolTip(self.generate_questions_button, "Iniciar el proceso de generación de preguntas con la configuración actual.")
 
         config_frame.columnconfigure(1, weight=1)
         inner_frame_question.columnconfigure(0, weight=1)
@@ -1886,21 +1944,19 @@ class ExamApp:
     def populate_models_table(self):
         """
         Fetches available Gemini models using the provided API key and populates the Treeview table.
-        Adapted for the new google-genai library.
+        Adapted for the new google-genai library. The request runs in a background thread so the
+        window keeps responding; the table is filled in the main thread.
         """
         api_key = self.api_key_var.get()
         if not api_key or api_key == "TU_CLAVE_API":
             messagebox.showerror("Error", "Por favor, introduce una clave API de Gemini válida antes de cargar los modelos.")
             return
 
-        self.update_status("Cargando lista de modelos...")
-        self.root.update_idletasks()
-
         # Limpiar la tabla antes de llenarla
         for i in self.models_tree.get_children():
             self.models_tree.delete(i)
 
-        try:
+        def work():
             # Inicializamos el cliente con la nueva librería
             client = genai.Client(api_key=api_key)
 
@@ -1908,7 +1964,7 @@ class ExamApp:
             # Nota: La nueva librería maneja la paginación automáticamente
             models_pager = client.models.list()
 
-            count = 0
+            rows = []
             for model in models_pager:
                 # 1. FILTRO: Solo nos interesan los modelos que se llamen "gemini"
                 # Usamos getattr para mayor seguridad por si el objeto cambia
@@ -1934,8 +1990,7 @@ class ExamApp:
                 description = getattr(model, 'description', '') or ""
                 description = description.replace('\n', ' ')
 
-                # 3. INSERTAR EN LA TABLA
-                self.models_tree.insert("", "end", values=(
+                rows.append((
                     model_name,
                     display_name,
                     version,
@@ -1944,18 +1999,26 @@ class ExamApp:
                     methods_str,
                     description
                 ))
-                count += 1
+            return rows
 
-            if count == 0:
+        def on_success(rows):
+            # 3. INSERTAR EN LA TABLA (en el hilo principal)
+            for values in rows:
+                self.models_tree.insert("", "end", values=values)
+
+            if not rows:
                 messagebox.showwarning("Sin Modelos", "La API respondió, pero no se encontraron modelos 'gemini'.")
 
-            self.update_status(f"Se cargaron {count} modelos. Por favor, seleccione uno de la tabla.")
+            self.update_status(f"Se cargaron {len(rows)} modelos. Por favor, seleccione uno de la tabla.")
 
-        except Exception as e:
+        def on_error(e):
             messagebox.showerror("Error de API", f"No se pudo obtener la lista de modelos. Verifica tu clave API y conexión a internet.\n\nError: {e}")
             self.update_status("Error al cargar modelos.")
             # Imprimimos el error completo en consola para depuración si es necesario
             print(f"Error detallado al cargar modelos: {e}")
+
+        self._run_in_background("Cargando lista de modelos...", work, on_success, on_error,
+                                widgets=[self.load_models_button])
 
     # Nueva función para manejar la selección en la tabla
     def on_model_select(self, event=None):
@@ -2197,9 +2260,6 @@ class ExamApp:
             messagebox.showerror("Error", f"Error al inicializar el generador de preguntas: {e}")
             return
 
-        self.update_status("Generando preguntas...")
-        self.root.update_idletasks()
-
         existing_bank_path_for_gen = self.existing_bank_for_gen_path.get()
         bank_prompt_scope_value = self.bank_in_prompt_scope_var.get()
         prompt_example_content_value = self.prompt_example_content_var.get()
@@ -2249,9 +2309,12 @@ class ExamApp:
         bank_prompt_scope_to_pass = bank_prompt_scope_value if existing_bank_path_for_gen else None
 
         output_dir_value = self.gen_questions_output_dir_var.get() or None
+        include_similar_questions_value = self.include_similar_questions_in_prompt_var.get()
+        generator = self.question_generator
 
-        try:
-            questions_df = self.question_generator.generate_multiple_choice_questions(
+        # The calls to Gemini can take minutes: they run in a worker thread (no Tk access there).
+        def work():
+            return generator.generate_multiple_choice_questions(
                 pdf_paths=pdf_paths,
                 prompt_type=selected_prompt_type,
                 num_questions_per_chunk_target=num_questions_target_per_chunk,
@@ -2268,9 +2331,11 @@ class ExamApp:
                 max_generation_attempts_per_chunk=max_attempts_value,
                 total_chunks=total_chunks_value,
                 chunking_mode=chunking_mode_value,
-                include_similar_questions_in_prompt=self.include_similar_questions_in_prompt_var.get(),
+                include_similar_questions_in_prompt=include_similar_questions_value,
                 input_mode=input_mode_value
             )
+
+        def on_success(questions_df):
             if questions_df is not None and not questions_df.empty:
                 self.update_status(f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
                 messagebox.showinfo("Éxito", f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
@@ -2279,26 +2344,28 @@ class ExamApp:
                 self.update_status("No se generaron preguntas o ninguna pasó los filtros.")
                 messagebox.showinfo("Resultado", "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, errores de API). Revisa la consola para más detalles.")
 
-        except QuotaExceededError as e:
-            title = "Límite de Cuota Excedido"
-            # El mensaje 'e' ya viene formateado desde QuestionGenerator
-            message = str(e)
+        def on_error(e):
+            if isinstance(e, QuotaExceededError):
+                title = "Límite de Cuota Excedido"
+                # El mensaje 'e' ya viene formateado desde QuestionGenerator
+                message = str(e)
 
-            self.update_status("Error: Límite de cuota de la API excedido.")
-            messagebox.showerror(title, message)
-            print(f"ERROR: {title}\n{message}")
+                self.update_status("Error: Límite de cuota de la API excedido.")
+                messagebox.showerror(title, message)
+                print(f"ERROR: {title}\n{message}")
+            elif isinstance(e, ServiceOverloadedError):
+                title = "Servidores de Google Saturados"
+                self.update_status("Error: Modelo de IA saturado.")
+                messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
+                print(f"ERROR: {title}\n{e}")
+            else:
+                self.update_status(f"Error durante la generación de preguntas: {e}")
+                messagebox.showerror("Error", f"Error: {e}")
+                import traceback
+                print("".join(traceback.format_exception(type(e), e, e.__traceback__)))
 
-        except ServiceOverloadedError as e:
-            title = "Servidores de Google Saturados"
-            self.update_status("Error: Modelo de IA saturado.")
-            messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
-            print(f"ERROR: {title}\n{e}")
-
-        except Exception as e:
-            self.update_status(f"Error durante la generación de preguntas: {e}")
-            messagebox.showerror("Error", f"Error: {e}")
-            import traceback
-            print(traceback.format_exc())
+        self._run_in_background("Generando preguntas...", work, on_success, on_error,
+                                widgets=[self.generate_questions_button])
 
     def create_exam_tab(self):
         """
@@ -2665,9 +2732,9 @@ class ExamApp:
         row += 1
 
         # Generate Exams Button (spans the width)
-        generate_button = ttk.Button(inner_frame_exam, text="Generar Exámenes", command=self.generate_exams)
-        generate_button.grid(row=row, column=0, columnspan=3, pady=20)
-        ToolTip(generate_button, "Genera los archivos de examen (docx y opcionalmente xml) con la configuración actual.")
+        self.generate_exams_button = ttk.Button(inner_frame_exam, text="Generar Exámenes", command=self.generate_exams)
+        self.generate_exams_button.grid(row=row, column=0, columnspan=3, pady=20)
+        ToolTip(self.generate_exams_button, "Genera los archivos de examen (docx y opcionalmente xml) con la configuración actual.")
 
         inner_frame_exam.columnconfigure(0, weight=1)
         inner_frame_exam.columnconfigure(1, weight=1)
@@ -3342,16 +3409,20 @@ class ExamApp:
                 return
 
         output_dir_value = self.gen_exams_output_dir_var.get() or None
+        session_output_path = self.gen_session_output_var.get().strip() or None
+        # A generator per run: the instance keeps state while it works and the shared one may be in
+        # use by «Generar XML desde XLSX existente» while this run goes on in another thread.
+        generator = ExamGenerator()
 
         def confirm_usage_warning(_warning_df: pd.DataFrame, _threshold: int, message: str) -> bool:
-            return messagebox.askyesno(
+            # Called from the worker thread: the dialog is shown in the main thread.
+            return self._call_in_main_thread(lambda: messagebox.askyesno(
                 "Alerta de uso de preguntas",
                 f"{message}\n\nDeseas continuar con la generacion?"
-            )
+            ))
 
-        self.update_status("Generando exámenes...")
-        try:
-            self.exam_generator.generate_exam_from_excel(
+        def work():
+            generator.generate_exam_from_excel(
                 bank_excel_path=excel_path,
                 output_dir=output_dir_value,
                 exam_names=exam_name_list,
@@ -3375,35 +3446,41 @@ class ExamApp:
                 update_excel=update_excel,
                 answer_sheet_instructions=answer_sheet_instructions,
                 template_docx_path=template_docx_path,
-                session_output_path=(self.gen_session_output_var.get().strip() or None),
+                session_output_path=session_output_path,
                 usage_warning_enabled=usage_alert_enabled,
                 usage_warning_threshold=usage_alert_threshold,
                 usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None
             )
-            if getattr(self.exam_generator, "generation_cancelled", False):
+            return bool(getattr(generator, "generation_cancelled", False))
+
+        def on_success(cancelled):
+            if cancelled:
                 self.update_status("Generacion de examenes cancelada.")
                 messagebox.showinfo("Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
                 return
             self.update_status("Exámenes generados.")
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
 
-        except (NoAcceptableQuestionsError, ValueError) as e:
-            # Capturamos nuestro error personalizado y el ValueError del bucle
-            error_message = (
-                "No se pudo generar el examen. Revisa el estado de las preguntas en tu banco.\n\n"
-                "Es posible que no haya preguntas 'Aceptables' o que estés solicitando más preguntas "
-                "de las disponibles para un tema."
-            )
-            detailed_error = f"Detalle del error: {e}"
+        def on_error(e):
+            if isinstance(e, (NoAcceptableQuestionsError, ValueError)):
+                # Capturamos nuestro error personalizado y el ValueError del bucle
+                error_message = (
+                    "No se pudo generar el examen. Revisa el estado de las preguntas en tu banco.\n\n"
+                    "Es posible que no haya preguntas 'Aceptables' o que estés solicitando más preguntas "
+                    "de las disponibles para un tema."
+                )
+                detailed_error = f"Detalle del error: {e}"
 
-            self.update_status("Error: No se encontraron preguntas aceptables o suficientes.")
-            messagebox.showerror("Error en el Banco de Preguntas", f"{error_message}\n\n{detailed_error}")
-            print(f"ERROR: {error_message}\n{detailed_error}")
+                self.update_status("Error: No se encontraron preguntas aceptables o suficientes.")
+                messagebox.showerror("Error en el Banco de Preguntas", f"{error_message}\n\n{detailed_error}")
+                print(f"ERROR: {error_message}\n{detailed_error}")
+            else:
+                # Mantenemos un bloque genérico para cualquier otro error inesperado
+                self.update_status(f"Error al generar exámenes: {e}")
+                messagebox.showerror("Error", f"Ocurrió un error inesperado al generar los exámenes: {e}")
 
-        except Exception as e:
-            # Mantenemos un bloque genérico para cualquier otro error inesperado
-            self.update_status(f"Error al generar exámenes: {e}")
-            messagebox.showerror("Error", f"Ocurrió un error inesperado al generar los exámenes: {e}")
+        self._run_in_background("Generando exámenes...", work, on_success, on_error,
+                                widgets=[self.generate_exams_button])
 
     def show_moodle_suggestions(self) -> None:
         """Shows recommended Moodle quiz names / columns so the exported xlsx is identifiable."""
