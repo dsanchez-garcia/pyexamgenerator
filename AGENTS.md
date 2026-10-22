@@ -75,6 +75,7 @@ tests/                     pytest; todos los datos se generan en tmp_path
 .github/workflows/         CI: pytest (Ubuntu/Windows, con y sin [grading]) + sphinx -W
 docs/source/               Sphinx + MyST (Read the Docs); tutoriales en Markdown, API autogenerada
 docs/dev/                  documentación para desarrolladores y agentes (fuera de Sphinx)
+examples/                  PDF de ejemplo de los tutoriales (no se empaquetan)
 pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [docs]) y config. de pytest
 *.bat                      scripts de Windows para build, docs, subida a PyPI e instalación
 ```

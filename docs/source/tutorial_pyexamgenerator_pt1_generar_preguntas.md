@@ -4,7 +4,7 @@
 
 Ahora vamos a realizar nuestro ejemplo práctico: generar preguntas de dos temas diferentes, la Ley de Prevención y el Reglamento de los Servicios de Prevención.
 
-Asegúrate de tener ambos archivos en tu carpeta de trabajo: `RD 31-95 LPRL_fragmento.pdf` y `RD 39-97 RSP_fragmento.pdf`.
+Asegúrate de tener ambos archivos en tu carpeta de trabajo: `RD 31-95 LPRL_fragmento.pdf` y `RD 39-97 RSP_fragmento.pdf`. Puedes descargarlos de la carpeta [`examples/`](https://github.com/dsanchez-garcia/pyexamgenerator/tree/master/examples) del repositorio.
 
 ### Sección 1: Seleccionar/Editar tipo de prompt
 
@@ -26,7 +26,7 @@ Un "Prompt" son las instrucciones que le damos a la inteligencia artificial.
 Aquí le decimos al programa qué documentos debe leer.
 
 *   **Botón "Seleccionar PDFs":** Haz clic en este botón para buscar archivos en tu ordenador.
-*   **Acción para nuestro ejemplo:** En la ventana que se abre, busca tus archivos. Para seleccionar ambos a la vez, haz clic en el primero (`RD 31-95...`) y, **manteniendo pulsada la tecla `Ctrl`**, haz clic en el segundo (`RD 39-97...`). Luego, pulsa "Abrir". Verás las rutas de ambos archivos en el campo de texto, separadas por una coma.
+*   **Acción para nuestro ejemplo:** En la ventana que se abre, busca tus archivos. Para seleccionar ambos a la vez, haz clic en el primero (`RD 31-95...`) y, **manteniendo pulsada la tecla `Ctrl`**, haz clic en el segundo (`RD 39-97...`). Luego, pulsa "Abrir". Verás las rutas de ambos archivos en el campo de texto, separadas por punto y coma (`;`). Si vuelves a pulsar el botón, los archivos nuevos se añaden a la lista.
 
 ### Sección 3: Configuración de generación
 
