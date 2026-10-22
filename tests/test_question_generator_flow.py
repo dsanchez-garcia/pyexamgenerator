@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import fitz  # PyMuPDF
 import pandas as pd
+import pytest
 
 from pyexamgenerator.question_generator import QuestionGenerator
 
@@ -54,3 +55,26 @@ def test_generation_flow_with_fake_gemini_client(tmp_path, monkeypatch):
     saved = pd.read_excel(tmp_path / "salida" / "preguntas_pendiente_de_revisar.xlsx")
     assert len(saved) == 2
     assert (tmp_path / "salida" / "preguntas_pendiente_de_revisar.docx").exists()
+
+
+def test_generated_questions_similar_to_the_bank_are_filtered(tmp_path):
+    """TST-3: `filter_generated_questions_duplicates` no tenía test."""
+    bank_path = tmp_path / "banco.xlsx"
+    pd.DataFrame({"Pregunta": ["¿Qué regula la Ley 31/1995 de prevención de riesgos laborales?"]}).to_excel(
+        bank_path, index=False)
+    generated = pd.DataFrame({"Pregunta": [
+        "¿Qué regula la Ley 31/1995 de prevención de riesgos laborales?",  # same statement
+        "¿Quién debe garantizar la seguridad de los trabajadores?",
+    ]})
+    generator = QuestionGenerator(api_key="dummy", model_name="models/test")
+
+    accepted, rejected = generator.filter_generated_questions_duplicates(generated, str(bank_path), 0.8)
+
+    assert accepted["Pregunta"].tolist() == ["¿Quién debe garantizar la seguridad de los trabajadores?"]
+    assert rejected["Similitud"].tolist() == [pytest.approx(1.0)]
+    assert rejected["Pregunta Coincidente"].iloc[0].startswith("¿Qué regula la Ley 31/1995")
+
+    empty_accepted, empty_rejected = generator.filter_generated_questions_duplicates(pd.DataFrame(), str(bank_path))
+    assert empty_accepted.empty and empty_rejected.empty
+    with pytest.raises(FileNotFoundError):
+        generator.filter_generated_questions_duplicates(generated, str(tmp_path / "no_existe.xlsx"))
