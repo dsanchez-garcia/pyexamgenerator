@@ -2086,11 +2086,13 @@ class ExamApp:
             Optional[str]: The API key if found, otherwise None.
         """
         try:
-            with open('config.json', 'r') as f:
+            with open('config.json', 'r', encoding='utf-8') as f:
                 config = json.load(f)
-                return config.get('api_key')
         except (FileNotFoundError, json.JSONDecodeError):
             return None
+        api_key = str(config.get('api_key') or '').strip()
+        # Older versions could save the "TU_CLAVE_API" placeholder as if it were a key.
+        return api_key if api_key and api_key != "TU_CLAVE_API" else None
 
     def save_api_key(self, api_key: str) -> None:
         """
@@ -2099,9 +2101,8 @@ class ExamApp:
         Args:
             api_key (str): The API key to save.
         """
-        with open('config.json', 'w') as f:
+        with open('config.json', 'w', encoding='utf-8') as f:
             json.dump({'api_key': api_key}, f)
-        messagebox.showinfo("Info", "API key guardada.")
 
     def save_current_api_key(self) -> None:
         """
@@ -2112,8 +2113,9 @@ class ExamApp:
         API key in the instance.
         It also shows informational or error messages to the user via messagebox.
         """
-        key_to_save = self.api_key_var.get()
-        if key_to_save:
+        key_to_save = self.api_key_var.get().strip()
+        # The entry starts with the "TU_CLAVE_API" placeholder: never store it as if it were a key.
+        if key_to_save and key_to_save != "TU_CLAVE_API":
             self.save_api_key(key_to_save)
             self.api_key = key_to_save  # Update the API key in the instance.
             # We don't instantiate QuestionGenerator here anymore because it requires a model_name,

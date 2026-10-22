@@ -91,3 +91,27 @@ def test_renaming_a_custom_prompt_replaces_it(app, tmp_path):
     saved = json.loads((tmp_path / "custom_prompts.json").read_text(encoding="utf-8"))
     assert saved == {"Historia moderna": "Prompt de historia"}
     assert app.selected_prompt_type.get() == "Historia moderna"
+
+
+def test_api_key_placeholder_is_never_saved(app, tmp_path):
+    """SEC-3: el marcador 'TU_CLAVE_API' del campo se podía guardar como si fuera una clave."""
+    app.api_key_var.set("TU_CLAVE_API")
+    app.save_current_api_key()
+
+    assert not (tmp_path / "config.json").exists()
+    assert [kind for kind, _title, _message in app.shown_messages] == ["error"]
+
+
+def test_api_key_is_saved_trimmed_with_a_single_confirmation(app, tmp_path):
+    app.api_key_var.set("  clave-de-prueba  ")
+    app.save_current_api_key()
+
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == {"api_key": "clave-de-prueba"}
+    assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
+    assert app.load_api_key() == "clave-de-prueba"
+
+
+def test_saved_placeholder_from_older_versions_is_ignored(app, tmp_path):
+    (tmp_path / "config.json").write_text(json.dumps({"api_key": "TU_CLAVE_API"}), encoding="utf-8")
+
+    assert app.load_api_key() is None
