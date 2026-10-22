@@ -1,13 +1,15 @@
+import argparse
 import os
 from pathlib import Path
 import re
 import unicodedata
-from typing import Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
+from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
 
 
 class MoodleGradeIntegrator:
@@ -372,16 +374,7 @@ MoodleGradeIntegrator.integrar = MoodleGradeIntegrator.integrate_grades
 MoodleGradeIntegrator.integrar_y_exportar = MoodleGradeIntegrator.integrate_and_export
 
 
-
-
 # OCR overlay integration
-
-import argparse
-from typing import Dict, List, Optional, Sequence, Tuple
-
-import pandas as pd
-
-from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
 
 
 class OcrGradeIntegrator:
@@ -1167,11 +1160,11 @@ def main() -> None:
     print(f"Total rows: {len(df)}")
 
 
-if __name__ == "__main__":
-    main()
-
-
 # Backward-compatible alias
 IntegradorCalificacionesOCR = OcrGradeIntegrator
 OcrGradeIntegrator.integrar = OcrGradeIntegrator.integrate
+
+
+if __name__ == "__main__":
+    main()
 

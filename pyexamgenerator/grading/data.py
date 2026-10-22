@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Callable, Dict, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -135,13 +136,7 @@ class SharedExamDataStore:
     load_respuestas_excel = load_answers_excel
 
 
-
-
 # Enrollment merge utilities
-
-import unicodedata
-from typing import Dict, Iterable
-
 
 
 def _normalize(text: str) -> str:

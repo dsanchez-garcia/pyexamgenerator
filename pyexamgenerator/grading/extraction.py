@@ -29,6 +29,11 @@ except ImportError:  # pragma: no cover - depende del entorno
 from pyexamgenerator._console import stdin_is_interactive
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
+from pyexamgenerator.grading.data import (
+    SharedExamDataStore,
+    build_merged_enrollment_from_sources,
+    infer_exam_type_from_xml_filename,
+)
 
 
 Point = Tuple[float, float]
@@ -854,47 +859,6 @@ def audit_to_dataframe(results: Sequence[SheetResult]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Extract data from JPG/PNG answer sheets")
-    parser.add_argument("images", nargs="+", help="Image paths to process")
-    parser.add_argument("--enrollment", default=None, help="Official enrollment Excel (optional)")
-    parser.add_argument("--output", default="respuestas_alumnos_paso1_desde_imagenes.xlsx", help="Output Excel")
-    parser.add_argument("--audit-output", default=None, help="Optional audit Excel with per-question scores")
-    parser.add_argument("--debug-dir", default=None, help="Directory to save debug images")
-    parser.add_argument("--min-mark-ratio", type=float, default=0.17, help="Minimum ink ratio to accept a mark")
-    parser.add_argument("--min-gap", type=float, default=0.05, help="Minimum difference between top and second option")
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = _parse_args()
-    extractor = AnswerSheetExtractor(
-        enrollment_xlsx_path=args.enrollment,
-        debug_dir=args.debug_dir,
-        min_mark_ratio=args.min_mark_ratio,
-        min_gap=args.min_gap,
-    )
-    results = extractor.process_batch(args.images)
-    df = results_to_dataframe(results)
-    df.to_excel(args.output, index=False)
-    print(f"OK: file generated at {args.output}")
-
-    if args.audit_output:
-        df_audit = audit_to_dataframe(results)
-        df_audit.to_excel(args.audit_output, index=False)
-        print(f"OK: audit generated at {args.audit_output}")
-
-    for r in results:
-        print(
-            f"- {Path(r.image).name}: type={r.exam_type or '?'} | "
-            f"name={r.student_name_ocr or '?'} | official={r.student_name_official or '?'}"
-        )
-
-
-if __name__ == "__main__":
-    main()
-
-
 # Backward-compatible aliases
 HojaResultado = SheetResult
 DebugCelda = DebugCell
@@ -905,19 +869,7 @@ procesar_imagen = AnswerSheetExtractor.process_image
 procesar_lote = AnswerSheetExtractor.process_batch
 
 
-
-
 # Image-based grading
-
-import argparse
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
-
-import pandas as pd
-
-from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
-from pyexamgenerator.grading.data import infer_exam_type_from_xml_filename
-from pyexamgenerator.grading.data import SharedExamDataStore
 
 
 @dataclass
@@ -1599,7 +1551,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--temp-image-dir",
         default=None,
-        help="Fallback temp directory for OCR image copies (default: ~/Desktop/pyexamgenerator_temp)",
+        help="Fallback temp directory for OCR image copies (default: pyexamgenerator_temp in the system temp folder)",
     )
     parser.add_argument("--min-mark-ratio", type=float, default=0.17)
     parser.add_argument("--min-gap", type=float, default=0.05)
@@ -1670,11 +1622,11 @@ def main() -> None:
             print(f"OK: manual changes -> {args.output_manual_changes}")
 
 
-if __name__ == "__main__":
-    main()
-
-
 # Backward-compatible aliases
 PreguntaInfo = QuestionInfo
 CorrectorExamenesDesdeImagenes = ImageExamGrader
+
+
+if __name__ == "__main__":
+    main()
 

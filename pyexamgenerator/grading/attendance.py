@@ -5,6 +5,7 @@ import difflib
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -1207,21 +1208,7 @@ def main() -> None:
     )
 
 
-if __name__ == "__main__":
-    main()
-
-
-
-
-
-
-
-
 # PIR bonus calculation
-
-from dataclasses import dataclass
-from datetime import date
-
 
 
 @dataclass(frozen=True)
@@ -1910,4 +1897,8 @@ def export_theory_topic_reports(
     """
     reporter = TheoryTopicReporter(attendance_quiz=attendance_quiz_xlsx_path)
     return reporter.export(output_dir)
+
+
+if __name__ == "__main__":
+    main()
 
