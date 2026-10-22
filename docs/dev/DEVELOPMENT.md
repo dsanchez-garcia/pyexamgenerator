@@ -57,6 +57,9 @@ Convenciones para tests nuevos:
 venv/Scripts/python.exe -m sphinx -W -b html docs/source docs/build/html
 ```
 
+- Read the Docs y el job `sphinx -W` de la CI (Python 3.10) instalan las versiones fijadas en
+  `docs/requirements.txt`; el extra `[docs]` solo fija mínimos. Si una actualización de Sphinx o del
+  tema introduce avisos, se corrigen al cambiar esas versiones, no por sorpresa en una publicación.
 - Las imágenes/GIF de los tutoriales están en `docs/source/_static/gifs/`.
 - `docs/dev/` (esta carpeta) queda fuera de Sphinx a propósito.
 
