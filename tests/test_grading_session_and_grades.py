@@ -348,3 +348,23 @@ def test_result_comparator_value_cols_restricts_comparison(tmp_path):
     result = ResultComparator().compare(str(old), str(new), value_cols=["Nota"])
     assert result.summary["changed_cells"] == 0
     assert result.summary["value_columns"] == 1
+
+
+def test_exam_grader_does_not_invent_timestamps(tmp_path):
+    """GRD-5: escribía fechas y duraciones inventadas ('20 de abril de 2026 17:05') en cada fila."""
+    xml_path = tmp_path / "exam.xml"
+    xml_path.write_text(_MINIMAL_XML, encoding="utf-8")
+    enrollment = tmp_path / "enrollment.xlsx"
+    _write(enrollment, [{"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "111",
+                        "Dirección de correo": "ana@x.com"}])
+    answers = tmp_path / "answers.xlsx"
+    _write(answers, [{"Nombre_Alumno_Generado": "Ana Gil", "Pregunta 01": "b"}])
+
+    grader = ExamGrader(
+        exam_xml_path=str(xml_path), answers_xlsx_path=str(answers), enrollment_xlsx_path=str(enrollment),
+    )
+    row = grader.grade_and_export(str(tmp_path / "out.xlsx")).iloc[0]
+
+    assert row["Estado"] == "Finalizado"
+    assert (row["Comenzado"], row["Finalizado"], row["Duración"]) == ("", "", "")
+    assert row["Calificación/10,00"] == "0,00"
