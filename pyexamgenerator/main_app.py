@@ -3225,7 +3225,6 @@ class ExamApp:
                     except ValueError:
                         num_cols = 3  # Default value if not a valid number.
 
-                    num_themes = len(unique_themes)
                     row = 0
                     col = 0
 
@@ -3936,7 +3935,7 @@ class ExamApp:
 
 def main():
     root = tk.Tk()
-    app = ExamApp(root)
+    _app = ExamApp(root)
     root.mainloop()
 
 

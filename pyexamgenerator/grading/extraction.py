@@ -542,7 +542,6 @@ class AnswerSheetExtractor:
 
             assert best_candidate is not None
             best_score, margin_score, y_selected, scored_sorted, best_letter, second_score = best_candidate
-            scores = [(letter, ratio) for letter, ratio, _rect in scored_sorted]
 
             adaptive_accept = (
                 best_score >= (self.min_mark_ratio * 0.78)
@@ -884,10 +883,7 @@ procesar_lote = AnswerSheetExtractor.process_batch
 # Image-based grading
 
 import argparse
-import os
-import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd

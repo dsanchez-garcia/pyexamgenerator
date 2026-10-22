@@ -3,3 +3,5 @@ include README.md
 include CHANGELOG.md
 include CITATION.cff
 include .zenodo.json
+# Tests (incluido conftest.py) para poder ejecutarlos desde el sdist.
+recursive-include tests *.py

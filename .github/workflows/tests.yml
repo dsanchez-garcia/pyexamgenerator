@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Versión mínima declarada en setup.py (python_requires), sin y con el extra OCR.
+          # Versión mínima declarada en pyproject.toml (requires-python), sin y con el extra OCR.
           - { os: ubuntu-latest, python-version: "3.10", extras: "" }
           - { os: ubuntu-latest, python-version: "3.10", extras: "grading" }
           # Versión de desarrollo habitual (Windows, Python 3.14) y Linux equivalente.
@@ -49,6 +49,20 @@ jobs:
       - name: Ejecutar tests
         if: runner.os != 'Linux'
         run: python -m pytest -q -rs
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      # Misma versión que .pre-commit-config.yaml; las reglas están en pyproject.toml.
+      - name: Instalar ruff
+        run: python -m pip install ruff==0.17.1
+      - name: Comprobar el código
+        run: ruff check --output-format=github .
 
   docs:
     name: sphinx -W

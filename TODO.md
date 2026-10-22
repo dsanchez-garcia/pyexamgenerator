@@ -190,6 +190,7 @@ búscalas por nombre de función si no coinciden.
   `extraction.py:841`). Dividir `attendance.py` (1.890 líneas) y `extraction.py` (1.590).
   *Nota: `extraction.py` también define dos veces las funciones de módulo `_parse_args` y `main`
   (restos de la concatenación); gana la segunda.*
+  *Parcial (`d1c6542`): quitados los imports repetidos a mitad de fichero.*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
 - [ ] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
@@ -221,17 +222,17 @@ búscalas por nombre de función si no coinciden.
   *Decidido por el mantenedor (2026-10-22): mínimo Python 3.10. Anotación corregida en `07e3e4d`;
   `setup.py`, `tox.ini`, `.readthedocs.yaml`, CI, README y guías actualizados en la rama
   `build/python-3.10`.*
-- [ ] **PKG-2 (P2)** Migrar `setup.py` → `pyproject.toml` (PEP 621) con extras `dev`, `docs`,
+- [x] **PKG-2 (P2)** Migrar `setup.py` → `pyproject.toml` (PEP 621) con extras `dev`, `docs`,
   `grading`; centralizar configuración de pytest y ruff. Mantener la versión única en
-  `pyexamgenerator/__init__.py` (dinámica).
+  `pyexamgenerator/__init__.py` (dinámica). — hecho en `16af861` (ruff en `d1c6542`).
 - [x] **PKG-3 (P2)** `ttkwidgets` es dependencia obligatoria solo por un import no usado
   (`main_app.py:30`). Eliminar import y dependencia. Igual con `Document` (`:25`) y el fallback
   `importlib_metadata` (`:37-42`, y `importlib-metadata; python_version < "3.8"` en `setup.py`). — hecho en `2fd7db2`.
 - [ ] **PKG-4 (P2)** `PyPDF2` está deprecado (avisa en cada test). Migrar a `pypdf`.
-- [ ] **PKG-5 (P2)** `requirements-dev.txt` duplica las dependencias de `setup.py`. Sustituir por
-  `pip install -e .[dev,grading,docs]` cuando exista PKG-2.
-- [ ] **PKG-6 (P2)** `docs/requirements.txt` sin versiones fijadas y RTD con `fail_on_warning: true`:
-  una versión nueva de Sphinx puede romper la build. Fijar versiones.
+- [x] **PKG-5 (P2)** `requirements-dev.txt` duplica las dependencias de `setup.py`. Sustituir por
+  `pip install -e .[dev,grading,docs]` cuando exista PKG-2. — hecho en `410a2f1`.
+- [x] **PKG-6 (P2)** `docs/requirements.txt` sin versiones fijadas y RTD con `fail_on_warning: true`:
+  una versión nueva de Sphinx puede romper la build. Fijar versiones. — hecho en `8f1d70b`.
 - [x] **PKG-7 (P3)** La versión está en 3 sitios (`__init__.py`, `CITATION.cff`, `.zenodo.json`) más
   la fecha en `CHANGELOG.md`. Añadir un test que compruebe que coinciden (o un script de *bump*).
   — hecho en `ae5ba96`.
@@ -256,7 +257,8 @@ búscalas por nombre de función si no coinciden.
   *Parcial: ya cubiertos `_analyze_gemini_response`, `generate_multiple_choice_questions` (cliente
   simulado), `read_questions_from_docx` (ida y vuelta), `add_reviewed_questions_to_existing_excel`,
   `update_excel=True`, `menos usadas`, `questions_per_topic`, plantillas DOCX y XML con respuestas
-  numéricas o vacías. Faltan `filter_generated_questions_duplicates`, `check=True`, `primeras` y
+  numéricas o vacías, y el borrado de la previsualización con `check=True` (`d1c6542`). Faltan
+  `filter_generated_questions_duplicates`, el resto de `check=True`, `primeras` y
   `NoAcceptableQuestionsError`.*
 - [ ] **TST-4 (P2)** Sin tests en `grading`: `PIRBonusCalculator` (incluido GRD-1),
   `AbsenceJustificationManager.analyze`, `MoodleGradeIntegrator.deduplicate_by_id` (GRD-4),
@@ -273,20 +275,23 @@ búscalas por nombre de función si no coinciden.
   extraer `gui_logic.py`.*
 - [x] **TST-6 (P3)** Añadir configuración de pytest (`testpaths = tests`, marcadores `ocr` e
   `integration`, `filterwarnings`). — hecho en `63e1da2`.
-- [ ] **TST-7 (P3)** Renombrar `test_v023_features.py` / `test_v030_features.py` por funcionalidad
+- [x] **TST-7 (P3)** Renombrar `test_v023_features.py` / `test_v030_features.py` por funcionalidad
   (`test_moodle_xml.py`, `test_bank_usage.py`…). `test_exam_order_integration.py` mezcla
   tabuladores con espacios.
-  *Parcial (`07e3e4d`): `test_exam_order_integration.py` ya usa solo espacios.*
+  *Parcial (`07e3e4d`): `test_exam_order_integration.py` ya usa solo espacios. Completado en
+  `c5d0bd6`: cinco ficheros por funcionalidad.*
 - [x] **TST-8 (P3)** `tests/test_image_mode_unit.py:28` crea un `genai.Client` real con clave falsa;
   simularlo. — hecho en `092840c` (`tests/conftest.py`, para todos los tests).
 
 ## 7. Herramientas de desarrollo
 
-- [ ] **DEV-1 (P2)** Sin linter/formateador. Añadir `ruff` (lint + format) con una configuración
+- [x] **DEV-1 (P2)** Sin linter/formateador. Añadir `ruff` (lint + format) con una configuración
   inicial permisiva y `pre-commit`. Aplicar el formateo en un PR aparte, sin cambios funcionales.
   *Análisis previo (2026-10-22, `ruff check --select F`): ningún nombre sin definir (F821); 18 imports
   repetidos por la concatenación de módulos de `grading` (ARC-5), 7 variables asignadas sin uso
   (restos de lógica sustituida, sin efecto) y 6 imports sin uso. Buen punto de partida: activar `F`.*
+  — hecho en `d1c6542`: reglas `F` en la CI y pre-commit (además, un `except` repetido que daba un
+  mensaje falso). *Pendiente: aplicar `ruff format` en un PR aparte y ampliar las reglas.*
 - [ ] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
   `grading/api.py` y los dataclasses de configuración.
 - [ ] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa

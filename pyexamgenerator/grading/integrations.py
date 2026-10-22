@@ -377,9 +377,6 @@ MoodleGradeIntegrator.integrar_y_exportar = MoodleGradeIntegrator.integrate_and_
 # OCR overlay integration
 
 import argparse
-from pathlib import Path
-import re
-import unicodedata
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd

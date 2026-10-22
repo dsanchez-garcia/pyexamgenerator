@@ -151,7 +151,7 @@ class QuestionBankManager:
             df_existing = pd.read_excel(existing_bank_path)
             df_reviewed = pd.read_excel(reviewed_questions_path)
         except FileNotFoundError:
-            print(f"Error: Uno o ambos archivos no se encontraron.")
+            print("Error: Uno o ambos archivos no se encontraron.")
             return -1, None
         except Exception as e:
             print(f"Error al leer los archivos Excel: {e}")
@@ -172,7 +172,6 @@ class QuestionBankManager:
                 print("Advertencia: La columna 'Estado' no se encontró en el archivo a añadir. No se pudo aplicar el filtro.")
 
         added_count = 0
-        existing_count = len(df_existing)
 
         # Iterate through each question in the reviewed file
         for index, row_reviewed in df_reviewed.iterrows():

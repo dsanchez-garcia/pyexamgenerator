@@ -11,27 +11,33 @@ Requisitos: Python 3.10+ (desarrollo habitual en 3.14 sobre Windows) y git.
 ```bash
 python -m venv venv
 venv/Scripts/python.exe -m pip install --upgrade pip
-venv/Scripts/python.exe -m pip install -e ".[grading]"
-venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+venv/Scripts/python.exe -m pip install -e ".[dev,docs,grading]"
 ```
 
 - `-e` instala en modo editable: los cambios en `pyexamgenerator/` se usan sin reinstalar.
-- El extra `[grading]` instala el OCR. Sin él, el paquete funciona y los tests de OCR se saltan.
+- Extras (definidos en `pyproject.toml`): `[dev]` tests y empaquetado (pytest, tox, build, twine),
+  `[docs]` Sphinx y `[grading]` el OCR. Sin `[grading]`, el paquete funciona y los tests de OCR se
+  saltan.
 - En Linux/macOS usa `venv/bin/python`. La GUI necesita Tk (`python3-tk` en Debian/Ubuntu).
 
 ## Tests
 
 ```bash
 venv/Scripts/python.exe -m pytest -q                      # todo
-venv/Scripts/python.exe -m pytest tests/test_v030_features.py -q
+venv/Scripts/python.exe -m pytest tests/test_bank_usage.py -q
 venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
 venv/Scripts/python.exe -m tox                            # matriz py310 / py314 (tox.ini)
+venv/Scripts/python.exe -m ruff check .                   # lint (reglas en pyproject.toml)
 ```
+
+La CI también ejecuta `ruff check` (de momento solo las reglas `F` de pyflakes). Para que se compruebe
+en cada commit: `venv/Scripts/pre-commit.exe install` (configuración en `.pre-commit-config.yaml`).
 
 Estado a 2026-10-22: 190 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
 pruebas de la GUI, que necesitan pantalla). La CI (`.github/workflows/tests.yml`) repite la suite en
 Ubuntu (con pantalla virtual `xvfb`) y Windows, con y sin el extra; sin `[grading]` se saltan las
-pruebas de OCR. `pytest.ini` limita la recogida a `tests/` y muestra el motivo de cada test saltado.
+pruebas de OCR. La sección `[tool.pytest.ini_options]` de `pyproject.toml` limita la recogida a
+`tests/` y muestra el motivo de cada test saltado.
 
 Convenciones para tests nuevos:
 
@@ -55,6 +61,9 @@ Convenciones para tests nuevos:
 venv/Scripts/python.exe -m sphinx -W -b html docs/source docs/build/html
 ```
 
+- Read the Docs y el job `sphinx -W` de la CI (Python 3.10) instalan las versiones fijadas en
+  `docs/requirements.txt`; el extra `[docs]` solo fija mínimos. Si una actualización de Sphinx o del
+  tema introduce avisos, se corrigen al cambiar esas versiones, no por sorpresa en una publicación.
 - Las imágenes/GIF de los tutoriales están en `docs/source/_static/gifs/`.
 - `docs/dev/` (esta carpeta) queda fuera de Sphinx a propósito.
 

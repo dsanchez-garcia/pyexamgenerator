@@ -172,3 +172,29 @@ def test_invalid_correct_letter_raises_clear_error(tmp_path):
     with pytest.raises(ValueError, match="Respuesta correcta"):
         _generate(bank_path, tmp_path / "out")
     assert not (tmp_path / "out" / "examen_Asig_Parcial_25-26_A.docx").exists()
+
+
+def test_preview_that_cannot_be_deleted_is_reported(tmp_path, monkeypatch, capsys):
+    """`check=True`: si no se podía borrar la previsualización, el primero de dos `except` repetidos
+    decía «Archivo de previsualización eliminado.» (encontrado por ruff, DEV-1)."""
+    import os
+
+    monkeypatch.chdir(tmp_path)
+    _bank().to_excel(tmp_path / "banco.xlsx", index=False)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "sí")
+
+    real_remove = os.remove
+
+    def remove(path, *args, **kwargs):
+        if "examen_previsualizacion_" in os.fspath(path):
+            raise PermissionError("el fichero está abierto en Word")
+        return real_remove(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "remove", remove)
+
+    _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True)
+
+    output = capsys.readouterr().out
+    assert "Error al eliminar el archivo de previsualización: el fichero está abierto en Word" in output
+    assert "Archivo de previsualización eliminado." not in output
+    assert list((tmp_path / "salida").glob("*_A.docx"))  # the generation goes on

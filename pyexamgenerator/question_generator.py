@@ -24,10 +24,6 @@ import os
 import pandas as pd
 import time
 from docx import Document
-from docx.shared import Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt
-from docx.enum.style import WD_STYLE_TYPE
 from typing import List, Dict, Optional, Tuple
 import math
 
@@ -595,7 +591,7 @@ class QuestionGenerator:
             similarity_score_pct = f"{row.get('Similitud', 0.0) * 100:.1f}%"
 
             p_details = document.add_paragraph()
-            p_details.add_run(f"Similitud: ").bold = True
+            p_details.add_run("Similitud: ").bold = True
             p_details.add_run(f"{similarity_score_pct}")
 
             p_match = document.add_paragraph()
@@ -1070,7 +1066,7 @@ class QuestionGenerator:
         else:
             print("No se descartaron preguntas por similitud durante todo el proceso.")
 
-        print(f"\n--- Proceso de generación completado. ---")
+        print("\n--- Proceso de generación completado. ---")
         print(f"Total preguntas aceptadas y guardadas: {len(self.final_df)}")
         if self.rejected_questions_list:
             print(f"Total preguntas rechazadas por similitud (acumulado de todos los intentos): {len(self.rejected_questions_list)}")
