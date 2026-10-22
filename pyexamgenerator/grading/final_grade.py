@@ -18,6 +18,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 
 def _normalize(text: Any) -> str:
     text = str(text).strip().lower()
@@ -84,7 +86,7 @@ class FinalGradeCalculator:
 
     @staticmethod
     def _identity_key(id_value: Any, first: Any, last: Any) -> str:
-        ident = _clean(id_value)
+        ident = normalize_id(id_value)
         if ident:
             return f"id::{ident}"
         return f"name::{_normalize(first)}::{_normalize(last)}"
@@ -135,7 +137,7 @@ class FinalGradeCalculator:
                     continue
                 if key not in registry:
                     registry[key] = {
-                        "Número de ID": _clean(id_value),
+                        "Número de ID": normalize_id(id_value),
                         "Nombre": _clean(first),
                         "Apellido(s)": _clean(last),
                         "_grades": {},
@@ -143,7 +145,7 @@ class FinalGradeCalculator:
                     order.append(key)
                 record = registry[key]
                 if not record["Número de ID"]:
-                    record["Número de ID"] = _clean(id_value)
+                    record["Número de ID"] = normalize_id(id_value)
                 if not record["Nombre"]:
                     record["Nombre"] = _clean(first)
                 if not record["Apellido(s)"]:

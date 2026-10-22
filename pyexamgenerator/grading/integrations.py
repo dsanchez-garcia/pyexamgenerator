@@ -6,6 +6,8 @@ from typing import Iterable, List, Optional, Tuple
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 
 class MoodleGradeIntegrator:
     def __init__(
@@ -330,9 +332,14 @@ class MoodleGradeIntegrator:
         dataframes = [self._load_file(path) for path in self.xlsx_files]
         merged_df = pd.concat(dataframes, ignore_index=True)
 
-        if deduplicate_by_id:
+        if deduplicate_by_id and self.id_col in merged_df.columns:
             merged_df = merged_df.sort_values("_Numeric_Grade", ascending=False)
-            merged_df = merged_df.drop_duplicates(subset=[self.id_col], keep="first")
+            # Only rows with an ID can be duplicates: students without one would otherwise collapse
+            # into a single row (missing IDs are read as empty strings).
+            ids = merged_df[self.id_col].map(normalize_id)
+            has_id = ids != ""
+            keep = ~has_id | ~ids.duplicated(keep="first")
+            merged_df = merged_df[keep]
 
         merged_df = merged_df.sort_values([self.last_name_col, self.first_name_col], na_position="last")
         merged_df = merged_df.drop(columns=["_Numeric_Grade"], errors="ignore")
@@ -439,30 +446,7 @@ class OcrGradeIntegrator:
 
     @staticmethod
     def _normalize_id(value) -> str:
-        if pd.isna(value):
-            return ""
-        if isinstance(value, int):
-            return str(value)
-        if isinstance(value, float):
-            if value.is_integer():
-                return str(int(value))
-            text = str(value).strip()
-            return text
-
-        text = str(value).strip()
-        if not text:
-            return ""
-
-        lowered = text.lower()
-        if lowered in {"nan", "none", "<na>"}:
-            return ""
-
-        # Excel/pandas may surface integer-like IDs as e.g. "12345.0".
-        if re.fullmatch(r"[-+]?\d+\.0+", text):
-            return text.split(".", 1)[0]
-
-        # Keep textual IDs as-is so leading zeros are preserved.
-        return text
+        return normalize_id(value)
 
     @staticmethod
     def _clean_text(value) -> str:
