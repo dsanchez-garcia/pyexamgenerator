@@ -138,6 +138,8 @@ class AbsenceJustificationConfig:
     id_col: Optional[str] = None
     email_col: Optional[str] = None
     justification_mode: str = "extremo"
+    # Class-quiz grade needed in every topic for the theory bonus point.
+    min_quiz_grade: float = 7.5
 
 
 @dataclass
@@ -148,6 +150,7 @@ class TheoryBonusConfig:
     output_dir: Optional[str] = None
     theory_grade_col: Optional[str] = None
     cap_to_10: bool = True
+    bonus_points: float = 1.0
 
 
 @dataclass
@@ -238,6 +241,8 @@ class FullPipelineConfig:
     justification_mode: str = "extremo"
     theory_grade_col: Optional[str] = None
     cap_to_10: bool = True
+    min_quiz_grade: float = 7.5
+    bonus_points: float = 1.0
     keep_intermediate: bool = False
     sender_col: str = "REMITENTE"
     subject_col: str = "ASUNTO"
@@ -720,6 +725,7 @@ class ExamCorrectionAPI:
                 id_col=cfg.id_col,
                 email_col=cfg.email_col,
                 justification_mode=cfg.justification_mode,
+                min_quiz_grade=cfg.min_quiz_grade,
             ).analyze().attendance_quiz_df
             self.results["attendance_with_quizzes"] = attendance_quiz_df
 
@@ -727,6 +733,7 @@ class ExamCorrectionAPI:
             outputs["theory_grades"] = str(Path(out_dir) / "calificaciones_examen_teoria.xlsx")
             theory_df = TheoryBonusApplier(
                 integrated_df, attendance_quiz_df, theory_grade_col=cfg.theory_grade_col, cap_to_10=cfg.cap_to_10,
+                bonus_points=cfg.bonus_points,
             ).apply(outputs["theory_grades"])
             _attendance_report_df, quiz_report_df = TheoryTopicReporter(attendance_quiz_df).build()
             outputs["quiz_report"] = str(Path(out_dir) / "cuestionarios_clase_y_punto_extra.xlsx")
@@ -800,6 +807,7 @@ class ExamCorrectionAPI:
             id_col=cfg.id_col,
             email_col=cfg.email_col,
             justification_mode=cfg.justification_mode,
+            min_quiz_grade=cfg.min_quiz_grade,
         )
 
         result = manager.analyze_and_export(
@@ -863,6 +871,7 @@ class ExamCorrectionAPI:
             output_path=output_path,
             theory_grade_col=cfg.theory_grade_col,
             cap_to_10=cfg.cap_to_10,
+            bonus_points=cfg.bonus_points,
         )
 
         self._export_step_dataframe(export_state, "theory_with_bonus", result_df)

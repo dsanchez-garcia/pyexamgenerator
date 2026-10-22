@@ -67,6 +67,7 @@ class AbsenceJustificationManager:
         id_col: Optional[str] = None,
         email_col: Optional[str] = None,
         justification_mode: str = "extremo",
+        min_quiz_grade: float = 7.5,
     ) -> None:
         self.attendance_xlsx_path = attendance_xlsx_path
         self.justifications_xlsx_path = justifications_xlsx_path
@@ -87,6 +88,8 @@ class AbsenceJustificationManager:
         self.id_col = id_col
         self.email_col = email_col
         self.justification_mode = str(justification_mode or "extremo").strip().lower()
+        # Class-quiz grade needed in every topic for the theory bonus point.
+        self.min_quiz_grade = float(min_quiz_grade)
 
     @staticmethod
     def _normalize(text: object) -> str:
@@ -751,11 +754,14 @@ class AbsenceJustificationManager:
                 attendance_missing_labels.append(class_label)
 
             all_topics = expected_topics
-            quiz_ok = bool(all_topics) and all((topic_best_score.get(t) is not None and float(topic_best_score[t]) >= 7.5) for t in all_topics)
+            quiz_ok = bool(all_topics) and all(
+                (topic_best_score.get(t) is not None and float(topic_best_score[t]) >= self.min_quiz_grade)
+                for t in all_topics
+            )
             quiz_fail_topics: List[str] = []
             for topic in all_topics:
                 score = topic_best_score.get(topic)
-                if score is None or float(score) < 7.5:
+                if score is None or float(score) < self.min_quiz_grade:
                     quiz_fail_topics.append(topic)
 
             reasons: List[str] = []
@@ -1632,7 +1638,7 @@ def _as_dataframe(source: object) -> pd.DataFrame:
 
 
 class TheoryBonusApplier:
-    """Apply the PIR ``+1`` theory bonus, retaining inputs and outputs as attributes.
+    """Apply the PIR theory bonus (``bonus_points``, +1 by default), retaining inputs and outputs as attributes.
 
     Inputs (``theory`` and ``attendance_quiz``) may be either a path to an Excel file
     or an in-memory DataFrame, so the step can be chained without writing intermediate
@@ -1647,11 +1653,13 @@ class TheoryBonusApplier:
         attendance_quiz: object,
         theory_grade_col: Optional[str] = None,
         cap_to_10: bool = True,
+        bonus_points: float = 1.0,
     ) -> None:
         self.theory = theory
         self.attendance_quiz = attendance_quiz
         self.theory_grade_col = theory_grade_col
         self.cap_to_10 = cap_to_10
+        self.bonus_points = float(bonus_points)
         self.theory_df: Optional[pd.DataFrame] = None
         self.bonus_df: Optional[pd.DataFrame] = None
         self.grade_columns: Optional[List[str]] = None
@@ -1666,6 +1674,7 @@ class TheoryBonusApplier:
             self.bonus_df,
             theory_grade_col=self.theory_grade_col,
             cap_to_10=self.cap_to_10,
+            bonus_points=self.bonus_points,
             grade_columns_out=self,
         )
         if output_path is not None:
@@ -1686,6 +1695,7 @@ def _compute_theory_bonus(
     bonus_df: pd.DataFrame,
     theory_grade_col: Optional[str] = None,
     cap_to_10: bool = True,
+    bonus_points: float = 1.0,
     grade_columns_out: Optional[object] = None,
 ) -> pd.DataFrame:
     if "Tiene_Punto_Adicional_Teoria" not in bonus_df.columns:
@@ -1755,7 +1765,7 @@ def _compute_theory_bonus(
         for col, original in original_values.items():
             if original is None:
                 continue
-            updated = original + 1.0
+            updated = original + bonus_points
             if cap_to_10:
                 updated = min(10.0, updated)
             updated = round(updated, 2)
@@ -1777,8 +1787,9 @@ def apply_theory_bonus_from_attendance_quiz(
     output_path: str,
     theory_grade_col: Optional[str] = None,
     cap_to_10: bool = True,
+    bonus_points: float = 1.0,
 ) -> pd.DataFrame:
-    """Apply PIR +1 bonus to a theory workbook using attendance+quiz audit output.
+    """Apply the PIR bonus (``bonus_points``, +1 by default) to a theory workbook using attendance+quiz audit output.
 
     Thin functional wrapper kept for backward compatibility; delegates to
     :class:`TheoryBonusApplier`.
@@ -1788,6 +1799,7 @@ def apply_theory_bonus_from_attendance_quiz(
         attendance_quiz=attendance_quiz_xlsx_path,
         theory_grade_col=theory_grade_col,
         cap_to_10=cap_to_10,
+        bonus_points=bonus_points,
     )
     return applier.apply(output_path=output_path)
 
@@ -1826,8 +1838,25 @@ class TheoryTopicReporter:
         return self.attendance_report_df, self.quiz_report_df
 
 
+def _report_topics(columns: Sequence[object]) -> List[str]:
+    """Topics of the per-topic report: LPRL, RSP and T02..T11 (the usual layout) plus any other topic
+    found in the class columns (e.g. ``C01_0303_T12_GIM__Asistencia``), which used to be left out."""
+    t_codes = {f"T{idx:02d}" for idx in range(2, 12)}
+    others: List[str] = []
+    for col in columns:
+        match = re.match(r"^C\d+_\d{4}_([A-Z]+\d*)_[A-Z]+__", str(col))
+        if not match:
+            continue
+        topic = match.group(1)
+        if re.fullmatch(r"T\d{2}", topic):
+            t_codes.add(topic)
+        elif topic not in {"LPRL", "RSP", "TOP"} and topic not in others:
+            others.append(topic)
+    return ["LPRL", "RSP"] + sorted(t_codes) + others
+
+
 def _compute_theory_topic_reports(source_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    topics = ["LPRL", "RSP"] + [f"T{idx:02d}" for idx in range(2, 12)]
+    topics = _report_topics(source_df.columns)
 
     base_cols = ["ID_Alumno", "Nombre", "Apellido(s)"]
     attendance_rows: List[Dict[str, object]] = []
