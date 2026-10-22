@@ -71,7 +71,7 @@ tests/                     pytest; todos los datos se generan en tmp_path
 .github/workflows/         CI: pytest (Ubuntu/Windows, con y sin [grading]) + sphinx -W
 docs/source/               Sphinx + MyST (Read the Docs); tutoriales en Markdown, API autogenerada
 docs/dev/                  documentación para desarrolladores y agentes (fuera de Sphinx)
-setup.py                   empaquetado (extra opcional [grading] para OCR)
+pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [docs]) y config. de pytest
 *.bat                      scripts de Windows para build, docs, subida a PyPI e instalación
 ```
 
@@ -88,10 +88,10 @@ setup.py                   empaquetado (extra opcional [grading] para OCR)
   `'Respuesta A'`…`'Respuesta D'`, `'Respuesta correcta'`, `'Estado'`, `'Tema'`,
   `'Número de pregunta'`, `'Veces usada en examen'`, `'<etiqueta>_uso'`, `'Número de ID'`…). **No los
   renombres**: rompería bancos existentes. Ver `docs/dev/ARCHITECTURE.md`.
-- El código debe funcionar en la versión mínima declarada en `setup.py` (**Python 3.10**): puedes
+- El código debe funcionar en la versión mínima declarada en `pyproject.toml` (**Python 3.10**): puedes
   usar `X | Y`, `match` y `tuple[...]`, pero no funciones de 3.11 o posteriores (`tomllib`,
   `ExceptionGroup`/`except*`, `typing.Self`, `enum.StrEnum`, `datetime.UTC`). La CI ejecuta la suite
-  en 3.10. Si cambias la versión mínima, actualiza a la vez `setup.py` (`python_requires` y
+  en 3.10. Si cambias la versión mínima, actualiza a la vez `pyproject.toml` (`requires-python` y
   clasificadores), `tox.ini`, `.readthedocs.yaml`, la CI y el README.
 - Comentarios: la densidad y el tono del código existente. Cabecera de licencia GPL en los módulos
   principales: consérvala.

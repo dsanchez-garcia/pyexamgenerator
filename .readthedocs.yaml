@@ -8,7 +8,7 @@ version: 2
 build:
   os: ubuntu-22.04
   tools:
-    # Versión mínima soportada (python_requires en setup.py). El job "sphinx -W" de la CI usa la
+    # Versión mínima soportada (requires-python en pyproject.toml). El job "sphinx -W" de la CI usa la
     # misma para reproducir esta build.
     python: "3.10"
 

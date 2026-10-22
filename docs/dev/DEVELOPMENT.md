@@ -31,7 +31,8 @@ venv/Scripts/python.exe -m tox                            # matriz py310 / py314
 Estado a 2026-10-22: 190 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
 pruebas de la GUI, que necesitan pantalla). La CI (`.github/workflows/tests.yml`) repite la suite en
 Ubuntu (con pantalla virtual `xvfb`) y Windows, con y sin el extra; sin `[grading]` se saltan las
-pruebas de OCR. `pytest.ini` limita la recogida a `tests/` y muestra el motivo de cada test saltado.
+pruebas de OCR. La sección `[tool.pytest.ini_options]` de `pyproject.toml` limita la recogida a
+`tests/` y muestra el motivo de cada test saltado.
 
 Convenciones para tests nuevos:
 

@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Versión mínima declarada en setup.py (python_requires), sin y con el extra OCR.
+          # Versión mínima declarada en pyproject.toml (requires-python), sin y con el extra OCR.
           - { os: ubuntu-latest, python-version: "3.10", extras: "" }
           - { os: ubuntu-latest, python-version: "3.10", extras: "grading" }
           # Versión de desarrollo habitual (Windows, Python 3.14) y Linux equivalente.

@@ -168,7 +168,7 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 ### Dependencia opcional de OCR
 
 - `pip install pyexamgenerator[grading]` instala `rapidocr` (Python ≥ 3.13) o
-  `rapidocr-onnxruntime` (< 3.13) junto con numpy/opencv compatibles (ver `setup.py`).
+  `rapidocr-onnxruntime` (< 3.13) junto con numpy/opencv compatibles (ver `pyproject.toml`).
 - Solo `grading/extraction.py` importa esas librerías; `grading/__init__.py` lo protege con
   `try/except ImportError` y expone `HAS_OCR`.
 - `docs/source/conf.py` simula `cv2`/`rapidocr*` con `autodoc_mock_imports` para Read the Docs.
