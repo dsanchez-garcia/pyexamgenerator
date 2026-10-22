@@ -419,7 +419,12 @@ class ExamCorrectionAPI:
         self.results["image_answers"] = answers_df
         self.results["image_grades"] = grades_df
         self.results["image_audit"] = audit_df
-        if cfg.output_incidents:
+        # Always expose the incidents (including sheets that could not be graded), even when no
+        # incidents file was requested.
+        incidents_df = getattr(grader, "last_incidents_df", None)
+        if incidents_df is not None:
+            self.results["ocr_incidents"] = incidents_df
+        elif cfg.output_incidents:
             incidents_path = self._resolve_output_path(cfg.output_incidents, cfg.output_dir)
             if Path(incidents_path).exists():
                 self.results["ocr_incidents"] = pd.read_excel(incidents_path)

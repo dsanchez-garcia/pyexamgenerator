@@ -3,6 +3,7 @@ import difflib
 import os
 import re
 import shutil
+import sys
 import tempfile
 import unicodedata
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ except ImportError:  # pragma: no cover - depende del entorno
     from rapidocr_onnxruntime import RapidOCR
 
     _RAPIDOCR_BACKEND = "legacy"
+
+from pyexamgenerator.grading._ids import normalize_id
 
 
 Point = Tuple[float, float]
@@ -104,7 +107,8 @@ class AnswerSheetExtractor:
             self._load_enrollment(enrollment_xlsx_path)
 
     def _set_enrollment_df(self, enrollment_df: pd.DataFrame) -> None:
-        self.enrollment_df = enrollment_df.copy()
+        # A filtered or sorted roster keeps its old labels; reset them so labels and positions agree.
+        self.enrollment_df = enrollment_df.reset_index(drop=True)
         self.enrollment_df["Lookup_Name"] = (
             self.enrollment_df["Nombre"].astype(str).str.strip()
             + " "
@@ -290,9 +294,10 @@ class AnswerSheetExtractor:
                     best_idx = idx
 
             if best_idx is not None and best_score >= 0.50:
-                row = self.enrollment_df.iloc[best_idx]
+                # best_idx is an index label (from iterrows), so look it up with .loc.
+                row = self.enrollment_df.loc[best_idx]
                 official_name = f"{row['Nombre']} {row['Apellido(s)']}".strip()
-                official_id = str(row.get("Número de ID", "")).strip() or None
+                official_id = normalize_id(row.get(self.id_col, "")) or None
                 return official_name, official_id
 
         if not student_name_ocr:
@@ -305,7 +310,7 @@ class AnswerSheetExtractor:
 
         row = self.enrollment_df[self.enrollment_df["Lookup_Name"] == matches[0]].iloc[0]
         official_name = f"{row['Nombre']} {row['Apellido(s)']}".strip()
-        official_id = str(row.get("Número de ID", "")).strip() or None
+        official_id = normalize_id(row.get(self.id_col, "")) or None
         return official_name, official_id
 
     def _resolve_forced_student(self, identifier: str) -> Tuple[Optional[str], Optional[str]]:
@@ -324,13 +329,13 @@ class AnswerSheetExtractor:
 
         def _row_to_pair(row: pd.Series) -> Tuple[Optional[str], Optional[str]]:
             official_name = f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}".strip()
-            official_id = str(row.get(self.id_col, "")).strip() or None
+            official_id = normalize_id(row.get(self.id_col, "")) or None
             return official_name or None, official_id
 
         # 1) Coincidencia exacta por "Número de ID" (lo más inequívoco).
         if self.id_col in self.enrollment_df.columns:
-            id_series = self.enrollment_df[self.id_col].astype(str).str.strip()
-            matches = self.enrollment_df[id_series == ident]
+            id_series = self.enrollment_df[self.id_col].map(normalize_id)
+            matches = self.enrollment_df[id_series == normalize_id(ident)]
             if not matches.empty:
                 return _row_to_pair(matches.iloc[0])
 
@@ -655,7 +660,9 @@ class AnswerSheetExtractor:
 
     @staticmethod
     def _default_temp_image_dir() -> str:
-        return str(Path.home() / "Desktop" / "pyexamgenerator_temp")
+        # System temp folder: the Desktop is often synced to the cloud (e.g. OneDrive), and these
+        # are scans of students' answer sheets.
+        return str(Path(tempfile.gettempdir()) / "pyexamgenerator_temp")
 
     @classmethod
     def _resolve_temp_image_dir(cls, temp_image_dir: Optional[str]) -> str:
@@ -755,8 +762,27 @@ class AnswerSheetExtractor:
             rotation_degrees=rotation_degrees,
         )
 
-    def process_batch(self, image_paths: Sequence[str]) -> List[SheetResult]:
-        return [self.process_image(path) for path in image_paths]
+    def process_batch(self, image_paths: Sequence[str], skip_errors: bool = False) -> List[SheetResult]:
+        """Processes every image. With ``skip_errors`` an image that cannot be processed is
+        recorded in ``self.failed_images`` as ``(path, error)`` instead of aborting the batch."""
+        self.failed_images: List[Tuple[str, str]] = []
+        results: List[SheetResult] = []
+        for path in image_paths:
+            try:
+                results.append(self.process_image(path))
+            except Exception as exc:  # noqa: BLE001 - reported per image when skip_errors
+                if not skip_errors:
+                    raise
+                self.failed_images.append((str(path), f"{type(exc).__name__}: {exc}"))
+        return results
+
+
+def _stdin_is_interactive() -> bool:
+    """True when input() can ask the user (a terminal), False under a GUI, notebook or CI."""
+    try:
+        return bool(sys.stdin) and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
 
 
 def results_to_dataframe(results: Sequence[SheetResult]) -> pd.DataFrame:
@@ -1011,7 +1037,8 @@ class ImageExamGrader:
             if only_type in self.questions_by_exam_type:
                 return only_type
 
-        if not prompt_if_missing:
+        # Never block on input() without an interactive terminal (GUI, notebooks, CI).
+        if not prompt_if_missing or not _stdin_is_interactive():
             raise ValueError(
                 f"Could not determine exam type for {image_name}. "
                 f"Available types: {', '.join(self.available_exam_types)}"
@@ -1077,11 +1104,11 @@ class ImageExamGrader:
         if self.enrollment_df is None or not official_id:
             return None
 
-        normalized_id = str(official_id).strip()
+        normalized_id = normalize_id(official_id)
         if normalized_id == "":
             return None
 
-        series = self.enrollment_df[self.id_col].astype(str).str.strip()
+        series = self.enrollment_df[self.id_col].map(normalize_id)
         matches = self.enrollment_df[series == normalized_id]
         if matches.empty:
             return None
@@ -1105,8 +1132,17 @@ class ImageExamGrader:
         sheet_results: Sequence[SheetResult],
         grades_df: pd.DataFrame,
         audit_df: Optional[pd.DataFrame],
+        skipped: Optional[Sequence[Dict[str, str]]] = None,
     ) -> pd.DataFrame:
-        incidents: List[Dict[str, object]] = []
+        incidents: List[Dict[str, object]] = [
+            {
+                "Imagen": item["Imagen"],
+                "Tipo": item["Tipo"],
+                "Severidad": "alta",
+                "Detalle": f"{item['Detalle']} La hoja no se ha corregido.",
+            }
+            for item in (skipped or [])
+        ]
         grade_by_image: Dict[str, float] = {}
         for _, row in grades_df.iterrows():
             image = str(row.get("Imagen", "")).strip()
@@ -1381,7 +1417,12 @@ class ImageExamGrader:
             if output_manual_changes:
                 output_manual_changes = str(output_base / Path(output_manual_changes).name)
 
-        sheet_results = self.extractor.process_batch(image_paths)
+        sheet_results = self.extractor.process_batch(image_paths, skip_errors=True)
+        # Sheets that could not be graded: reported as incidents instead of aborting the batch.
+        skipped: List[Dict[str, str]] = [
+            {"Imagen": image, "Tipo": "UNREADABLE_IMAGE", "Detalle": f"No se pudo procesar la imagen ({error})."}
+            for image, error in getattr(self.extractor, "failed_images", [])
+        ]
         manual_changes: List[Dict[str, object]] = []
         if interactive_review:
             _updated, manual_changes = self._run_interactive_review(sheet_results, open_image_on_review=open_image_on_review)
@@ -1397,7 +1438,18 @@ class ImageExamGrader:
         reference_weight_str = f"{reference_weight:.2f}".replace(".", ",")
 
         for sheet in sheet_results:
-            exam_type = self._resolve_exam_type(sheet, forced, prompt_missing_type)
+            try:
+                exam_type = self._resolve_exam_type(sheet, forced, prompt_missing_type)
+            except ValueError as exc:
+                resolved_types.append("")
+                skipped.append(
+                    {
+                        "Imagen": sheet.image,
+                        "Tipo": "EXAM_TYPE_UNRESOLVED",
+                        "Detalle": f"{exc}. Asigna el tipo (tipos forzados por imagen) y vuelve a corregir.",
+                    }
+                )
+                continue
             resolved_types.append(exam_type)
             total_score, points_by_question = self._calculate_score_for_type(sheet.answers, exam_type)
 
@@ -1414,7 +1466,7 @@ class ImageExamGrader:
             if enrollment_row is not None:
                 row[self.last_name_col] = str(enrollment_row.get(self.last_name_col, ""))
                 row[self.first_name_col] = str(enrollment_row.get(self.first_name_col, ""))
-                row[self.id_col] = str(enrollment_row.get(self.id_col, ""))
+                row[self.id_col] = normalize_id(enrollment_row.get(self.id_col, ""))
                 row[self.email_col] = str(enrollment_row.get(self.email_col, ""))
                 if "Grupo_Principal" in enrollment_row.index:
                     row["Grupo_Principal"] = str(enrollment_row.get("Grupo_Principal", ""))
@@ -1439,7 +1491,11 @@ class ImageExamGrader:
             audit_df = audit_to_dataframe(sheet_results)
             audit_df.to_excel(output_audit, index=False)
 
-        incidents_df = self._build_ocr_incidents(sheet_results, grades_df, audit_df)
+        incidents_df = self._build_ocr_incidents(sheet_results, grades_df, audit_df, skipped=skipped)
+        self.skipped_sheets = skipped
+        self.last_incidents_df = incidents_df
+        for item in skipped:
+            print(f"AVISO: hoja sin corregir: {item['Imagen']} ({item['Tipo']}).")
         if output_incidents:
             incidents_df.to_excel(output_incidents, index=False)
 

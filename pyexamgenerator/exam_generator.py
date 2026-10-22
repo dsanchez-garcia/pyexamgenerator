@@ -27,7 +27,9 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import os
-from typing import Callable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
+from typing import Callable, Iterable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
+
+from pyexamgenerator._text import strip_accents
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -119,6 +121,54 @@ class ExamGenerator:
         """Formats question numbers using two digits (01, 02, ...)."""
         return f"{int(question_number):02d}"
 
+    @staticmethod
+    def _normalize_correct_letter(value) -> Optional[str]:
+        """Returns the correct answer as an upper-case letter 'A'-'D', or None if it is not valid.
+
+        Tolerates the usual hand-written variants: 'b', ' B ', 'B)', 'b.', '(c)'.
+        """
+        if value is None:
+            return None
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+        match = re.fullmatch(r"\(?\s*([ABCD])\s*[).:-]?", str(value).strip().upper())
+        return match.group(1) if match else None
+
+    @classmethod
+    def _correct_answer_text(cls, row: pd.Series):
+        """Returns the text of the correct answer of a question row (None if the letter is invalid)."""
+        letter = cls._normalize_correct_letter(row.get('Respuesta correcta'))
+        return row[f"Respuesta {letter}"] if letter else None
+
+    @staticmethod
+    def _cell_text(value) -> str:
+        """Text of a bank cell for DOCX/XML output.
+
+        Empty cells become '' (not 'nan') and integers that pandas read as float because the column
+        has blanks are written without decimals (25, not 25.0).
+        """
+        if value is None:
+            return ""
+        try:
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value)
+
+    @classmethod
+    def _questions_without_valid_answer(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """Rows whose 'Respuesta correcta' is not a letter A-D (they would have no correct answer)."""
+        if df is None or df.empty or 'Respuesta correcta' not in df.columns:
+            return pd.DataFrame()
+        invalid_mask = df['Respuesta correcta'].map(cls._normalize_correct_letter).isna()
+        return df.loc[invalid_mask]
+
     @classmethod
     def _nearest_moodle_grade_option_percent(cls, fraction_percent: float) -> float:
         """Snaps any percentage to the nearest Moodle-compatible fraction option."""
@@ -157,38 +207,46 @@ class ExamGenerator:
         """Builds one exam variant with a canonical order reused by all outputs."""
         exam_df_variant = source_df.sample(frac=1).reset_index(drop=True).copy()
         exam_df_variant['Número de pregunta'] = range(1, len(exam_df_variant) + 1)
-        exam_df_variant['Texto respuesta correcta'] = exam_df_variant.apply(
-            lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"]
-            if pd.notnull(row['Respuesta correcta']) else None,
-            axis=1
-        )
 
         def shuffle_row_answers(row):
             answers = [row['Respuesta A'], row['Respuesta B'], row['Respuesta C'], row['Respuesta D']]
-            original_correct_answer = row['Texto respuesta correcta']
-            random.shuffle(answers)
+            # Shuffle positions instead of matching texts afterwards: identical, numeric or empty
+            # answer texts can no longer lose or misplace the correct answer.
+            order = list(range(4))
+            random.shuffle(order)
+            correct_letter = self._normalize_correct_letter(row['Respuesta correcta'])
             new_correct_answer_letter = None
-            if original_correct_answer == answers[0]:
-                new_correct_answer_letter = 'a'
-            elif original_correct_answer == answers[1]:
-                new_correct_answer_letter = 'b'
-            elif original_correct_answer == answers[2]:
-                new_correct_answer_letter = 'c'
-            elif original_correct_answer == answers[3]:
-                new_correct_answer_letter = 'd'
-            return pd.Series([answers[0], answers[1], answers[2], answers[3], new_correct_answer_letter])
+            if correct_letter is not None:
+                new_correct_answer_letter = 'abcd'[order.index('ABCD'.index(correct_letter))]
+            return pd.Series([answers[i] for i in order] + [new_correct_answer_letter])
 
         exam_df_variant[['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'Respuesta correcta']] = \
             exam_df_variant.apply(shuffle_row_answers, axis=1)
-        exam_df_variant.drop(columns=['Texto respuesta correcta'], inplace=True)
         return exam_df_variant
 
     @staticmethod
-    def _generation_usage_column_name(exam: Optional[str], course: Optional[str]) -> str:
-        """Builds the usage column name used while generating exams."""
-        safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(exam or "examen")).strip('_') or "examen"
-        safe_course_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(course or "curso")).strip('_') or "curso"
-        return f'{safe_exam_name}_{safe_course_name}_uso'
+    def _generation_usage_column_name(exam: Optional[str], course: Optional[str],
+                                      existing_columns: Optional[Iterable[str]] = None) -> str:
+        """Builds the usage column name used while generating exams (``<exam>_<course>_uso``).
+
+        Accents are stripped before sanitizing, as ``QuestionBankManager`` does, so 'Evaluación'
+        becomes 'Evaluacion' instead of 'Evaluaci_n'. If ``existing_columns`` (the bank's columns)
+        already has the column under that old name, it is reused so that regenerating an exam
+        does not create a second column for it.
+        """
+        def safe(text: Optional[str], default: str, keep_accents_as_underscore: bool = False) -> str:
+            raw = str(text or default)
+            if not keep_accents_as_underscore:
+                raw = strip_accents(raw)
+            return re.sub(r'[^a-zA-Z0-9_]', '_', raw).strip('_') or default
+
+        name = f'{safe(exam, "examen")}_{safe(course, "curso")}_uso'
+        if existing_columns is not None:
+            columns = set(existing_columns)
+            legacy_name = f'{safe(exam, "examen", True)}_{safe(course, "curso", True)}_uso'
+            if name not in columns and legacy_name in columns:
+                return legacy_name
+        return name
 
     @staticmethod
     def _questions_over_usage_threshold(exam_df: pd.DataFrame, threshold: int) -> pd.DataFrame:
@@ -265,19 +323,19 @@ class ExamGenerator:
 
         question_paragraph = document.add_paragraph(style='Heading 2')
         question_paragraph.add_run(f"Pregunta {formatted_pregunta_num}: ")
-        question_paragraph.add_run(str(row['Pregunta']))
+        question_paragraph.add_run(self._cell_text(row['Pregunta']))
         normal_font_name = document.styles['Normal'].font.name or 'Calibri'
         self._style_question_heading(question_paragraph, font_size, normal_font_name)
 
         details_paragraph = document.add_paragraph()
         details_paragraph.paragraph_format.space_before = Pt(0)
-        details_paragraph.add_run(f"a) {row['Respuesta A']}\n").font.size = Pt(font_size)
-        details_paragraph.add_run(f"b) {row['Respuesta B']}\n").font.size = Pt(font_size)
-        details_paragraph.add_run(f"c) {row['Respuesta C']}\n").font.size = Pt(font_size)
-        details_paragraph.add_run(f"d) {row['Respuesta D']}").font.size = Pt(font_size)
+        details_paragraph.add_run(f"a) {self._cell_text(row['Respuesta A'])}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"b) {self._cell_text(row['Respuesta B'])}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"c) {self._cell_text(row['Respuesta C'])}\n").font.size = Pt(font_size)
+        details_paragraph.add_run(f"d) {self._cell_text(row['Respuesta D'])}").font.size = Pt(font_size)
         if include_solution:
             details_paragraph.add_run(f"\nRespuesta correcta: {row['Respuesta correcta'].lower()}").font.size = Pt(font_size)
-            details_paragraph.add_run(f"\nTexto relevante: {row['Texto relevante']}").font.size = Pt(font_size)
+            details_paragraph.add_run(f"\nTexto relevante: {self._cell_text(row.get('Texto relevante'))}").font.size = Pt(font_size)
             details_paragraph.add_run(f"\nTema: {row['Tema']}").font.size = Pt(font_size)
 
     @staticmethod
@@ -365,7 +423,12 @@ class ExamGenerator:
             if selection_method == "primeras":
                 topic_questions = topic_questions.head(quantity).copy()
             elif selection_method == "menos usadas":
-                topic_questions = topic_questions.sort_values(by='Veces usada en examen').head(quantity).copy()
+                # A bank that was never used in an exam has no usage column yet: treat it as 0.
+                usage = pd.to_numeric(
+                    topic_questions.get('Veces usada en examen', pd.Series(0, index=topic_questions.index)),
+                    errors='coerce',
+                ).fillna(0)
+                topic_questions = topic_questions.loc[usage.sort_values().index].head(quantity).copy()
             else:  # 'azar' (default).
                 topic_questions = topic_questions.sample(n=quantity).copy()
             selected_questions.append(topic_questions)
@@ -436,7 +499,7 @@ class ExamGenerator:
             print(f"Error al leer el archivo Excel: {e}")
             return None
 
-    def generate_question_text(self, df: pd.DataFrame, renumber: bool = False, shuffle_answers: bool = False) -> Tuple[str, str, pd.DataFrame]:
+    def generate_question_text(self, df: pd.DataFrame, renumber: bool = False, shuffle_answers: bool = False) -> Tuple[str, str]:
         """
         Generates the formatted text of the questions (with and without solutions) from a DataFrame.
         This method is primarily used for the 'check' functionality to create a quick preview.
@@ -447,8 +510,8 @@ class ExamGenerator:
             shuffle_answers (bool, optional): If True, shuffles the order of answers. Defaults to False.
 
         Returns:
-            Tuple[str, str, pd.DataFrame]: A tuple containing the student's exam text, the full exam text (with solutions),
-                                           and the modified DataFrame.
+            Tuple[str, str]: The student's exam text and the full exam text (with solutions). ``df`` is
+            modified in place when ``shuffle_answers`` is True.
         """
         self.exam_text = ""
         self.full_exam_text = ""
@@ -456,9 +519,7 @@ class ExamGenerator:
         use_two_digits = num_total_questions > 9
 
         # Create the "Texto respuesta correcta" (Correct answer text) column for shuffling.
-        df['Texto respuesta correcta'] = df.apply(
-            lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"] if pd.notnull(
-                row['Respuesta correcta']) else None, axis=1)
+        df['Texto respuesta correcta'] = df.apply(self._correct_answer_text, axis=1)
         for index, row in df.iterrows():
             pregunta_num = row['Número de pregunta'] if renumber else index + 1
             formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
@@ -511,7 +572,7 @@ class ExamGenerator:
                 self.full_exam_text += f"b) {row['Respuesta B']}\n"
                 self.full_exam_text += f"c) {row['Respuesta C']}\n"
                 self.full_exam_text += f"d) {row['Respuesta D']}\n"
-                new_correct_answer = row['Respuesta correcta'].lower()  # Initialize here.
+                new_correct_answer = (self._normalize_correct_letter(row['Respuesta correcta']) or '').lower()
             self.full_exam_text += f"Respuesta correcta: {new_correct_answer}\n"
             self.full_exam_text += f"Texto relevante: {row['Texto relevante']}\n"
             self.exam_text += "\n"
@@ -656,7 +717,7 @@ class ExamGenerator:
 
         self.text.text = category_text
         for _, row in df.iterrows():
-            correct_answer = str(row.get('Respuesta correcta', '')).strip().lower()
+            correct_answer = (self._normalize_correct_letter(row.get('Respuesta correcta')) or '').lower()
 
             pregunta_num = row['Número de pregunta']
             formatted_pregunta_num = self._format_question_number(pregunta_num)
@@ -668,35 +729,35 @@ class ExamGenerator:
 
             questiontext = SubElement(self.question, 'questiontext', format='html')
             questiontext_text = SubElement(questiontext, 'text')
-            questiontext_text.text = row.get('Pregunta', '') if xml_use_answer_text else f"Pregunta {formatted_pregunta_num}"
+            questiontext_text.text = self._cell_text(row.get('Pregunta', '')) if xml_use_answer_text else f"Pregunta {formatted_pregunta_num}"
 
             if correct_answer == 'a':
                 self.answer_a = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_a = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_a, 'text')
-            self.text.text = row.get('Respuesta A', '') if xml_use_answer_text else 'a'
+            self.text.text = self._cell_text(row.get('Respuesta A', '')) if xml_use_answer_text else 'a'
 
             if correct_answer == 'b':
                 self.answer_b = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_b = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_b, 'text')
-            self.text.text = row.get('Respuesta B', '') if xml_use_answer_text else 'b'
+            self.text.text = self._cell_text(row.get('Respuesta B', '')) if xml_use_answer_text else 'b'
 
             if correct_answer == 'c':
                 self.answer_c = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_c = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_c, 'text')
-            self.text.text = row.get('Respuesta C', '') if xml_use_answer_text else 'c'
+            self.text.text = self._cell_text(row.get('Respuesta C', '')) if xml_use_answer_text else 'c'
 
             if correct_answer == 'd':
                 self.answer_d = SubElement(self.question, 'answer', fraction='100')
             else:
                 self.answer_d = SubElement(self.question, 'answer', fraction=wrong_fraction)
             self.text = SubElement(self.answer_d, 'text')
-            self.text.text = row.get('Respuesta D', '') if xml_use_answer_text else 'd'
+            self.text.text = self._cell_text(row.get('Respuesta D', '')) if xml_use_answer_text else 'd'
 
         self.xml_str = minidom.parseString(tostring(self.quiz)).toprettyxml(indent="  ")
         with open(file_name, 'w', encoding='utf-8') as f:
@@ -912,6 +973,22 @@ class ExamGenerator:
             else:
                 print(f"Verbose: self.exam_df no es un DataFrame: {self.exam_df}")
 
+        invalid_answers = self._questions_without_valid_answer(self.exam_df)
+        if not invalid_answers.empty:
+            # Without a valid letter the exam would have no correct answer (and Moodle rejects it).
+            details = []
+            for _, row in invalid_answers.head(10).iterrows():
+                value = self._cell_text(row.get('Respuesta correcta'))
+                details.append(
+                    f"nº {self._cell_text(row.get('Número de pregunta')) or '?'} "
+                    f"({self._cell_text(row.get('Tema'))}): {repr(value) if value else 'vacía'}"
+                )
+            listed = "; ".join(details)
+            raise ValueError(
+                f"{len(invalid_answers)} pregunta(s) seleccionada(s) no tienen una 'Respuesta correcta' "
+                f"válida (debe ser A, B, C o D): {listed}"
+            )
+
         self.last_usage_warning_questions = pd.DataFrame()
         if usage_warning_enabled:
             try:
@@ -943,9 +1020,7 @@ class ExamGenerator:
         if check:
             preview_exam_df = self.exam_df.copy()
             preview_exam_df['Número de pregunta'] = range(1, len(preview_exam_df) + 1)
-            preview_exam_df['Texto respuesta correcta'] = preview_exam_df.apply(
-                lambda row: row[f"Respuesta {row['Respuesta correcta'].upper()}"] if pd.notnull(
-                    row['Respuesta correcta']) else None, axis=1)
+            preview_exam_df['Texto respuesta correcta'] = preview_exam_df.apply(self._correct_answer_text, axis=1)
             preview_exam_text, preview_full_exam_text = self.generate_question_text(preview_exam_df.copy(),
                                                                                     renumber=True, shuffle_answers=True)
             preview_document = Document()
@@ -985,9 +1060,10 @@ class ExamGenerator:
             exam_name_list = exam_names
 
         if output_dir is None:
-            output_dir = os.path.dirname(bank_excel_path)
+            # abspath: a bare file name ('banco.xlsx') has an empty dirname and makedirs('') fails.
+            output_dir = os.path.dirname(os.path.abspath(bank_excel_path))
         os.makedirs(output_dir, exist_ok=True)
-        usage_column_name = self._generation_usage_column_name(exam, course)
+        usage_column_name = self._generation_usage_column_name(exam, course, existing_columns=self.df.columns)
 
         for i in range(num_exams_to_generate):
             exam_type_name = exam_name_list[i]

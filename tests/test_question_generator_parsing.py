@@ -65,3 +65,18 @@ def test_analyze_response_keeps_valid_questions_when_one_is_malformed(generator)
     short = questions[1]
     assert short["Respuesta C"] == "" and short["Respuesta D"] == ""
     assert short["Respuesta correcta"] == "2"
+
+
+def test_api_key_defaults_to_environment_variable(monkeypatch):
+    """REPO-4: el ejemplo del README `QuestionGenerator(model_name=...)` lanzaba TypeError."""
+    monkeypatch.setenv("GEMINI_API_KEY", "clave-de-entorno")
+
+    generator = QuestionGenerator(model_name="models/test")
+
+    assert generator.model_name == "models/test"
+    assert generator.client is not None
+
+
+def test_model_name_is_required():
+    with pytest.raises(ValueError, match="model_name"):
+        QuestionGenerator(api_key="dummy")

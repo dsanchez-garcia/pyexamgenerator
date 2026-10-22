@@ -79,9 +79,11 @@ class ExamGrader:
                 "Número de ID": official_student[self.id_col],
                 "Dirección de correo": official_student[self.email_col],
                 "Estado": "Finalizado",
-                "Comenzado": "20 de abril de 2026 17:05",
-                "Finalizado": "20 de abril de 2026 17:09",
-                "Duración": "4 minutos 00 segundos",
+                # Same columns as a Moodle export, but the real times of a paper exam are unknown:
+                # leave them empty instead of inventing them.
+                "Comenzado": "",
+                "Finalizado": "",
+                "Duración": "",
             }
 
             total_score = 0.0

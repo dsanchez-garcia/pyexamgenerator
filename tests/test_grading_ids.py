@@ -5,7 +5,9 @@ import pandas as pd
 import pytest
 
 from pyexamgenerator.grading._ids import normalize_id
+from pyexamgenerator.grading.attendance import AbsenceJustificationManager
 from pyexamgenerator.grading.comparison import ResultComparator
+from pyexamgenerator.grading.data import EnrollmentMerger
 from pyexamgenerator.grading.final_grade import FinalGradeCalculator
 from pyexamgenerator.grading.integrations import MoodleGradeIntegrator
 
@@ -95,3 +97,36 @@ def test_moodle_deduplicate_keeps_students_without_id(tmp_path):
     assert sorted(result["Nombre"]) == ["Ana", "Eva", "Leo"]
     ana = result[result["Nombre"] == "Ana"]
     assert float(ana["Calificación/10,00"].iloc[0]) == pytest.approx(7.0)
+
+
+def test_enrollment_merger_matches_ids_read_as_float(tmp_path):
+    """GRD-3: la matrícula fusionada no debe duplicar a un alumno por '12345678' vs '12345678.0'."""
+    gim = _write(
+        tmp_path / "matricula_GIM.xlsx",
+        [
+            {"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": 12345678, "Consulta": "P1"},
+            {"Apellido(s)": "Id", "Nombre": "Sin", "Número de ID": None, "Consulta": "P2"},
+        ],
+    )
+    giti = _write(
+        tmp_path / "matricula_GITI.xlsx",
+        [{"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "12345678", "Consulta": "Sin contestar"}],
+    )
+
+    merged = EnrollmentMerger([gim, giti]).merge()
+
+    ana = merged[merged["Nombre"] == "Ana"]
+    assert len(ana) == 1
+    assert ana["Número de ID"].iloc[0] == "12345678"
+    assert len(merged) == 2
+
+
+def test_attendance_lookup_keys_ignore_missing_ids():
+    """GRD-3: un ID vacío se convertía en la clave 'id:nan', compartida por todos los alumnos sin ID,
+    de modo que la justificación de uno se aplicaba a los demás."""
+    keys_without_id = AbsenceJustificationManager._student_lookup_keys(np.nan, "Ana", "Gil")
+    assert not any(key.startswith("id:") for key in keys_without_id)
+    assert keys_without_id == ["name:ana_gil"]
+
+    keys_float_id = AbsenceJustificationManager._student_lookup_keys(12345678.0, "Ana", "Gil")
+    assert keys_float_id[0] == "id:12345678"

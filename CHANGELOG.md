@@ -10,8 +10,16 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 ### Añadido
 - **Integración continua:** workflow de GitHub Actions (`.github/workflows/tests.yml`) que ejecuta `pytest` en Ubuntu y Windows (Python 3.9 y 3.14, con y sin el extra `[grading]`) y compila la documentación con `sphinx -W`, igual que Read the Docs.
 - **Nuevas pruebas de regresión:** análisis seguro de la respuesta de Gemini, carga de sesiones, relectura del banco y registro de uso, punto extra PIR, columnas de asistencia, normalización de IDs y compilación de todos los módulos del paquete (incluida la GUI).
+- **Pruebas de humo de la GUI:** `tests/test_gui_smoke.py` construye la ventana real de la aplicación (sin mostrarla) y prueba el diálogo de prompts y el guardado de la clave de API. Se saltan donde no hay pantalla para Tk.
+- **Más pruebas de regresión:** generación con datos reales (respuestas numéricas o vacías, letras como `B)`), lectura del DOCX revisado, nombres de columnas de uso, matrícula y asistencias con IDs vacíos o numéricos, y flujo OCR con hojas ilegibles o sin tipo de examen.
 
 ### Cambiado
+- **OCR: una hoja problemática ya no detiene la corrección:** si una imagen no se puede leer o no se puede deducir su tipo de examen, la hoja se omite y aparece en las incidencias con severidad alta (`UNREADABLE_IMAGE` / `EXAM_TYPE_UNRESOLVED`); el resto de hojas se corrige. `ExamCorrectionAPI` expone siempre las incidencias en `results["ocr_incidents"]` y, sin un terminal interactivo, nunca pregunta el tipo con `input()`.
+- **Carpeta temporal del OCR:** por defecto se usa la carpeta temporal del sistema (`pyexamgenerator_temp`) en lugar del Escritorio, que a menudo se sincroniza con la nube y estas copias son escaneos de alumnos.
+- **`QuestionGenerator` sin clave explícita:** `api_key` es opcional y se toma de `GEMINI_API_KEY` (el ejemplo del README `QuestionGenerator(model_name=...)` ya funciona); `model_name` sigue siendo obligatorio.
+- **Columna de uso de la generación sin tildes:** `<examen>_<curso>_uso` elimina las tildes como ya hacía el registro de uso del banco (`Evaluacion`, no `Evaluaci_n`). Si el banco ya tiene la columna con el nombre antiguo, se reutiliza.
+- **Respuesta correcta inválida:** si una pregunta seleccionada no tiene una letra válida (A-D) en `Respuesta correcta`, la generación se detiene con un error que la identifica, en lugar de producir un examen sin respuesta correcta. Se aceptan variantes como `B)`, ` b ` o `(c)`.
+- **"Menos usadas" con celdas vacías:** una celda vacía en `Veces usada en examen` cuenta como 0 usos.
 - **Sesiones de corrección: JSON primero, pickle solo con permiso:** `GradingSession.load(...)` y `ExamCorrectionAPI.load_session(...)` usan siempre el `.json` y solo leen un `.pkl` (sin su `.json`) con `allow_pickle=True`, porque deserializar un pickle puede ejecutar código. La GUI pide confirmación antes de abrir un `.pkl`.
 - **Documentación para desarrolladores y agentes de IA:** `AGENTS.md`, `CLAUDE.md`, `docs/dev/` y `TODO.md` con la revisión priorizada del repositorio.
 
@@ -25,6 +33,16 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Deduplicación de notas de Moodle:** `MoodleGradeIntegrator.integrate_grades(deduplicate_by_id=True)` ya no fusiona en una sola fila a todos los alumnos sin `Número de ID`.
 - **Compatibilidad de anotaciones:** `question_generator.py` usaba `tuple[...]`, que no funciona en Python 3.8.
 - **Test de integración independiente de datos locales:** `tests/test_exam_order_integration.py` genera su banco sintético en lugar de depender de `prueba_error/` (no versionado).
+- **Asistencia o justificación aplicada al alumno equivocado:** un `Número de ID` vacío se convertía en el texto `nan` y todos los alumnos sin ID compartían la misma clave; en modo extremo, la justificación de uno podía aplicarse a otros. La matrícula fusionada tampoco duplica ya a un alumno por `12345678` frente a `12345678.0`.
+- **OCR asignaba la hoja a otro alumno:** con una matrícula ordenada o filtrada, el emparejamiento por nombre devolvía la fila de otra posición. Los IDs oficiales ya no salen como `nan` ni con `.0`.
+- **Generación con un banco sin carpeta:** indicar `banco.xlsx` sin ruta hacía fallar la generación (y la conversión DOCX→XLSX).
+- **Moodle XML con respuestas numéricas o vacías:** con `xml_use_answer_text=True` la exportación fallaba; ahora se escriben como texto (`25`, no `25.0`). Los DOCX tampoco muestran `nan` en celdas vacías.
+- **"Menos usadas" en un banco nuevo:** fallaba si el banco aún no tenía la columna `Veces usada en examen`.
+- **Lectura del DOCX revisado:** el enunciado se cortaba en el segundo `:` (p. ej. `Según la Ley 31/1995: ...`), `A)` se borraba también dentro del texto de la respuesta, se perdían los párrafos de continuación y una línea `Pregunta N` sin `:` hacía fallar todo el fichero.
+- **`add_reviewed_questions_to_existing_excel`** devolvía una ruta distinta de la del fichero que escribía.
+- **Corrección desde Excel con fechas inventadas:** `ExamGrader` escribía "20 de abril de 2026 17:05" y una duración fija en todas las filas; esas columnas quedan vacías.
+- **"Editar" tipo de prompt abría el texto vacío:** había métodos duplicados en la GUI y se usaba la copia defectuosa; además, renombrar un prompt propio ya no deja el nombre antiguo.
+- **Clave de API:** «Guardar Clave» ya no guarda el marcador `TU_CLAVE_API` ni muestra dos avisos seguidos.
 
 ## [0.3.0] - 2026-09-15
 

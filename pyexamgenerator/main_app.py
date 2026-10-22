@@ -26,6 +26,7 @@ from docx import Document
 import os
 import json
 import shutil
+import tempfile
 import threading
 from ttkwidgets.frames import ScrolledFrame
 from google import genai
@@ -341,15 +342,6 @@ class ExamApp:
         # Combina ambos, dando prioridad a los personalizados si hay un conflicto de nombres.
         return {**default_prompts, **custom_prompts}
 
-    def save_prompt_types(self) -> None:
-        """
-        Saves custom prompt types to a JSON file.
-        """
-        filename = "custom_prompt_types.json"
-        custom_prompts = {k: v for k, v in self.prompt_types.items() if k not in self.load_default_prompt_types()}
-        with open(filename, 'w') as f:
-            json.dump(custom_prompts, f, indent=4)
-
     def load_default_prompt_types(self) -> Dict[str, str]:
         """
         Defines the default prompt types in a Python dictionary.
@@ -407,10 +399,13 @@ class ExamApp:
                 messagebox.showerror("Error", "El nombre del tipo y el texto del prompt no pueden estar vacíos.", parent=add_window)
                 return
 
-            if not existing_type and new_type in self.prompt_types:
+            if new_type != existing_type and new_type in self.prompt_types:
                 if not messagebox.askyesno("Sobrescribir", f"El tipo '{new_type}' ya existe. ¿Desea sobrescribirlo?", parent=add_window):
                     return
 
+            if existing_type and new_type != existing_type:
+                # Renaming a custom type: drop the old name instead of keeping both.
+                self.prompt_types.pop(existing_type, None)
             self.prompt_types[new_type] = new_prompt
             self.save_prompt_types()
             self.update_prompt_type_options()
@@ -424,7 +419,10 @@ class ExamApp:
         add_window.columnconfigure(1, weight=1)
         add_window.rowconfigure(1, weight=1)
         add_window.transient(self.root)
-        add_window.grab_set()
+        try:
+            add_window.grab_set()
+        except tk.TclError:
+            pass  # e.g. X11 before the window is viewable; the dialog still works without the grab.
 
     def delete_prompt_type(self) -> None:
         """
@@ -463,79 +461,6 @@ class ExamApp:
             self.update_custom_prompt_display()
         else:
             self.selected_prompt_type.set("")
-            self.update_custom_prompt_display()
-
-    def add_edit_prompt_type(self, existing_type: Optional[str] = None,
-                             existing_prompt: Optional[str] = None) -> None:
-        """
-        Adds or edits a prompt type via a new Toplevel window.
-
-        Args:
-            existing_type (Optional[str], optional): The existing prompt type (for editing). Defaults to None.
-            existing_prompt (Optional[str], optional): The existing prompt text (for editing). Defaults to None.
-        """
-        add_window = tk.Toplevel(self.root)
-        add_window.title("Añadir/Editar Tipo de Prompt")
-
-        ttk.Label(add_window, text="Tipo de Prompt:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        type_entry = ttk.Entry(add_window, width=30)
-        type_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        if existing_type:
-            type_entry.insert(0, existing_type)
-            type_entry.config(state='disabled')
-
-        ttk.Label(add_window, text="Prompt:").grid(row=1, column=0, padx=5, pady=5, sticky='nw')
-        prompt_text_area = scrolledtext.ScrolledText(add_window, width=40, height=5)
-        prompt_text_area.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
-        if existing_prompt:
-            prompt_text_area.insert("1.0", existing_prompt)
-
-        def save_prompt_type():
-            new_type = type_entry.get().strip()
-            new_prompt = prompt_text_area.get("1.0", tk.END).strip()
-            if new_type and new_prompt:
-                if existing_type:
-                    self.prompt_types[existing_type] = new_prompt
-                else:
-                    if new_type in self.prompt_types:
-                        if messagebox.askyesno("Advertencia", f"El tipo '{new_type}' ya existe. ¿Desea sobrescribirlo?"):
-                            self.prompt_types[new_type] = new_prompt
-                        else:
-                            return
-                    else:
-                        self.prompt_types[new_type] = new_prompt
-                self.update_prompt_type_options()
-                self.save_prompt_types()  # Save after adding/editing.
-                add_window.destroy()
-            else:
-                messagebox.showerror("Error", "Por favor, introduce un tipo y un prompt.")
-
-        ttk.Button(add_window, text="Guardar", command=save_prompt_type).grid(row=2, column=0, columnspan=2, pady=10)
-        add_window.columnconfigure(1, weight=1)
-
-    def delete_prompt_type(self) -> None:
-        """
-        Deletes the selected prompt type, preventing deletion of default types.
-        """
-        selected_type = self.prompt_type_combo.get()
-        if selected_type in self.prompt_types and selected_type not in ["PRL", "PM"]:
-            if messagebox.askyesno("Confirmar", f"¿Seguro que desea eliminar el tipo de prompt '{selected_type}'?"):
-                del self.prompt_types[selected_type]
-                self.update_prompt_type_options()
-                self.save_prompt_types()  # Save after deleting.
-        elif selected_type in ["PRL", "PM"]:
-            messagebox.showerror("Error", "No se pueden eliminar los tipos de prompt predeterminados.")
-        else:
-            messagebox.showinfo("Información", "Por favor, seleccione un tipo de prompt para eliminar.")
-
-    def update_prompt_type_options(self) -> None:
-        """
-        Updates the options in the prompt type dropdown menu.
-        """
-        prompt_type_names = list(self.prompt_types.keys())
-        self.prompt_type_combo['values'] = prompt_type_names
-        if prompt_type_names:
-            self.prompt_type_combo.set(prompt_type_names[0])
             self.update_custom_prompt_display()
 
     def update_custom_prompt_display(self, event: Optional[tk.Event] = None) -> None:
@@ -614,7 +539,8 @@ class ExamApp:
         self.grad_sched_sheet_var = tk.StringVar(value="0")
         self.grad_att_header_var = tk.StringVar(value="3")
         self.grad_forced_var = tk.StringVar()
-        self.grad_ocr_temp_dir_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Desktop", "pyexamgenerator_temp"))
+        # System temp folder, not the Desktop (often synced to the cloud): these are students' scans.
+        self.grad_ocr_temp_dir_var = tk.StringVar(value=os.path.join(tempfile.gettempdir(), "pyexamgenerator_temp"))
         self.grad_ocr_grades_var = tk.StringVar()
         self.grad_integrated_var = tk.StringVar()
         self.grad_attquiz_var = tk.StringVar()
@@ -2160,11 +2086,13 @@ class ExamApp:
             Optional[str]: The API key if found, otherwise None.
         """
         try:
-            with open('config.json', 'r') as f:
+            with open('config.json', 'r', encoding='utf-8') as f:
                 config = json.load(f)
-                return config.get('api_key')
         except (FileNotFoundError, json.JSONDecodeError):
             return None
+        api_key = str(config.get('api_key') or '').strip()
+        # Older versions could save the "TU_CLAVE_API" placeholder as if it were a key.
+        return api_key if api_key and api_key != "TU_CLAVE_API" else None
 
     def save_api_key(self, api_key: str) -> None:
         """
@@ -2173,9 +2101,8 @@ class ExamApp:
         Args:
             api_key (str): The API key to save.
         """
-        with open('config.json', 'w') as f:
+        with open('config.json', 'w', encoding='utf-8') as f:
             json.dump({'api_key': api_key}, f)
-        messagebox.showinfo("Info", "API key guardada.")
 
     def save_current_api_key(self) -> None:
         """
@@ -2186,8 +2113,9 @@ class ExamApp:
         API key in the instance.
         It also shows informational or error messages to the user via messagebox.
         """
-        key_to_save = self.api_key_var.get()
-        if key_to_save:
+        key_to_save = self.api_key_var.get().strip()
+        # The entry starts with the "TU_CLAVE_API" placeholder: never store it as if it were a key.
+        if key_to_save and key_to_save != "TU_CLAVE_API":
             self.save_api_key(key_to_save)
             self.api_key = key_to_save  # Update the API key in the instance.
             # We don't instantiate QuestionGenerator here anymore because it requires a model_name,

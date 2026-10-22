@@ -7,6 +7,8 @@ from typing import Callable, Dict, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 
 QuestionMap = Dict[str, Dict[str, float]]
 QuestionsByExamTypeMap = Dict[str, QuestionMap]
@@ -181,7 +183,7 @@ def _detect_macro_group(path: str) -> str:
 
 
 def _identity_key(row: pd.Series, id_col: Optional[str], name_col: Optional[str], last_name_col: Optional[str]) -> str:
-    student_id = _clean_text(row.get(id_col, "")) if id_col else ""
+    student_id = normalize_id(row.get(id_col, "")) if id_col else ""
     if student_id:
         return f"id::{student_id}"
 
@@ -266,7 +268,7 @@ class EnrollmentMerger:
                 if not merged["Nombre"] and first_name_col:
                     merged["Nombre"] = _clean_text(row.get(first_name_col, ""))
                 if not merged["Número de ID"] and id_col:
-                    merged["Número de ID"] = _clean_text(row.get(id_col, ""))
+                    merged["Número de ID"] = normalize_id(row.get(id_col, ""))
                 if not merged["Dirección de correo"] and email_col:
                     merged["Dirección de correo"] = _clean_text(row.get(email_col, ""))
 

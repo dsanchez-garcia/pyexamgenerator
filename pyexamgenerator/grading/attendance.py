@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import pandas as pd
 
+from pyexamgenerator.grading._ids import normalize_id
+
 
 @dataclass
 class AbsenceJustificationResult:
@@ -262,7 +264,7 @@ class AbsenceJustificationManager:
     @staticmethod
     def _student_lookup_keys(student_id: object, first_name: object, last_name: object) -> List[str]:
         keys: List[str] = []
-        sid = str(student_id or "").strip()
+        sid = normalize_id(student_id)
         if sid:
             keys.append(f"id:{sid}")
         sname = AbsenceJustificationManager._student_name_key(first_name, last_name)
@@ -430,7 +432,7 @@ class AbsenceJustificationManager:
             attendance_df[first_name_col].astype(str).str.strip() + " " + attendance_df[last_name_col].astype(str).str.strip()
         ).str.strip()
         attendance_df["_full_name_norm"] = attendance_df["_full_name"].map(self._normalize)
-        attendance_df["_id_norm"] = attendance_df[id_col].astype(str).str.strip() if id_col else ""
+        attendance_df["_id_norm"] = attendance_df[id_col].map(normalize_id) if id_col else ""
         date_cols = [c for c in attendance_df.columns if self._is_attendance_date_column(str(c))]
         return attendance_df, date_cols, first_name_col, last_name_col, (id_col or "")
 
@@ -526,7 +528,7 @@ class AbsenceJustificationManager:
         for _, erow in enrollment_df.iterrows():
             id_col = str(erow.get("_id_col", "")).strip()
             email_col = str(erow.get("_email_col", "")).strip()
-            student_id = str(erow.get(id_col, "")).strip() if id_col else ""
+            student_id = normalize_id(erow.get(id_col, "")) if id_col else ""
             student_name = str(erow.get("_full_name", "")).strip()
             student_name_norm = str(erow.get("_full_name_norm", "")).strip()
             student_email = str(erow.get(email_col, "")).strip() if email_col else ""
@@ -650,7 +652,7 @@ class AbsenceJustificationManager:
         for _, arow in attendance_df.iterrows():
             key = self._student_name_key(arow.get(a_first_col, ""), arow.get(a_last_col, ""))
             qrow = quiz_by_key.get(key)
-            student_id_val = "" if a_id_col is None else str(arow.get(a_id_col, "")).strip()
+            student_id_val = "" if a_id_col is None else normalize_id(arow.get(a_id_col, ""))
             student_first_name = "" if a_first_col is None else str(arow.get(a_first_col, "")).strip()
             student_last_name = "" if a_last_col is None else str(arow.get(a_last_col, "")).strip()
             row_out: Dict[str, object] = {
@@ -778,7 +780,7 @@ class AbsenceJustificationManager:
         sender_name_norms: Set[str] = set()
         sender_info: Dict[str, Dict[str, str]] = {}
         for _, row in summary_df.iterrows():
-            student_id = str(row.get("ID_Alumno", "")).strip()
+            student_id = normalize_id(row.get("ID_Alumno", ""))
             student_name = str(row.get("Alumno_Matcheado", "")).strip()
             if not student_name:
                 continue
@@ -803,7 +805,7 @@ class AbsenceJustificationManager:
 
         attendance_cols = [c for c in attendance_quiz_df.columns if str(c).endswith("__Asistencia")]
         for _, row in attendance_quiz_df.iterrows():
-            student_id = str(row.get("ID_Alumno", "")).strip()
+            student_id = normalize_id(row.get("ID_Alumno", ""))
             full_name = f"{str(row.get('Nombre', '')).strip()} {str(row.get('Apellido(s)', '')).strip()}".strip()
             full_name_norm = self._normalize(full_name)
             key = f"{student_id}|{full_name_norm}"
@@ -888,7 +890,7 @@ class AbsenceJustificationManager:
                 student_name = str(enrollment_match.get("_full_name", "")).strip()
                 id_col = str(enrollment_match.get("_id_col", "")).strip()
                 email_col = str(enrollment_match.get("_email_col", "")).strip()
-                student_id = str(enrollment_match.get(id_col, "")).strip() if id_col else ""
+                student_id = normalize_id(enrollment_match.get(id_col, "")) if id_col else ""
                 student_email = str(enrollment_match.get(email_col, "")).strip() if email_col else ""
 
                 if student_id and attendance_id_col:
@@ -1041,7 +1043,7 @@ class AbsenceJustificationManager:
                 full_name = str(row.get("Alumno_Matcheado", "")).strip()
                 if not full_name:
                     continue
-                student_id = str(row.get("ID_Alumno", "")).strip()
+                student_id = normalize_id(row.get("ID_Alumno", ""))
                 first_name = ""
                 last_name = ""
                 parts = [p for p in full_name.split(" ") if p]
@@ -1057,7 +1059,7 @@ class AbsenceJustificationManager:
                 class_label = str(row.get("Clase_Label", "")).strip()
                 if not class_label:
                     continue
-                student_id = str(row.get("ID_Alumno", "")).strip()
+                student_id = normalize_id(row.get("ID_Alumno", ""))
                 full_name = str(row.get("Alumno_Matcheado", "")).strip()
                 first_name = ""
                 last_name = ""
@@ -1594,14 +1596,7 @@ def _normalize_bonus_text(text: object) -> str:
 
 
 def _normalize_bonus_id(value: object) -> str:
-    if pd.isna(value):
-        return ""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    text = str(value).strip()
-    if re.fullmatch(r"\d+\.0", text):
-        return text[:-2]
-    return text
+    return normalize_id(value)
 
 
 def _parse_bonus_grade(value: object) -> Optional[float]:
