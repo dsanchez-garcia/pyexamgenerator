@@ -3088,51 +3088,65 @@ class ExamApp:
         """
         Loads themes from an Excel file for the 'questions per theme' selection UI.
         It reads the 'Tema' column and dynamically creates Spinbox widgets for each unique theme.
+        If the bank cannot be used, the reason is shown in place of the themes and in the status
+        bar (it used to reach only the console).
         """
         # Clear existing widgets
         for widget in self.by_theme_frame.winfo_children():
             widget.destroy()
         self.theme_quantity_widgets = {}  # Reset the widget dictionary.
 
-        excel_path = self.excel_filepath.get()
-        if os.path.exists(excel_path):
+        excel_path = self.excel_filepath.get().strip()
+        if not excel_path:
+            return
+        problem = None
+        unique_themes: List[Any] = []
+        if not os.path.exists(excel_path):
+            problem = f"No se encuentra el banco de preguntas: {excel_path}"
+        else:
             try:
                 df = pd.read_excel(excel_path)
-                if 'Tema' in df.columns:
-                    unique_themes = sorted(df['Tema'].unique())
-                    try:
-                        num_cols = int(self.num_columns_var.get())
-                        if num_cols < 1:
-                            num_cols = 1  # Ensure at least 1 column.
-                    except ValueError:
-                        num_cols = 3  # Default value if not a valid number.
-
-                    row = 0
-                    col = 0
-
-                    for i, theme in enumerate(unique_themes):
-                        theme_frame = ttk.Frame(self.by_theme_frame)
-                        theme_frame.grid(row=row, column=col, padx=5, pady=2, sticky='ew')
-                        ttk.Label(theme_frame, text=f"{theme}:").pack(side='left')
-                        quantity_spinbox = tk.Spinbox(theme_frame, from_=0, to=100, width=3)  # Adjustable range.
-                        quantity_spinbox.pack(side='left', padx=5)
-                        self.theme_quantity_widgets[theme] = quantity_spinbox
-
-                        col += 1
-                        if col >= num_cols:
-                            col = 0
-                            row += 1
-
-                    # Ensure the inner frame adjusts to its content.
-                    self.by_theme_frame.update_idletasks()
-                    self.by_theme_frame.config(width=self.by_theme_frame.winfo_width())
-
+            except Exception as exc:  # noqa: BLE001 - shown to the user
+                problem = f"No se pudo leer el banco de preguntas ({exc})."
+            else:
+                if 'Tema' not in df.columns:
+                    problem = "El banco de preguntas no tiene la columna 'Tema'."
                 else:
-                    print("Advertencia: La columna 'Tema' no se encontró en el archivo Excel.")
-            except Exception as e:
-                print(f"Error al leer el archivo Excel para cargar temas: {e}")
-        else:
-            print(f"Advertencia: El archivo Excel '{excel_path}' no se encuentra para cargar temas.")
+                    # An empty cell is not a topic, and sorting as text tolerates mixed types
+                    # (sorting NaN with text failed and left the list empty).
+                    topics = [t for t in df['Tema'].dropna().unique() if str(t).strip()]
+                    unique_themes = sorted(topics, key=str)
+        if problem:
+            ttk.Label(self.by_theme_frame, text=problem, wraplength=500).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+            self.update_status(problem)
+            return
+
+        try:
+            num_cols = int(self.num_columns_var.get())
+            if num_cols < 1:
+                num_cols = 1  # Ensure at least 1 column.
+        except ValueError:
+            num_cols = 3  # Default value if not a valid number.
+
+        row = 0
+        col = 0
+
+        for i, theme in enumerate(unique_themes):
+            theme_frame = ttk.Frame(self.by_theme_frame)
+            theme_frame.grid(row=row, column=col, padx=5, pady=2, sticky='ew')
+            ttk.Label(theme_frame, text=f"{theme}:").pack(side='left')
+            quantity_spinbox = tk.Spinbox(theme_frame, from_=0, to=100, width=3)  # Adjustable range.
+            quantity_spinbox.pack(side='left', padx=5)
+            self.theme_quantity_widgets[theme] = quantity_spinbox
+
+            col += 1
+            if col >= num_cols:
+                col = 0
+                row += 1
+
+        # Ensure the inner frame adjusts to its content.
+        self.by_theme_frame.update_idletasks()
+        self.by_theme_frame.config(width=self.by_theme_frame.winfo_width())
 
     def update_theme_display(self) -> None:
         """

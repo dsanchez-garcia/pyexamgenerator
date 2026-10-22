@@ -516,6 +516,39 @@ def test_mouse_wheel_scrolls_every_tab_from_any_field(app):
             assert not unbound, f"{name} {event}: {unbound[:3]}"
 
 
+def test_topics_load_although_a_question_has_no_topic(app, tmp_path):
+    """ARC-9: una celda de `Tema` vacía (NaN) hacía fallar la ordenación y la lista de temas
+    para «Seleccionar cantidad por tema» salía vacía, con el error solo en la consola."""
+    import pandas as pd
+
+    bank = tmp_path / "banco.xlsx"
+    pd.DataFrame({"Pregunta": ["p1", "p2", "p3", "p4"], "Tema": ["Tema 02", None, "Tema 01", 3]}).to_excel(bank, index=False)
+    app.excel_filepath.set(str(bank))
+
+    app.load_themes_for_selection()
+
+    assert list(app.theme_quantity_widgets) == [3, "Tema 01", "Tema 02"]
+
+
+@pytest.mark.parametrize("problem", ["missing", "no_topic_column"])
+def test_bank_problems_when_loading_topics_are_shown(app, tmp_path, problem):
+    """ARC-9: si el banco no existe o no tiene la columna `Tema`, el aviso solo iba a la consola."""
+    import pandas as pd
+
+    bank = tmp_path / "banco.xlsx"
+    if problem == "no_topic_column":
+        pd.DataFrame({"Pregunta": ["p1"]}).to_excel(bank, index=False)
+    app.excel_filepath.set(str(bank))
+
+    app.load_themes_for_selection()
+
+    shown = [w.cget("text") for w in _descendants(app.by_theme_frame) if isinstance(w, ttk.Label)]
+    expected = "No se encuentra" if problem == "missing" else "columna 'Tema'"
+    assert app.theme_quantity_widgets == {}
+    assert any(expected in text for text in shown), shown
+    assert expected in app.status_text.get()
+
+
 def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch):
     """ARC-2: guardar y cargar repetían a mano la lista de campos; un campo nuevo podía quedarse fuera."""
     monkeypatch.delenv("APPDATA", raising=False)  # template next to the CWD (tmp_path)
