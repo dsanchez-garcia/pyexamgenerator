@@ -736,7 +736,8 @@ class QuestionBankManager:
         """
 
         if output_dir is None:
-            output_dir = os.path.dirname(docx_path)
+            # abspath: a bare file name ('revisadas.docx') has an empty dirname and makedirs('') fails.
+            output_dir = os.path.dirname(os.path.abspath(docx_path))
 
         os.makedirs(output_dir, exist_ok=True)
 
