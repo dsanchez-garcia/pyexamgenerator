@@ -37,7 +37,9 @@ Convenciones para tests nuevos:
 
 - pytest con funciones simples (sin clases), un fichero por área.
 - Datos sintéticos creados en `tmp_path` con pandas/python-docx; nunca datos reales de alumnos.
-- Sin red: simula `google.genai.Client` (p. ej. con `unittest.mock` o `SimpleNamespace`).
+- Sin red: `tests/conftest.py` sustituye `google.genai.Client` en todos los tests por un cliente que
+  falla si se le pide algo. Para simular respuestas de Gemini, asigna tu propio cliente falso a
+  `generator.client` (ver `tests/test_question_generator_flow.py`).
 - Tests de OCR: `pytest.importorskip("cv2")` o comprobar `grading.HAS_OCR`.
 - Barajados: fija `random.seed(...)`.
 - Para bugs: el test debe fallar antes del arreglo y pasar después.

@@ -23,8 +23,10 @@ def test_group_items_by_chunk_size_creates_expected_groups():
     assert lengths == [2, 2, 1]
 
 
-def test_build_generation_prompts_image_mode_returns_prompt_without_api_calls():
+def test_build_generation_prompts_image_mode_returns_prompt_without_api_calls(offline_gemini_client):
+    """TST-8: antes se creaba un `genai.Client` real con una clave falsa."""
     generator = QuestionGenerator(api_key="dummy", model_name="models/gemini-2.5-flash")
+    assert isinstance(generator.client, offline_gemini_client)
     prompts_df = generator.build_generation_prompts(
         pdf_paths=["Tema Imagen 01.pdf"],
         prompt_type="PRL",

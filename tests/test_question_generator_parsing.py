@@ -74,7 +74,7 @@ def test_api_key_defaults_to_environment_variable(monkeypatch):
     generator = QuestionGenerator(model_name="models/test")
 
     assert generator.model_name == "models/test"
-    assert generator.client is not None
+    assert generator.client.api_key == "clave-de-entorno"
 
 
 def test_model_name_is_required():
