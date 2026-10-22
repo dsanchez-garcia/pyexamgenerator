@@ -79,6 +79,8 @@ mantengan los tests en verde, sin mezclar cambios funcionales.
 1. Mover las entradas de `## [Unreleased]` a `## [X.Y.Z] - AAAA-MM-DD` en `CHANGELOG.md`.
 2. Actualizar la versión en `pyexamgenerator/__init__.py`, `CITATION.cff` (`version`,
    `date-released`) y `.zenodo.json` (`version`, `publication_date`, URL del tag).
+   `tests/test_release_metadata.py` falla si alguno no coincide (también con la fecha del
+   `CHANGELOG.md`): ejecuta la suite antes de seguir.
 3. `dist_build_package.bat` → comprobar `dist/`.
 4. `dist_upload_test.bat` (TestPyPI) → instalar y probar en un entorno limpio.
 5. `dist_upload.bat` (PyPI), tag `vX.Y.Z`, release en GitHub (Zenodo genera el DOI).
