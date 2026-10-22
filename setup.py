@@ -42,7 +42,7 @@ setup(
         # Corrección con OCR de hojas manuscritas (subpaquete `grading`).
         # Doble backend según la versión de Python:
         #   - Python >= 3.13 (p. ej. 3.14): paquete nuevo `rapidocr` + numpy>=2 + opencv reciente.
-        #   - Python <  3.13 (p. ej. 3.9):  `rapidocr-onnxruntime` + numpy<2 + opencv<=4.10
+        #   - Python <  3.13 (3.10 a 3.12):  `rapidocr-onnxruntime` + numpy<2 + opencv<=4.10
         #     (shapely de rapidocr-onnxruntime exige numpy<2).
         'grading': [
             "rapidocr>=2; python_version >= '3.13'",
@@ -59,7 +59,9 @@ setup(
             'pyexamgenerator=pyexamgenerator.main_app:main',
         ],
     },
-    python_requires='>=3.8',  # Especifica la versión mínima de Python compatible
+    # Versión mínima de Python: 3.8 y 3.9 ya no tienen soporte, y google-genai exige >= 3.10 en sus
+    # versiones actuales. Mantener en línea con tox.ini, .readthedocs.yaml y la CI.
+    python_requires='>=3.10',
     keywords=['exam', 'generator', 'ai', 'gemini', 'pdf', 'moodle', 'quiz', 'education', 'test'],
     license='GPL-3.0-or-later',
     classifiers=[
@@ -77,8 +79,7 @@ setup(
 
         # Versiones de Python soportadas
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3 :: Only',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',

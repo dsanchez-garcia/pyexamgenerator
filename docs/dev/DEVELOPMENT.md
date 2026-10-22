@@ -6,7 +6,7 @@ Pensada para personas y agentes de IA; las reglas obligatorias están en
 
 ## Entorno
 
-Requisitos: Python 3.9+ (desarrollo habitual en 3.14 sobre Windows) y git.
+Requisitos: Python 3.10+ (desarrollo habitual en 3.14 sobre Windows) y git.
 
 ```bash
 python -m venv venv
@@ -25,7 +25,7 @@ venv/Scripts/python.exe -m pip install -r requirements-dev.txt
 venv/Scripts/python.exe -m pytest -q                      # todo
 venv/Scripts/python.exe -m pytest tests/test_v030_features.py -q
 venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
-venv/Scripts/python.exe -m tox                            # matriz py39 / py310 / py314 (tox.ini)
+venv/Scripts/python.exe -m tox                            # matriz py310 / py314 (tox.ini)
 ```
 
 Estado a 2026-10-22: 169 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las

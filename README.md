@@ -18,7 +18,7 @@ pyexamgenerator es una suite de aplicaciones de escritorio construida con Python
 
 ### Requisitos Previos
 
--   **Python 3.8 o superior**. Durante la instalación de Python, asegúrate de marcar la casilla "Add Python to PATH".
+-   **Python 3.10 o superior**. Durante la instalación de Python, asegúrate de marcar la casilla "Add Python to PATH".
 
 ### Instalación del Paquete
 

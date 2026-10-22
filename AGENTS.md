@@ -87,9 +87,11 @@ setup.py                   empaquetado (extra opcional [grading] para OCR)
   `'Respuesta A'`…`'Respuesta D'`, `'Respuesta correcta'`, `'Estado'`, `'Tema'`,
   `'Número de pregunta'`, `'Veces usada en examen'`, `'<etiqueta>_uso'`, `'Número de ID'`…). **No los
   renombres**: rompería bancos existentes. Ver `docs/dev/ARCHITECTURE.md`.
-- Anotaciones de tipo compatibles con la versión mínima declarada en `setup.py`: usa `typing.Tuple`,
-  `Optional`, `Dict`… o añade `from __future__ import annotations`. No uses `X | Y`, `match` ni
-  `tuple[...]` en tiempo de ejecución sin ese import (ver `PKG-1`).
+- El código debe funcionar en la versión mínima declarada en `setup.py` (**Python 3.10**): puedes
+  usar `X | Y`, `match` y `tuple[...]`, pero no funciones de 3.11 o posteriores (`tomllib`,
+  `ExceptionGroup`/`except*`, `typing.Self`, `enum.StrEnum`, `datetime.UTC`). La CI ejecuta la suite
+  en 3.10. Si cambias la versión mínima, actualiza a la vez `setup.py` (`python_requires` y
+  clasificadores), `tox.ini`, `.readthedocs.yaml`, la CI y el README.
 - Comentarios: la densidad y el tono del código existente. Cabecera de licencia GPL en los módulos
   principales: consérvala.
 
