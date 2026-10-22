@@ -39,7 +39,9 @@ class ExamGrader:
 
         self.questions_info = questions_info if questions_info is not None else self._parse_moodle_xml()
         self.enrollment_df = enrollment_df if enrollment_df is not None else self._load_enrollment()
-        self.answers_df = answers_df if answers_df is not None else self.shared_store.load_answers_excel(self.answers_xlsx_path)
+        self.answers_df = (
+            answers_df if answers_df is not None else self.shared_store.load_answers_excel(self.answers_xlsx_path)
+        )
 
     def _parse_moodle_xml(self):
         return self.shared_store.load_questions_xml(self.exam_xml_path)
@@ -73,16 +75,24 @@ class ExamGrader:
         candidate = self._full_names()[match.candidate] if match.candidate is not None else ""
         if match.kind == AMBIGUOUS:
             kind = "AMBIGUOUS_STUDENT"
-            detail = (f"Varios alumnos de la matrícula encajan con este nombre (p. ej. «{candidate}»): "
-                      "escríbelo completo en el fichero de respuestas y vuelve a corregir.")
+            detail = (
+                f"Varios alumnos de la matrícula encajan con este nombre (p. ej. «{candidate}»): "
+                "escríbelo completo en el fichero de respuestas y vuelve a corregir."
+            )
         else:
             kind = "UNMATCHED_STUDENT"
             detail = "No coincide con ningún alumno de la matrícula"
             detail += f": el más parecido es «{candidate}». " if candidate else ". "
             detail += "Corrige el nombre en el fichero de respuestas y vuelve a corregir."
-        return {"Fila": file_row, "Nombre_Escrito": written, "Tipo": kind, "Severidad": "alta",
-                "Detalle": detail + " Esta fila no se ha corregido.", "Candidato": candidate,
-                "Score": round(match.score, 4)}
+        return {
+            "Fila": file_row,
+            "Nombre_Escrito": written,
+            "Tipo": kind,
+            "Severidad": "alta",
+            "Detalle": detail + " Esta fila no se ha corregido.",
+            "Candidato": candidate,
+            "Score": round(match.score, 4),
+        }
 
     def grade_and_export(self, output_path: str, incidents_output_path: Optional[str] = None) -> pd.DataFrame:
         """Grades every row of the answers file and writes the result to ``output_path``.
@@ -159,12 +169,20 @@ class ExamGrader:
                 continue
             others = ", ".join(str(r) for r, _ in file_rows)
             for file_row, written in file_rows:
-                incidents.append({
-                    "Fila": file_row, "Nombre_Escrito": written, "Tipo": "DUPLICATE_STUDENT", "Severidad": "alta",
-                    "Detalle": (f"Las filas {others} se han asignado a «{full_names[student]}»: el resultado tiene "
-                                "una fila por cada una. Revisa cuál es la buena."),
-                    "Candidato": full_names[student], "Score": 1.0,
-                })
+                incidents.append(
+                    {
+                        "Fila": file_row,
+                        "Nombre_Escrito": written,
+                        "Tipo": "DUPLICATE_STUDENT",
+                        "Severidad": "alta",
+                        "Detalle": (
+                            f"Las filas {others} se han asignado a «{full_names[student]}»: el resultado tiene "
+                            "una fila por cada una. Revisa cuál es la buena."
+                        ),
+                        "Candidato": full_names[student],
+                        "Score": 1.0,
+                    }
+                )
 
         final_df = pd.DataFrame(result_rows)
         final_df.to_excel(output_path, index=False)
@@ -180,4 +198,3 @@ class ExamGrader:
 
 # Backward-compatible alias
 CorrectorExamenes = ExamGrader
-

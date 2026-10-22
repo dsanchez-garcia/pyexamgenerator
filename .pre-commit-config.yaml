@@ -1,8 +1,9 @@
 # Ganchos de pre-commit (opcionales): pip install -e ".[dev]" && pre-commit install
-# Revisan con ruff los ficheros que vas a commitear, con la misma versión que la CI
+# Revisan y formatean con ruff los ficheros que vas a commitear, con la misma versión que la CI
 # (.github/workflows/tests.yml). Si la cambias aquí, cámbiala también allí.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.1
     hooks:
       - id: ruff-check
+      - id: ruff-format

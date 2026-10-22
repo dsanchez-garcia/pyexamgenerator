@@ -40,9 +40,22 @@ def _user_path():
 
 def _what_if(folder):
     result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ADD_USER_PATH),
-         "-Folder", folder, "-WhatIf"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ADD_USER_PATH),
+            "-Folder",
+            folder,
+            "-WhatIf",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
     )
     assert result.returncode == 0, result.stderr
     return result.stdout

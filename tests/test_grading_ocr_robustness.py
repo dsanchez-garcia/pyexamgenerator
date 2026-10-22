@@ -151,8 +151,11 @@ def test_missing_exam_type_is_asked_through_a_callback(tmp_path):
         return "b" if image_name == "sin_tipo.jpg" else None  # None: not decided
 
     _answers, grades, _audit = grader.grade_from_images(
-        image_paths=["sin_tipo.jpg", "otra.jpg"], output_answers="respuestas.xlsx",
-        output_grades="calificaciones.xlsx", output_dir=str(tmp_path), exam_type_callback=choose_type,
+        image_paths=["sin_tipo.jpg", "otra.jpg"],
+        output_answers="respuestas.xlsx",
+        output_grades="calificaciones.xlsx",
+        output_dir=str(tmp_path),
+        exam_type_callback=choose_type,
     )
 
     assert asked == [("sin_tipo.jpg", ["A", "B"], "A"), ("otra.jpg", ["A", "B"], "A")]
@@ -173,9 +176,14 @@ def test_doubtful_answers_are_reviewed_through_a_callback(tmp_path):
         return "A"
 
     grader.grade_from_images(
-        image_paths=["hoja.jpg"], output_answers="respuestas.xlsx", output_grades="calificaciones.xlsx",
-        output_dir=str(tmp_path), output_manual_changes="cambios.xlsx",
-        interactive_review=True, open_image_on_review=False, review_callback=review,
+        image_paths=["hoja.jpg"],
+        output_answers="respuestas.xlsx",
+        output_grades="calificaciones.xlsx",
+        output_dir=str(tmp_path),
+        output_manual_changes="cambios.xlsx",
+        interactive_review=True,
+        open_image_on_review=False,
+        review_callback=review,
     )
 
     assert reviewed == [("hoja.jpg", "Pregunta 01", "-", "b")]
@@ -190,8 +198,11 @@ def test_interactive_review_without_a_terminal_needs_a_callback(tmp_path, monkey
 
     with pytest.raises(ValueError, match="review_callback"):
         grader.grade_from_images(
-            image_paths=[], output_answers="respuestas.xlsx", output_grades="calificaciones.xlsx",
-            output_dir=str(tmp_path), interactive_review=True,
+            image_paths=[],
+            output_answers="respuestas.xlsx",
+            output_grades="calificaciones.xlsx",
+            output_dir=str(tmp_path),
+            interactive_review=True,
         )
 
 
@@ -199,7 +210,10 @@ def test_running_the_module_starts_only_the_grading_command():
     """ARC-5: el módulo une dos ficheros antiguos y al ejecutarlo corrían sus dos `main` seguidos."""
     result = subprocess.run(
         [sys.executable, "-m", "pyexamgenerator.grading.extraction", "--help"],
-        capture_output=True, text=True, timeout=300, cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=Path(__file__).resolve().parents[1],
     )
 
     assert result.returncode == 0, result.stderr

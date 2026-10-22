@@ -193,12 +193,20 @@ def test_first_questions_of_each_topic_are_selected_in_bank_order(tmp_path):
     generator = ExamGenerator()
 
     generator.generate_exam_from_excel(
-        bank_excel_path=str(bank_path), output_dir=str(tmp_path), subject="Geo", exam="Primeras", course="25-26",
-        exam_names=["A"], questions_per_topic={"Tema 01": 2, "Tema 03": 1}, selection_method="primeras",
+        bank_excel_path=str(bank_path),
+        output_dir=str(tmp_path),
+        subject="Geo",
+        exam="Primeras",
+        course="25-26",
+        exam_names=["A"],
+        questions_per_topic={"Tema 01": 2, "Tema 03": 1},
+        selection_method="primeras",
     )
 
     assert sorted(generator.exam_df["Pregunta"]) == [
-        "Tema 01 - Pregunta 1", "Tema 01 - Pregunta 2", "Tema 03 - Pregunta 1",
+        "Tema 01 - Pregunta 1",
+        "Tema 01 - Pregunta 2",
+        "Tema 03 - Pregunta 1",
     ]
 
 
@@ -213,8 +221,13 @@ def test_bank_without_acceptable_questions_raises_a_clear_error(tmp_path):
 
     with pytest.raises(NoAcceptableQuestionsError, match="Aceptable"):
         ExamGenerator().generate_exam_from_excel(
-            bank_excel_path=str(bank_path), output_dir=str(tmp_path), subject="Geo", exam="Ninguna",
-            course="25-26", exam_names=["A"], questions_per_topic={"Tema 01": 1},
+            bank_excel_path=str(bank_path),
+            output_dir=str(tmp_path),
+            subject="Geo",
+            exam="Ninguna",
+            course="25-26",
+            exam_names=["A"],
+            questions_per_topic={"Tema 01": 1},
         )
 
     assert not list(tmp_path.glob("*.docx"))

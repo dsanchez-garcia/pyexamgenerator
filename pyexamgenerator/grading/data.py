@@ -290,10 +290,6 @@ def build_merged_enrollment_from_sources(paths: Iterable[str], sheet_name: int =
     return EnrollmentMerger(paths, sheet_name=sheet_name).merge()
 
 
-
-
-
-
 # Backward-compatible aliases for legacy Spanish names.
 PreguntasMap = QuestionMap
 PreguntasPorTipoMap = QuestionsByExamTypeMap

@@ -37,4 +37,3 @@ def test_build_generation_prompts_image_mode_returns_prompt_without_api_calls(of
     assert len(prompts_df) == 1
     prompt_text = prompts_df.iloc[0]["Prompt"]
     assert "imágenes adjuntas" in prompt_text.lower()
-

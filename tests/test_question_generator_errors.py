@@ -15,8 +15,9 @@ def _api_error(code, status, retry_delay=None):
     if retry_delay:
         details.append({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": retry_delay})
     error_class = errors.ClientError if code < 500 else errors.ServerError
-    return error_class(code, {"error": {"code": code, "message": f"Error {code}", "status": status,
-                                        "details": details}})
+    return error_class(
+        code, {"error": {"code": code, "message": f"Error {code}", "status": status, "details": details}}
+    )
 
 
 @pytest.fixture
@@ -38,10 +39,12 @@ def _generator(outcomes, models=()):
             raise outcome
         return SimpleNamespace(text=outcome)
 
-    generator.client = SimpleNamespace(models=SimpleNamespace(
-        generate_content=generate_content,
-        list=lambda: [SimpleNamespace(name=name) for name in models],
-    ))
+    generator.client = SimpleNamespace(
+        models=SimpleNamespace(
+            generate_content=generate_content,
+            list=lambda: [SimpleNamespace(name=name) for name in models],
+        )
+    )
     return generator, calls
 
 
@@ -85,8 +88,9 @@ def test_quota_used_up_for_hours_is_not_retried(waits):
 def test_retired_model_fails_at_once_and_lists_the_available_ones(waits):
     """PKG-8: un modelo retirado (404) se reintentaba en todos los fragmentos; ahora se avisa con
     los modelos disponibles."""
-    generator, calls = _generator([_api_error(404, "NOT_FOUND")],
-                                  models=["models/gemini-nuevo-flash", "models/text-embedding-004"])
+    generator, calls = _generator(
+        [_api_error(404, "NOT_FOUND")], models=["models/gemini-nuevo-flash", "models/text-embedding-004"]
+    )
 
     with pytest.raises(GeminiRequestError) as raised:
         generator._generate_content("prompt")
@@ -136,8 +140,11 @@ def test_generation_stops_at_the_first_retired_model_error(tmp_path, waits):
 
     with pytest.raises(GeminiRequestError):
         generator.generate_multiple_choice_questions(
-            pdf_paths=pdf_paths, prompt_type="PRL", num_questions_per_chunk_target=2,
-            output_dir=str(tmp_path), max_generation_attempts_per_chunk=3,
+            pdf_paths=pdf_paths,
+            prompt_type="PRL",
+            num_questions_per_chunk_target=2,
+            output_dir=str(tmp_path),
+            max_generation_attempts_per_chunk=3,
         )
 
     assert len(calls) == 1

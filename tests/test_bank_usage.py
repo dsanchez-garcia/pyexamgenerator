@@ -75,9 +75,7 @@ def test_update_bank_with_exam_marks_used_questions(tmp_path):
     used.to_excel(exam_path, index=False)
 
     manager = QuestionBankManager()
-    matched, df_updated = manager.update_bank_with_exam(
-        str(bank_path), str(exam_path), exam_label="Parcial1 25-26"
-    )
+    matched, df_updated = manager.update_bank_with_exam(str(bank_path), str(exam_path), exam_label="Parcial1 25-26")
 
     assert matched == 3
     assert df_updated is not None
@@ -97,9 +95,7 @@ def test_update_bank_with_exam_missing_file_returns_error(tmp_path):
     _build_bank_df({"Tema 01": 2}).to_excel(bank_path, index=False)
 
     manager = QuestionBankManager()
-    matched, df_updated = manager.update_bank_with_exam(
-        str(bank_path), str(tmp_path / "no_existe.xlsx")
-    )
+    matched, df_updated = manager.update_bank_with_exam(str(bank_path), str(tmp_path / "no_existe.xlsx"))
     assert matched == -1
     assert df_updated is None
 
@@ -188,9 +184,7 @@ def test_update_bank_with_exams_bank_missing_returns_error(tmp_path):
     _build_bank_df({"Tema 01": 1}).iloc[[0]].to_excel(exam_path, index=False)
 
     manager = QuestionBankManager()
-    total, df_updated, stats = manager.update_bank_with_exams(
-        str(tmp_path / "no_existe_bank.xlsx"), [str(exam_path)]
-    )
+    total, df_updated, stats = manager.update_bank_with_exams(str(tmp_path / "no_existe_bank.xlsx"), [str(exam_path)])
     assert total == -1
     assert df_updated is None
 

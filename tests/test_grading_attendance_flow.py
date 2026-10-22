@@ -21,38 +21,58 @@ def course(tmp_path):
     """Enrollment, attendance (header in row 3, as Moodle exports it), schedule, justifications and
     class quizzes for three students: Ana attends everything, Leo misses one class and justifies it by
     email, Eva misses one class without justifying it and fails the quizzes."""
-    pd.DataFrame([{"Apellido(s)": a, "Nombre": n, "Número de ID": i, "Dirección de correo": f"{n.lower()}@uca.es"}
-                  for a, n, i in STUDENTS]).to_excel(tmp_path / "matricula.xlsx", index=False)
+    pd.DataFrame(
+        [
+            {"Apellido(s)": a, "Nombre": n, "Número de ID": i, "Dirección de correo": f"{n.lower()}@uca.es"}
+            for a, n, i in STUDENTS
+        ]
+    ).to_excel(tmp_path / "matricula.xlsx", index=False)
 
-    attendance = pd.DataFrame([
-        {"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "111", CLASS_1: "P (2/2)", CLASS_2: "P (2/2)"},
-        {"Apellido(s)": "Ruiz", "Nombre": "Leo", "Número de ID": "222", CLASS_1: "P (2/2)", CLASS_2: "A (0/2)"},
-        {"Apellido(s)": "Sanz", "Nombre": "Eva", "Número de ID": "333", CLASS_1: "P (2/2)", CLASS_2: "A (0/2)"},
-    ])
+    attendance = pd.DataFrame(
+        [
+            {"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "111", CLASS_1: "P (2/2)", CLASS_2: "P (2/2)"},
+            {"Apellido(s)": "Ruiz", "Nombre": "Leo", "Número de ID": "222", CLASS_1: "P (2/2)", CLASS_2: "A (0/2)"},
+            {"Apellido(s)": "Sanz", "Nombre": "Eva", "Número de ID": "333", CLASS_1: "P (2/2)", CLASS_2: "A (0/2)"},
+        ]
+    )
     with pd.ExcelWriter(tmp_path / "asistencias.xlsx") as writer:
         pd.DataFrame([["Asistencia del curso"], [""], [""]]).to_excel(writer, index=False, header=False)
         attendance.to_excel(writer, index=False, startrow=3)
 
-    pd.DataFrame([
-        {"Fecha de Inicio": datetime(2026, 3, 3, 10), "Descripción": "Tema 3", "Título (EDITABLE)": "Teoría GIM"},
-        {"Fecha de Inicio": datetime(2026, 3, 10, 10), "Descripción": "Ley 31/95", "Título (EDITABLE)": "Teoría GIM"},
-    ]).to_excel(tmp_path / "horario.xlsx", index=False)
+    pd.DataFrame(
+        [
+            {"Fecha de Inicio": datetime(2026, 3, 3, 10), "Descripción": "Tema 3", "Título (EDITABLE)": "Teoría GIM"},
+            {
+                "Fecha de Inicio": datetime(2026, 3, 10, 10),
+                "Descripción": "Ley 31/95",
+                "Título (EDITABLE)": "Teoría GIM",
+            },
+        ]
+    ).to_excel(tmp_path / "horario.xlsx", index=False)
 
-    pd.DataFrame([{
-        "FECHA": "11/03/2026",
-        "REMITENTE": "Leo Ruiz <leo@uca.es>",
-        "ASUNTO": "Justificación de falta",
-        "MENSAJE": ("Día de la falta (formato mm/dd/aaaa): 03/10/2026\n"
+    pd.DataFrame(
+        [
+            {
+                "FECHA": "11/03/2026",
+                "REMITENTE": "Leo Ruiz <leo@uca.es>",
+                "ASUNTO": "Justificación de falta",
+                "MENSAJE": (
+                    "Día de la falta (formato mm/dd/aaaa): 03/10/2026\n"
                     "Nº Tema/Práctica a la que se ha faltado: Ley 31/95\n"
                     "Grupo (GIM o GITI-GIE-GIEI): GIM\n"
-                    "Motivo de la ausencia: cita médica"),
-    }]).to_excel(tmp_path / "justificaciones.xlsx", index=False)
+                    "Motivo de la ausencia: cita médica"
+                ),
+            }
+        ]
+    ).to_excel(tmp_path / "justificaciones.xlsx", index=False)
 
-    pd.DataFrame([
-        {"Apellido(s)": "Gil", "Nombre": "Ana", QUIZ_T3: "8,00", QUIZ_LPRL: "9,00"},
-        {"Apellido(s)": "Ruiz", "Nombre": "Leo", QUIZ_T3: "9,00", QUIZ_LPRL: "8,00"},
-        {"Apellido(s)": "Sanz", "Nombre": "Eva", QUIZ_T3: "5,00", QUIZ_LPRL: "4,00"},
-    ]).to_excel(tmp_path / "cuestionarios.xlsx", index=False)
+    pd.DataFrame(
+        [
+            {"Apellido(s)": "Gil", "Nombre": "Ana", QUIZ_T3: "8,00", QUIZ_LPRL: "9,00"},
+            {"Apellido(s)": "Ruiz", "Nombre": "Leo", QUIZ_T3: "9,00", QUIZ_LPRL: "8,00"},
+            {"Apellido(s)": "Sanz", "Nombre": "Eva", QUIZ_T3: "5,00", QUIZ_LPRL: "4,00"},
+        ]
+    ).to_excel(tmp_path / "cuestionarios.xlsx", index=False)
     return tmp_path
 
 
@@ -115,10 +135,16 @@ def test_facade_exports_every_table_and_the_steps_manifest(course):
     api.process_absence_justifications(cfg, export_steps_dir=str(course / "pasos"))
 
     written = sorted(p.name for p in (course / "salida").iterdir())
-    assert written == sorted([
-        "justificaciones_resumen.xlsx", "justificaciones_detalle.xlsx", "asistencias_resumen_alumnos.xlsx",
-        "justificaciones_vs_faltas.xlsx", "asistencias_con_cuestionarios.xlsx", "faltas_justificadas_modo_extremo.xlsx",
-    ])
+    assert written == sorted(
+        [
+            "justificaciones_resumen.xlsx",
+            "justificaciones_detalle.xlsx",
+            "asistencias_resumen_alumnos.xlsx",
+            "justificaciones_vs_faltas.xlsx",
+            "asistencias_con_cuestionarios.xlsx",
+            "faltas_justificadas_modo_extremo.xlsx",
+        ]
+    )
     (run_dir,) = list((course / "pasos").iterdir())
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["workflow"] == "process_absence_justifications"
@@ -131,15 +157,25 @@ def test_facade_exports_every_table_and_the_steps_manifest(course):
 
 
 def _write_justifications(course, *emails):
-    pd.DataFrame([{"FECHA": "11/03/2026", "REMITENTE": sender, "ASUNTO": subject, "MENSAJE": message}
-                  for sender, subject, message in emails]).to_excel(course / "justificaciones.xlsx", index=False)
+    pd.DataFrame(
+        [
+            {"FECHA": "11/03/2026", "REMITENTE": sender, "ASUNTO": subject, "MENSAJE": message}
+            for sender, subject, message in emails
+        ]
+    ).to_excel(course / "justificaciones.xlsx", index=False)
 
 
 def test_a_similar_name_does_not_justify_another_students_absences(course):
     """GRD-6: «Lea Ruiz» (no matriculada) se asignaba a Leo Ruiz por parecido (0,86 con umbral 0,55)
     y le justificaba las faltas; ahora no se asigna y queda para revisar, con Leo como candidato."""
-    _write_justifications(course, ('"Lea Ruiz" <lea.ruiz@otra-universidad.es>', "Justificación de falta",
-                                   "Adjunto el justificante médico de mi ausencia."))
+    _write_justifications(
+        course,
+        (
+            '"Lea Ruiz" <lea.ruiz@otra-universidad.es>',
+            "Justificación de falta",
+            "Adjunto el justificante médico de mi ausencia.",
+        ),
+    )
 
     result = _manager(course).analyze()
 
@@ -168,7 +204,9 @@ def test_student_writing_from_another_address_is_matched_by_name(course, sender)
 def test_an_email_that_does_not_justify_anything_does_not_count(course, mode):
     """GRD-6: en modo extremo, cualquier correo (también una consulta sobre el examen) justificaba
     todas las faltas de quien lo enviaba; el modo normal tampoco miraba la clasificación."""
-    _write_justifications(course, ("Leo Ruiz <leo@uca.es>", "Duda", "Tengo una duda sobre el examen del tema 3, gracias."))
+    _write_justifications(
+        course, ("Leo Ruiz <leo@uca.es>", "Duda", "Tengo una duda sobre el examen del tema 3, gracias.")
+    )
 
     result = _manager(course, justification_mode=mode).analyze()
 

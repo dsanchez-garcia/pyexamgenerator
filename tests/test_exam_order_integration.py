@@ -86,8 +86,7 @@ def test_answer_sheet_order_matches_xml(tmp_path):
 
     xml_root = ET.parse(str(xml_path)).getroot()
     xml_question_labels = [
-        question.find("./name/text").text
-        for question in xml_root.findall("./question[@type='multichoice']")
+        question.find("./name/text").text for question in xml_root.findall("./question[@type='multichoice']")
     ]
 
     expected_xml_labels = [f"Pregunta {question_number}" for question_number in docx_question_numbers]

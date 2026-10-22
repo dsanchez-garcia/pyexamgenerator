@@ -12,13 +12,20 @@ import pytest
 from pyexamgenerator import user_config
 
 
-@pytest.mark.parametrize("platform, environ, expected", [
-    ("win32", {"APPDATA": r"C:\Users\ana\AppData\Roaming"}, Path(r"C:\Users\ana\AppData\Roaming") / "pyexamgenerator"),
-    ("win32", {}, Path("/home/ana") / "AppData" / "Roaming" / "pyexamgenerator"),
-    ("darwin", {}, Path("/home/ana") / "Library" / "Application Support" / "pyexamgenerator"),
-    ("linux", {"XDG_CONFIG_HOME": "/home/ana/cfg"}, Path("/home/ana/cfg") / "pyexamgenerator"),
-    ("linux", {}, Path("/home/ana") / ".config" / "pyexamgenerator"),
-])
+@pytest.mark.parametrize(
+    "platform, environ, expected",
+    [
+        (
+            "win32",
+            {"APPDATA": r"C:\Users\ana\AppData\Roaming"},
+            Path(r"C:\Users\ana\AppData\Roaming") / "pyexamgenerator",
+        ),
+        ("win32", {}, Path("/home/ana") / "AppData" / "Roaming" / "pyexamgenerator"),
+        ("darwin", {}, Path("/home/ana") / "Library" / "Application Support" / "pyexamgenerator"),
+        ("linux", {"XDG_CONFIG_HOME": "/home/ana/cfg"}, Path("/home/ana/cfg") / "pyexamgenerator"),
+        ("linux", {}, Path("/home/ana") / ".config" / "pyexamgenerator"),
+    ],
+)
 def test_config_dir_by_platform(platform, environ, expected):
     assert user_config._config_dir_for(platform, environ, "/home/ana") == expected
 
@@ -46,12 +53,17 @@ def test_old_files_in_the_current_folder_are_moved(tmp_path):
     user_config.write_json("exam_generation_template.json", {"subject": "Otra"})
 
     assert [p.name for p in user_config.find_legacy_files(str(folder))] == [
-        "custom_prompts.json", "exam_generation_template.json"]
+        "custom_prompts.json",
+        "exam_generation_template.json",
+    ]
     moved = user_config.move_legacy_files(str(folder))
 
     assert moved == (1, 1, True)
     assert user_config.read_json("custom_prompts.json") == {
-        "Historia": "texto actual", "Biología": "biología", "Química": "química"}
+        "Historia": "texto actual",
+        "Biología": "biología",
+        "Química": "química",
+    }
     assert user_config.read_json("exam_generation_template.json") == {"subject": "Física"}
     assert user_config.find_legacy_files(str(folder)) == []
 

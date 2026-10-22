@@ -61,11 +61,16 @@ def test_generated_questions_similar_to_the_bank_are_filtered(tmp_path):
     """TST-3: `filter_generated_questions_duplicates` no tenía test."""
     bank_path = tmp_path / "banco.xlsx"
     pd.DataFrame({"Pregunta": ["¿Qué regula la Ley 31/1995 de prevención de riesgos laborales?"]}).to_excel(
-        bank_path, index=False)
-    generated = pd.DataFrame({"Pregunta": [
-        "¿Qué regula la Ley 31/1995 de prevención de riesgos laborales?",  # same statement
-        "¿Quién debe garantizar la seguridad de los trabajadores?",
-    ]})
+        bank_path, index=False
+    )
+    generated = pd.DataFrame(
+        {
+            "Pregunta": [
+                "¿Qué regula la Ley 31/1995 de prevención de riesgos laborales?",  # same statement
+                "¿Quién debe garantizar la seguridad de los trabajadores?",
+            ]
+        }
+    )
     generator = QuestionGenerator(api_key="dummy", model_name="models/test")
 
     accepted, rejected = generator.filter_generated_questions_duplicates(generated, str(bank_path), 0.8)
@@ -90,8 +95,12 @@ def test_unreadable_duplicates_bank_stops_before_calling_gemini(tmp_path):
 
     with pytest.raises(ValueError, match="No se pudo leer el banco de preguntas existente"):
         generator.generate_multiple_choice_questions(
-            pdf_paths=[pdf_path], prompt_type="PRL", num_questions_per_chunk_target=1, output_dir=str(tmp_path),
-            existing_bank_path=str(tmp_path / "no_existe.xlsx"), similarity_threshold=0.8,
+            pdf_paths=[pdf_path],
+            prompt_type="PRL",
+            num_questions_per_chunk_target=1,
+            output_dir=str(tmp_path),
+            existing_bank_path=str(tmp_path / "no_existe.xlsx"),
+            similarity_threshold=0.8,
         )
 
     assert calls == []
@@ -123,7 +132,10 @@ def test_pdf_text_is_read_with_pypdf_not_the_abandoned_pypdf2(tmp_path):
         "print([page.strip() for page in pages], 'PyPDF2' in sys.modules)\n"
     )
     result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=300,
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=300,
         cwd=Path(__file__).resolve().parents[1],
     )
 
@@ -140,7 +152,10 @@ def test_pdf_split_into_page_chunks_for_the_prompts(tmp_path):
 
     def chunk_count(pdf, **kwargs):
         prompts = generator.build_generation_prompts(
-            pdf_paths=[pdf], prompt_type="PRL", process_by_pages=True, include_similar_questions_in_prompt=False,
+            pdf_paths=[pdf],
+            prompt_type="PRL",
+            process_by_pages=True,
+            include_similar_questions_in_prompt=False,
             **kwargs,
         )
         return len(prompts)
@@ -161,20 +176,53 @@ def test_generators_keep_no_scratch_state_between_runs(tmp_path):
 
     pdf = _pages_pdf(tmp_path / "Tema 1.pdf", ["Uno", "Dos", "Tres"])
     question_generator = QuestionGenerator(api_key="dummy", model_name="models/test")
-    question_generator.build_generation_prompts(pdf_paths=[pdf], prompt_type="PRL", process_by_pages=True,
-                                                include_similar_questions_in_prompt=False)
+    question_generator.build_generation_prompts(
+        pdf_paths=[pdf], prompt_type="PRL", process_by_pages=True, include_similar_questions_in_prompt=False
+    )
     assert not any(hasattr(question_generator, name) for name in ("page_texts", "text", "num_pages"))
 
     bank = tmp_path / "banco.xlsx"
-    pd.DataFrame([{"Número de pregunta": n, "Tema": "Tema 01", "Estado": "Aceptable", "Pregunta": f"¿{n}?",
-                   "Respuesta A": "a", "Respuesta B": "b", "Respuesta C": "c", "Respuesta D": "d",
-                   "Respuesta correcta": "a", "Texto relevante": ""} for n in (1, 2)]).to_excel(bank, index=False)
+    pd.DataFrame(
+        [
+            {
+                "Número de pregunta": n,
+                "Tema": "Tema 01",
+                "Estado": "Aceptable",
+                "Pregunta": f"¿{n}?",
+                "Respuesta A": "a",
+                "Respuesta B": "b",
+                "Respuesta C": "c",
+                "Respuesta D": "d",
+                "Respuesta correcta": "a",
+                "Texto relevante": "",
+            }
+            for n in (1, 2)
+        ]
+    ).to_excel(bank, index=False)
     exam_generator = ExamGenerator()
     random.seed(7)
-    exam_generator.generate_exam_from_excel(bank_excel_path=str(bank), output_dir=str(tmp_path / "salida"),
-                                            subject="Asig", exam="Parcial", course="25-26", exam_names=["A"],
-                                            export_moodle_xml=True)
-    scratch = ("quiz", "category", "category_name", "text", "question", "name",
-               "answer_a", "answer_b", "answer_c", "answer_d", "exam_text", "full_exam_text")
+    exam_generator.generate_exam_from_excel(
+        bank_excel_path=str(bank),
+        output_dir=str(tmp_path / "salida"),
+        subject="Asig",
+        exam="Parcial",
+        course="25-26",
+        exam_names=["A"],
+        export_moodle_xml=True,
+    )
+    scratch = (
+        "quiz",
+        "category",
+        "category_name",
+        "text",
+        "question",
+        "name",
+        "answer_a",
+        "answer_b",
+        "answer_c",
+        "answer_d",
+        "exam_text",
+        "full_exam_text",
+    )
     assert [name for name in scratch if hasattr(exam_generator, name)] == []
     assert list((tmp_path / "salida").glob("*_A.xml"))

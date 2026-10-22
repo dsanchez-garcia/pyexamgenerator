@@ -95,13 +95,20 @@ version = { attr = "pyexamgenerator.__version__" }
 include = ["pyexamgenerator*"]
 
 [tool.ruff]
-# Initial, permissive setup (DEV-1): only real errors for now (pyflakes, "F"). The formatter
-# (`ruff format`) will be applied in a separate change without functional changes.
+# Lint (DEV-1): only real errors for now (pyflakes, "F"). The code is formatted with `ruff format`;
+# the CI and pre-commit check both.
 target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
 select = ["F"]
+
+[tool.ruff.format]
+# Single and double quotes are kept as they are (fewer changes than unifying them).
+quote-style = "preserve"
+# The examples in the documentation keep the layout they were written with (aligned comments,
+# compact calls): only the code is formatted.
+exclude = ["*.md"]
 
 [tool.mypy]
 # Non-strict type checking (DEV-2), starting with the grading facade, its configs and small helpers.

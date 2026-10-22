@@ -37,8 +37,7 @@ def test_build_exam_variant_df_keeps_correct_answer_text_and_canonical_numbering
     )
 
     expected_correct_text_by_question = {
-        row["Pregunta"]: row[f"Respuesta {row['Respuesta correcta'].upper()}"]
-        for _, row in source_df.iterrows()
+        row["Pregunta"]: row[f"Respuesta {row['Respuesta correcta'].upper()}"] for _, row in source_df.iterrows()
     }
 
     random.seed(20260518)
@@ -57,4 +56,3 @@ def test_format_question_number_is_always_two_digits():
     assert ExamGenerator._format_question_number(1) == "01"
     assert ExamGenerator._format_question_number(9) == "09"
     assert ExamGenerator._format_question_number(10) == "10"
-

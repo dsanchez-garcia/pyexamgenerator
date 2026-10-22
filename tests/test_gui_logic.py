@@ -14,10 +14,15 @@ def test_gui_logic_does_not_need_tk():
     import inspect
 
     tree = ast.parse(inspect.getsource(gui_logic))
-    imported = {alias.name.split(".")[0] for node in ast.walk(tree)
-                if isinstance(node, (ast.Import, ast.ImportFrom)) for alias in node.names}
-    imported |= {node.module.split(".")[0] for node in ast.walk(tree)
-                 if isinstance(node, ast.ImportFrom) and node.module}
+    imported = {
+        alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in node.names
+    }
+    imported |= {
+        node.module.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
+    }
     assert "tkinter" not in imported
 
 
@@ -130,7 +135,8 @@ def test_weights_cannot_be_negative():
 def test_integration_warnings_mention_overwritten_grades():
     """GRD-12: la GUI avisa cuando la nota OCR sustituye a una nota que ya existía."""
     warnings = gui_logic.integration_warnings(
-        {"blocked_unmatched": 1, "grades_overwritten": 2}, "incidencias_integracion_ocr.xlsx")
+        {"blocked_unmatched": 1, "grades_overwritten": 2}, "incidencias_integracion_ocr.xlsx"
+    )
 
     assert len(warnings) == 2
     assert "Alumno no encontrado en teoría: 1" in warnings[0]

@@ -81,9 +81,7 @@ class FinalGradeCalculator:
             last_col = self.last_name_col or find_column(columns, _LAST_CANDIDATES)
             grade_col = source.get("grade_col") or find_column(columns, _GRADE_CANDIDATES)
             if grade_col is None:
-                raise ValueError(
-                    f"No se encontró una columna de nota en '{path}'. Indique 'grade_col' explícitamente."
-                )
+                raise ValueError(f"No se encontró una columna de nota en '{path}'. Indique 'grade_col' explícitamente.")
             parsed.append(
                 {
                     "label": label,

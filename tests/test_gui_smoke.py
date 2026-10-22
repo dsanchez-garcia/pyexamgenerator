@@ -125,11 +125,15 @@ def test_config_files_of_older_versions_stay_unused_when_declined(app, tmp_path,
 
 def test_help_menu_opens_the_configuration_folder(app, monkeypatch):
     menubar = app.root.nametowidget(app.root["menu"])
-    (help_index,) = [i for i in range(menubar.index("end") + 1)
-                     if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") == "Ayuda"]
+    (help_index,) = [
+        i
+        for i in range(menubar.index("end") + 1)
+        if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") == "Ayuda"
+    ]
     help_menu = app.root.nametowidget(menubar.entrycget(help_index, "menu"))
-    labels = [help_menu.entrycget(i, "label") for i in range(help_menu.index("end") + 1)
-              if help_menu.type(i) == "command"]
+    labels = [
+        help_menu.entrycget(i, "label") for i in range(help_menu.index("end") + 1) if help_menu.type(i) == "command"
+    ]
     assert "Abrir carpeta de configuración" in labels
     opened = []
     monkeypatch.setattr(app, "_open_folder", opened.append)
@@ -297,6 +301,7 @@ def _run_in_mainloop(app, action, done=None, timeout_ms=15000):
     Worker threads talk to Tk with ``root.after``, which only works while mainloop is running.
     """
     if done is None:
+
         def done():
             return not getattr(app, "_grad_job_running", False)
 
@@ -350,28 +355,43 @@ def grading_backend(app, tmp_path, monkeypatch):
         return method
 
     summary = {"changed_cells": 0, "changed_students": 0, "added": 0, "removed": 0}
-    for name in ("grade_from_images", "grade_from_excel",
-                 "integrate_ocr_grades", "apply_theory_bonus", "compute_final_grade", "run_full_pipeline"):
+    for name in (
+        "grade_from_images",
+        "grade_from_excel",
+        "integrate_ocr_grades",
+        "apply_theory_bonus",
+        "compute_final_grade",
+        "run_full_pipeline",
+    ):
         monkeypatch.setattr(ExamCorrectionAPI, name, fake(name))
     import pandas as pd
 
-    monkeypatch.setattr(ExamCorrectionAPI, "process_absence_justifications",
-                        fake("process_absence_justifications", (pd.DataFrame(), pd.DataFrame())))
-    monkeypatch.setattr(ExamCorrectionAPI, "compare_results",
-                        fake("compare_results", SimpleNamespace(summary=summary)))
+    monkeypatch.setattr(
+        ExamCorrectionAPI,
+        "process_absence_justifications",
+        fake("process_absence_justifications", (pd.DataFrame(), pd.DataFrame())),
+    )
+    monkeypatch.setattr(ExamCorrectionAPI, "compare_results", fake("compare_results", SimpleNamespace(summary=summary)))
     monkeypatch.setattr(EnrollmentMerger, "export", lambda self, path: calls.setdefault("merged", path))
     monkeypatch.setattr(grading, "HAS_OCR", True)
     monkeypatch.setattr(app, "_open_folder", lambda path: calls.setdefault("opened", path), raising=False)
 
     out = str(tmp_path / "salida")
     for var, value in [
-        (app.grad_enrollment_var, "matricula_GIM.xlsx"), (app.grad_xmls_var, "examen_1A.xml"),
-        (app.grad_images_var, "hoja1.jpg;hoja2.jpg"), (app.grad_answers_var, "respuestas.xlsx"),
-        (app.grad_theory_var, "teoria.xlsx"), (app.grad_attendance_var, "asistencias.xlsx"),
-        (app.grad_schedule_var, "horario.xlsx"), (app.grad_justif_var, "justificaciones.xlsx"),
-        (app.grad_quizzes_var, "cuestionarios.xlsx"), (app.grad_out_var, out),
-        (app.grad_final_files_var, "notas.xlsx|1"), (app.grad_cmp_existing_var, "antes.xlsx"),
-        (app.grad_cmp_new_var, "despues.xlsx"), (app.grad_forced_var, "hoja2.jpg=1B"),
+        (app.grad_enrollment_var, "matricula_GIM.xlsx"),
+        (app.grad_xmls_var, "examen_1A.xml"),
+        (app.grad_images_var, "hoja1.jpg;hoja2.jpg"),
+        (app.grad_answers_var, "respuestas.xlsx"),
+        (app.grad_theory_var, "teoria.xlsx"),
+        (app.grad_attendance_var, "asistencias.xlsx"),
+        (app.grad_schedule_var, "horario.xlsx"),
+        (app.grad_justif_var, "justificaciones.xlsx"),
+        (app.grad_quizzes_var, "cuestionarios.xlsx"),
+        (app.grad_out_var, out),
+        (app.grad_final_files_var, "notas.xlsx|1"),
+        (app.grad_cmp_existing_var, "antes.xlsx"),
+        (app.grad_cmp_new_var, "despues.xlsx"),
+        (app.grad_forced_var, "hoja2.jpg=1B"),
     ]:
         var.set(value)
     return SimpleNamespace(calls=calls, reads_outside_main_thread=reads_outside_main_thread, out=out)
@@ -503,8 +523,13 @@ def test_rejected_gemini_request_is_shown_with_its_own_title(app, monkeypatch, t
 
     _run_in_mainloop(app, app.generate_questions, done=lambda: bool(app.shown_messages))
 
-    assert app.shown_messages == [("error", "Error de la API de Gemini",
-                                   "El modelo 'models/viejo' no existe o ya no está disponible (Error 404).")]
+    assert app.shown_messages == [
+        (
+            "error",
+            "Error de la API de Gemini",
+            "El modelo 'models/viejo' no existe o ya no está disponible (Error 404).",
+        )
+    ]
     assert str(app.generate_questions_button.cget("state")) == "normal"
 
 
@@ -523,16 +548,21 @@ def test_model_list_is_loaded_in_the_background(app, monkeypatch):
         def list(self):
             seen["thread"] = threading.current_thread()
             return [
-                SimpleNamespace(name="models/gemini-de-prueba", display_name="Gemini de prueba", version="1",
-                                input_token_limit=1000, output_token_limit=100, description="Línea 1\nLínea 2"),
+                SimpleNamespace(
+                    name="models/gemini-de-prueba",
+                    display_name="Gemini de prueba",
+                    version="1",
+                    input_token_limit=1000,
+                    output_token_limit=100,
+                    description="Línea 1\nLínea 2",
+                ),
                 SimpleNamespace(name="models/otro-modelo"),
             ]
 
     monkeypatch.setattr(main_app.genai, "Client", FakeClient)
     app.api_key_var.set("clave-de-prueba")
 
-    _run_in_mainloop(app, app.populate_models_table,
-                     done=lambda: str(app.load_models_button.cget("state")) == "normal")
+    _run_in_mainloop(app, app.populate_models_table, done=lambda: str(app.load_models_button.cget("state")) == "normal")
 
     assert seen["thread"] is not threading.main_thread()
     rows = [app.models_tree.item(item, "values") for item in app.models_tree.get_children()]
@@ -624,7 +654,9 @@ def test_topics_load_although_a_question_has_no_topic(app, tmp_path):
     import pandas as pd
 
     bank = tmp_path / "banco.xlsx"
-    pd.DataFrame({"Pregunta": ["p1", "p2", "p3", "p4"], "Tema": ["Tema 02", None, "Tema 01", 3]}).to_excel(bank, index=False)
+    pd.DataFrame({"Pregunta": ["p1", "p2", "p3", "p4"], "Tema": ["Tema 02", None, "Tema 01", 3]}).to_excel(
+        bank, index=False
+    )
     app.excel_filepath.set(str(bank))
 
     app.load_themes_for_selection()
@@ -654,10 +686,17 @@ def test_bank_problems_when_loading_topics_are_shown(app, tmp_path, problem):
 def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch):
     """ARC-2: guardar y cargar repetían a mano la lista de campos; un campo nuevo podía quedarse fuera."""
     values = [
-        (app.subject, "Física"), (app.num_exams, "3"), (app.penalty, "-1/3"), (app.font_size, "12"),
-        (app.export_moodle, True), (app.usage_alert_threshold_var, "4"),
-        (app.grad_enrollment_var, "matricula.xlsx"), (app.grad_quizzes_var, "cuestionarios.xlsx"),
-        (app.grad_cmp_new_var, "nuevo.xlsx"), (app.grad_id_col_var, "DNI"), (app.grad_append_unmatched_var, False),
+        (app.subject, "Física"),
+        (app.num_exams, "3"),
+        (app.penalty, "-1/3"),
+        (app.font_size, "12"),
+        (app.export_moodle, True),
+        (app.usage_alert_threshold_var, "4"),
+        (app.grad_enrollment_var, "matricula.xlsx"),
+        (app.grad_quizzes_var, "cuestionarios.xlsx"),
+        (app.grad_cmp_new_var, "nuevo.xlsx"),
+        (app.grad_id_col_var, "DNI"),
+        (app.grad_append_unmatched_var, False),
     ]
     for var, value in values:
         var.set(value)
@@ -679,8 +718,14 @@ def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch
 def test_exam_tab_starts_without_sample_values(app):
     """GUI-10: «Asignatura de Prueba», «Prueba GUI»... venían rellenos y acababan en exámenes reales
     (p. ej. «Prueba GUI» como instrucciones de la hoja de respuestas y en la categoría de Moodle)."""
-    for var in (app.excel_filepath, app.subject, app.exam_name, app.course,
-                app.answer_sheet_instructions, app.xml_cat_additional_text):
+    for var in (
+        app.excel_filepath,
+        app.subject,
+        app.exam_name,
+        app.course,
+        app.answer_sheet_instructions,
+        app.xml_cat_additional_text,
+    ):
         assert var.get() == ""
     assert app.output_filename_var.get() == "preguntas"
 
@@ -739,6 +784,6 @@ def test_exams_generated_without_updating_the_bank_show_a_warning(app, monkeypat
 
     _run_in_mainloop(app, app.generate_exams, done=lambda: bool(app.shown_messages))
 
-    (kind, title, message), = app.shown_messages
+    ((kind, title, message),) = app.shown_messages
     assert (kind, title) == ("warning", "Banco sin actualizar")
     assert "abierto en Excel" in message and "Actualizar Banco con Exámenes" in message

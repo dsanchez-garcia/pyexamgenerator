@@ -86,8 +86,17 @@ def test_review_docx_round_trip(tmp_path):
 
     df = QuestionBankManager().read_questions_from_docx(docx_path)
 
-    columns = ["Tema", "Estado", "Pregunta", "Respuesta A", "Respuesta B", "Respuesta C",
-               "Respuesta D", "Respuesta correcta", "Texto relevante"]
+    columns = [
+        "Tema",
+        "Estado",
+        "Pregunta",
+        "Respuesta A",
+        "Respuesta B",
+        "Respuesta C",
+        "Respuesta D",
+        "Respuesta correcta",
+        "Texto relevante",
+    ]
     assert df[columns].to_dict("records") == original[columns].to_dict("records")
 
 

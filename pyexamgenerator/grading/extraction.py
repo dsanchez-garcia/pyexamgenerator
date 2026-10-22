@@ -161,7 +161,9 @@ class AnswerSheetExtractor:
         ``(result, elapse)`` tuple where each item is already ``[points, text, conf]``.
         """
         if self._ocr_backend == "new":
-            image_bgr = image_gray if getattr(image_gray, "ndim", 2) == 3 else cv2.cvtColor(image_gray, cv2.COLOR_GRAY2BGR)
+            image_bgr = (
+                image_gray if getattr(image_gray, "ndim", 2) == 3 else cv2.cvtColor(image_gray, cv2.COLOR_GRAY2BGR)
+            )
             out = self.ocr(image_bgr)
             if out is None or out.boxes is None:
                 return []
@@ -257,8 +259,7 @@ class AnswerSheetExtractor:
             if t.cx > label.cx + 20
             and abs(t.cy - label.cy) <= y_tol
             and len(self._normalize(t.text)) >= 2
-            and self._normalize(t.text)
-            not in {"apellidos", "apellido", "nombre", "dninie", "firma", "datosdelalumno"}
+            and self._normalize(t.text) not in {"apellidos", "apellido", "nombre", "dninie", "firma", "datosdelalumno"}
         ]
         if not value_candidates:
             return None
@@ -505,7 +506,9 @@ class AnswerSheetExtractor:
         debug_cells: List[DebugCell] = []
         decision_by_question: Dict[str, str] = {}
 
-        def score_letters_for_y(y_center: int, letters: Sequence[str]) -> List[Tuple[str, float, Tuple[int, int, int, int]]]:
+        def score_letters_for_y(
+            y_center: int, letters: Sequence[str]
+        ) -> List[Tuple[str, float, Tuple[int, int, int, int]]]:
             scored: List[Tuple[str, float, Tuple[int, int, int, int]]] = []
             for letter in letters:
                 x = int(option_x[letter])
@@ -600,7 +603,9 @@ class AnswerSheetExtractor:
             thickness = 2 if cell.selected else 1
             cv2.rectangle(image_color, (x0, y0), (x1, y1), color, thickness)
             label = f"{cell.question_num:02d}-{cell.letter}:{cell.score:.2f}"
-            cv2.putText(image_color, label, (x0, max(12, y0 - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA)
+            cv2.putText(
+                image_color, label, (x0, max(12, y0 - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA
+            )
 
         stem = Path(image_path).stem
         out_path = Path(self.debug_dir) / f"{stem}_debug.png"
@@ -782,9 +787,7 @@ def _ask_exam_type_in_console(image_name: str, available_types: Sequence[str], s
     options = ", ".join(available_types)
     prompt = (
         f"Exam type not detected for '{image_name}'. "
-        f"Options [{options}]"
-        + (f" (suggested: {suggestion})" if suggestion else "")
-        + ": "
+        f"Options [{options}]" + (f" (suggested: {suggestion})" if suggestion else "") + ": "
     )
     while True:
         selected = input(prompt).strip().upper()
@@ -798,10 +801,9 @@ def _ask_exam_type_in_console(image_name: str, available_types: Sequence[str], s
 def _ask_review_in_console(image_path: str, question: str, current: str, suggested: str, margin: float) -> str:
     """Default ``review_callback`` from a terminal: asks until a valid answer (Enter keeps it)."""
     while True:
-        answer = input(
-            f"{question} | current={current} | suggested={suggested} "
-            f"(margin={margin:.3f}) -> "
-        ).strip().lower()
+        answer = (
+            input(f"{question} | current={current} | suggested={suggested} (margin={margin:.3f}) -> ").strip().lower()
+        )
         if answer == "":
             return current
         if answer in _REVIEW_ANSWERS:
@@ -962,8 +964,7 @@ class ImageExamGrader:
         out: Dict[str, Dict[str, QuestionInfo]] = {}
         for exam_type, questions in raw.items():
             out[exam_type] = {
-                q_name: QuestionInfo(name=q_name, answers=answer_map)
-                for q_name, answer_map in questions.items()
+                q_name: QuestionInfo(name=q_name, answers=answer_map) for q_name, answer_map in questions.items()
             }
         return out
 
@@ -1007,8 +1008,7 @@ class ImageExamGrader:
                 return only_type
 
         not_determined = (
-            f"Could not determine exam type for {image_name}. "
-            f"Available types: {', '.join(self.available_exam_types)}"
+            f"Could not determine exam type for {image_name}. Available types: {', '.join(self.available_exam_types)}"
         )
         if exam_type_callback is None:
             # Never block on input() without an interactive terminal (GUI, notebooks, CI).
@@ -1389,7 +1389,9 @@ class ImageExamGrader:
         manual_changes: List[Dict[str, object]] = []
         if interactive_review:
             _updated, manual_changes = self._run_interactive_review(
-                sheet_results, open_image_on_review=open_image_on_review, review_callback=review_callback,
+                sheet_results,
+                open_image_on_review=open_image_on_review,
+                review_callback=review_callback,
             )
 
         answers_df = results_to_dataframe(sheet_results)
@@ -1516,7 +1518,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("images", nargs="+", help="JPG/PNG answer sheet images")
     parser.add_argument("--xmls", nargs="+", required=True, help="Available XML templates (e.g. 2A, 2B)")
     parser.add_argument("--enrollment", default=None, help="Enrollment Excel")
-    parser.add_argument("--enrollment-list", nargs="+", default=None, help="Optional list of enrollment Excels to merge")
+    parser.add_argument(
+        "--enrollment-list", nargs="+", default=None, help="Optional list of enrollment Excels to merge"
+    )
     parser.add_argument("--output-answers", default="respuestas_alumnos_paso1_desde_imagenes.xlsx")
     parser.add_argument("--output-grades", default="calificaciones_desde_imagenes.xlsx")
     parser.add_argument("--output-audit", default=None)
@@ -1524,7 +1528,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-review", default=None)
     parser.add_argument("--output-manual-changes", default=None)
     parser.add_argument("--interactive-review", action="store_true", help="Ask the user to confirm doubtful answers")
-    parser.add_argument("--no-open-image", action="store_true", help="Do not auto-open the image during interactive review")
+    parser.add_argument(
+        "--no-open-image", action="store_true", help="Do not auto-open the image during interactive review"
+    )
     parser.add_argument("--output-dir", default=None, help="Directory where all outputs are generated")
     parser.add_argument("--debug-dir", default=None)
     parser.add_argument(
@@ -1608,4 +1614,3 @@ CorrectorExamenesDesdeImagenes = ImageExamGrader
 
 if __name__ == "__main__":
     main()
-

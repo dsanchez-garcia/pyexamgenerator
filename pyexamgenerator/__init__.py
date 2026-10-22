@@ -9,7 +9,10 @@ __version__ = "0.3.0"  # 0.3.0: integración del subpaquete de corrección `grad
 
 from .exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from .question_generator import (
-    QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
+    QuestionGenerator,
+    QuotaExceededError,
+    ServiceOverloadedError,
+    GeminiRequestError,
 )
 from .question_bank_manager import QuestionBankManager
 

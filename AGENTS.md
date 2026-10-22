@@ -37,8 +37,9 @@ venv/Scripts/python.exe -m pytest -q
 venv/Scripts/python.exe -m pytest tests/test_grading_unit.py -q
 venv/Scripts/python.exe -m pytest -q -k "unify"
 
-# Lint y tipos (configuración en pyproject.toml; la CI exige ambos)
+# Lint, formato y tipos (configuración en pyproject.toml; la CI exige los tres)
 venv/Scripts/python.exe -m ruff check .
+venv/Scripts/python.exe -m ruff format .
 venv/Scripts/python.exe -m mypy
 
 # Comprobar que el paquete se importa
@@ -51,9 +52,9 @@ venv/Scripts/python.exe -m pyexamgenerator.main_app
 En Linux/macOS sustituye `venv/Scripts/python.exe` por `venv/bin/python`. Instalación de un entorno
 nuevo: ver `docs/dev/DEVELOPMENT.md`.
 
-`ruff check .` debe pasar (de momento solo las reglas `F` de pyflakes; `pre-commit install` lo
-ejecuta en cada commit). Aún no se aplica formateador (`ruff format` irá en un cambio aparte): no
-reformatees ficheros enteros; limita el diff a lo que cambias.
+`ruff check .` debe pasar (de momento solo las reglas `F` de pyflakes) y el código está formateado
+con `ruff format` (línea de 120, comillas tal como estén; los Markdown se excluyen): ejecútalo antes
+de hacer commit. `pre-commit install` hace las dos cosas en cada commit y la CI las comprueba.
 
 ## Mapa del repositorio
 

@@ -68,8 +68,16 @@ class ResultComparator:
 
     def _resolve_keys(self, columns: Sequence[str]):
         id_col = self.id_col if (self.id_col and self.id_col in columns) else find_column(columns, _ID_CANDIDATES)
-        first_col = self.first_name_col if (self.first_name_col and self.first_name_col in columns) else find_column(columns, _FIRST_CANDIDATES)
-        last_col = self.last_name_col if (self.last_name_col and self.last_name_col in columns) else find_column(columns, _LAST_CANDIDATES)
+        first_col = (
+            self.first_name_col
+            if (self.first_name_col and self.first_name_col in columns)
+            else find_column(columns, _FIRST_CANDIDATES)
+        )
+        last_col = (
+            self.last_name_col
+            if (self.last_name_col and self.last_name_col in columns)
+            else find_column(columns, _LAST_CANDIDATES)
+        )
         return id_col, first_col, last_col
 
     @staticmethod
@@ -115,13 +123,25 @@ class ResultComparator:
         e_id, e_first, e_last = self._resolve_keys(existing_cols)
         n_id, n_first, n_last = self._resolve_keys(new_cols)
 
-        identity_cols = set(filter(None, [
-            e_id, e_first, e_last, find_column(existing_cols, _EMAIL_CANDIDATES),
-        ]))
+        identity_cols = set(
+            filter(
+                None,
+                [
+                    e_id,
+                    e_first,
+                    e_last,
+                    find_column(existing_cols, _EMAIL_CANDIDATES),
+                ],
+            )
+        )
         if value_cols:
             resolved_value_cols = []
             for col in value_cols:
-                actual = col if col in existing.columns or col in new.columns else find_column(existing_cols, [col]) or find_column(new_cols, [col])
+                actual = (
+                    col
+                    if col in existing.columns or col in new.columns
+                    else find_column(existing_cols, [col]) or find_column(new_cols, [col])
+                )
                 if actual:
                     resolved_value_cols.append(actual)
             value_columns = resolved_value_cols
@@ -157,11 +177,13 @@ class ResultComparator:
                 if _values_differ(old_value, new_value):
                     changed_students.add(key)
                     record = self._identity_fields(existing_row, e_id, e_first, e_last)
-                    record.update({
-                        "Columna": col,
-                        "Valor_Anterior": clean_text(old_value),
-                        "Valor_Nuevo": clean_text(new_value),
-                    })
+                    record.update(
+                        {
+                            "Columna": col,
+                            "Valor_Anterior": clean_text(old_value),
+                            "Valor_Nuevo": clean_text(new_value),
+                        }
+                    )
                     changes.append(record)
 
         changes_df = pd.DataFrame(
@@ -212,9 +234,13 @@ class ResultComparator:
         """Writes the comparison (changes / only-existing / only-new) to a multi-sheet XLSX."""
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with pd.ExcelWriter(output_path) as writer:
-            (result.changes_df if not result.changes_df.empty
-             else pd.DataFrame(columns=["Número de ID", "Nombre", "Apellido(s)", "Columna", "Valor_Anterior", "Valor_Nuevo"])
-             ).to_excel(writer, sheet_name="Cambios", index=False)
+            (
+                result.changes_df
+                if not result.changes_df.empty
+                else pd.DataFrame(
+                    columns=["Número de ID", "Nombre", "Apellido(s)", "Columna", "Valor_Anterior", "Valor_Nuevo"]
+                )
+            ).to_excel(writer, sheet_name="Cambios", index=False)
             result.only_in_existing_df.to_excel(writer, sheet_name="Solo_en_existente", index=False)
             result.only_in_new_df.to_excel(writer, sheet_name="Solo_en_nuevo", index=False)
         return output_path

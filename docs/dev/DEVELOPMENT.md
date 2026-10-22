@@ -28,13 +28,17 @@ venv/Scripts/python.exe -m pytest tests/test_bank_usage.py -q
 venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
 venv/Scripts/python.exe -m tox                            # matriz py310 / py314 (tox.ini)
 venv/Scripts/python.exe -m ruff check .                   # lint (reglas en pyproject.toml)
+venv/Scripts/python.exe -m ruff format .                  # formato (comillas tal como estén)
 venv/Scripts/python.exe -m mypy                           # tipos (módulos en [tool.mypy])
 ```
 
-La CI también ejecuta `ruff check` (de momento solo las reglas `F` de pyflakes) y `mypy` en modo no
-estricto sobre los módulos listados en `[tool.mypy]` de `pyproject.toml` (añade ahí los que tipes).
-Para comprobar el lint en cada commit: `venv/Scripts/pre-commit.exe install` (configuración en
-`.pre-commit-config.yaml`).
+La CI también ejecuta `ruff check` (de momento solo las reglas `F` de pyflakes), `ruff format
+--check` y `mypy` en modo no estricto sobre los módulos listados en `[tool.mypy]` de `pyproject.toml`
+(añade ahí los que tipes). Para revisar y formatear en cada commit:
+`venv/Scripts/pre-commit.exe install` (configuración en `.pre-commit-config.yaml`).
+
+El commit que formateó todo el código está en `.git-blame-ignore-revs`: GitHub lo salta en la vista
+*blame*; en local, `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
 Estado a 2026-10-22: 234 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
 pruebas de la GUI, que necesitan pantalla). La CI (`.github/workflows/tests.yml`) repite la suite en

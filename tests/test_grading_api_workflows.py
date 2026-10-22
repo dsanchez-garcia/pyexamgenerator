@@ -72,8 +72,13 @@ def test_compare_in_place_keeps_a_backup_and_blank_cells(tmp_path):
 
     api = ExamCorrectionAPI()
     api.compare_results(
-        ComparisonConfig(existing_path=existing, new_path=new, overwrite=True, merged_in_place=True,
-                         report_output_path=str(tmp_path / "comparacion.xlsx"))
+        ComparisonConfig(
+            existing_path=existing,
+            new_path=new,
+            overwrite=True,
+            merged_in_place=True,
+            report_output_path=str(tmp_path / "comparacion.xlsx"),
+        )
     )
 
     merged = pd.read_excel(existing).set_index("Número de ID")
@@ -89,10 +94,14 @@ def test_compare_in_place_keeps_a_backup_and_blank_cells(tmp_path):
 def test_final_grade_with_two_files_with_the_same_name(tmp_path):
     """GRD-16: dos ficheros con el mismo nombre en carpetas distintas compartían etiqueta y la nota
     del segundo se contaba dos veces."""
-    first = _write(tmp_path / "parcial1" / "notas.xlsx",
-                   [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Nota": 4.0}])
-    second = _write(tmp_path / "parcial2" / "notas.xlsx",
-                    [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Nota": 8.0}])
+    first = _write(
+        tmp_path / "parcial1" / "notas.xlsx",
+        [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Nota": 4.0}],
+    )
+    second = _write(
+        tmp_path / "parcial2" / "notas.xlsx",
+        [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Nota": 8.0}],
+    )
 
     df = FinalGradeCalculator().compute_by_files(
         [{"path": first, "weight": 1.0, "grade_col": "Nota"}, {"path": second, "weight": 1.0, "grade_col": "Nota"}]
@@ -106,8 +115,10 @@ def test_final_grade_with_two_files_with_the_same_name(tmp_path):
 
 def test_enrollment_merge_is_recorded_in_the_session(tmp_path):
     """GRD-17: varios flujos (matrícula, OCR, PIR, informes por tema) no quedaban en la sesión."""
-    source = _write(tmp_path / "matricula_GIM.xlsx",
-                    [{"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "1", "Consulta": "P1"}])
+    source = _write(
+        tmp_path / "matricula_GIM.xlsx",
+        [{"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "1", "Consulta": "P1"}],
+    )
 
     api = ExamCorrectionAPI()
     api.merge_enrollment_sources(EnrollmentMergeConfig(source_paths=[source], output_dir=str(tmp_path / "out")))
@@ -125,12 +136,21 @@ class _FakeImageExamGrader:
         assert Path(enrollment_path).exists()  # the merged roster is written before the OCR step
         self.kwargs = kwargs
 
-    def grade_from_images(self, image_paths, output_answers, output_grades, output_dir=None,
-                          output_incidents=None, **kwargs):
+    def grade_from_images(
+        self, image_paths, output_answers, output_grades, output_dir=None, output_incidents=None, **kwargs
+    ):
         out = Path(output_dir)
         grades = pd.DataFrame(
-            [{"Imagen": "hoja1.jpg", "Tipo_Examen": "1A", "Apellido(s)": "Gil", "Nombre": "Ana",
-              "Número de ID": "11111111", "Calificacion/10,00": "6,00"}]
+            [
+                {
+                    "Imagen": "hoja1.jpg",
+                    "Tipo_Examen": "1A",
+                    "Apellido(s)": "Gil",
+                    "Nombre": "Ana",
+                    "Número de ID": "11111111",
+                    "Calificacion/10,00": "6,00",
+                }
+            ]
         )
         grades.to_excel(out / output_grades, index=False)
         pd.DataFrame({"Imagen": list(image_paths)}).to_excel(out / output_answers, index=False)
@@ -143,10 +163,20 @@ class _FakeImageExamGrader:
 def _attendance_quiz():
     return pd.DataFrame(
         [
-            {"ID_Alumno": "11111111", "Nombre": "Ana", "Apellido(s)": "Gil",
-             "Tiene_Punto_Adicional_Teoria": "si", "Motivo_No_Punto": ""},
-            {"ID_Alumno": "22222222", "Nombre": "Leo", "Apellido(s)": "Ruiz",
-             "Tiene_Punto_Adicional_Teoria": "no", "Motivo_No_Punto": "faltas"},
+            {
+                "ID_Alumno": "11111111",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Tiene_Punto_Adicional_Teoria": "si",
+                "Motivo_No_Punto": "",
+            },
+            {
+                "ID_Alumno": "22222222",
+                "Nombre": "Leo",
+                "Apellido(s)": "Ruiz",
+                "Tiene_Punto_Adicional_Teoria": "no",
+                "Motivo_No_Punto": "faltas",
+            },
         ]
     )
 
@@ -170,16 +200,28 @@ def full_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr("pyexamgenerator.grading.attendance.AbsenceJustificationManager", FakeJustificationManager)
 
     people = [("Gil", "Ana", "11111111"), ("Ruiz", "Leo", "22222222")]
-    enrollment = _write(tmp_path / "entrada" / "matricula_GIM.xlsx",
-                        [{"Apellido(s)": a, "Nombre": n, "Número de ID": i, "Consulta": "P1"} for a, n, i in people])
-    theory = _write(tmp_path / "entrada" / "teoria.xlsx",
-                    [{"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "11111111", "Calificación/10,00": "-"},
-                     {"Apellido(s)": "Ruiz", "Nombre": "Leo", "Número de ID": "22222222", "Calificación/10,00": "5,50"}])
+    enrollment = _write(
+        tmp_path / "entrada" / "matricula_GIM.xlsx",
+        [{"Apellido(s)": a, "Nombre": n, "Número de ID": i, "Consulta": "P1"} for a, n, i in people],
+    )
+    theory = _write(
+        tmp_path / "entrada" / "teoria.xlsx",
+        [
+            {"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "11111111", "Calificación/10,00": "-"},
+            {"Apellido(s)": "Ruiz", "Nombre": "Leo", "Número de ID": "22222222", "Calificación/10,00": "5,50"},
+        ],
+    )
     cfg = FullPipelineConfig(
-        enrollment_paths=[enrollment], xml_paths=["examen_1A.xml"], image_paths=["hoja1.jpg", "hoja2.jpg"],
-        theory_xlsx_path=theory, attendance_xlsx_path="asistencias.xlsx", schedule_xlsx_path="horario.xlsx",
-        justifications_xlsx_path="justificaciones.xlsx", quizzes_xlsx_path="cuestionarios.xlsx",
-        output_dir=str(tmp_path / "salida"), attendance_header_row=4,
+        enrollment_paths=[enrollment],
+        xml_paths=["examen_1A.xml"],
+        image_paths=["hoja1.jpg", "hoja2.jpg"],
+        theory_xlsx_path=theory,
+        attendance_xlsx_path="asistencias.xlsx",
+        schedule_xlsx_path="horario.xlsx",
+        justifications_xlsx_path="justificaciones.xlsx",
+        quizzes_xlsx_path="cuestionarios.xlsx",
+        output_dir=str(tmp_path / "salida"),
+        attendance_header_row=4,
     )
     return SimpleNamespace(cfg=cfg, out=tmp_path / "salida", state=state)
 
@@ -203,8 +245,13 @@ def test_full_pipeline_writes_only_the_final_tables(full_pipeline):
     assert list(theory_df["Nota_Final_Teoria"]) == list(final.reset_index()["Nota_Final_Teoria"])
     assert len(api.results["ocr_incidents"]) == 1
     assert full_pipeline.state["justification_kwargs"]["attendance_header_row"] == 4
-    assert steps == ["Fusionando matriculados…", "OCR de hojas (puede tardar)…", "Integrando notas OCR en teoría…",
-                     "Asistencias y cuestionarios…", "Aplicando punto extra…"]
+    assert steps == [
+        "Fusionando matriculados…",
+        "OCR de hojas (puede tardar)…",
+        "Integrando notas OCR en teoría…",
+        "Asistencias y cuestionarios…",
+        "Aplicando punto extra…",
+    ]
     entry = api.session.results_summary["run_full_pipeline"]
     assert entry["rows"] == 2 and entry["ocr_incidents"] == 1
     assert entry["outputs"]["theory_grades"] == str(out / "calificaciones_examen_teoria.xlsx")
@@ -235,8 +282,13 @@ def test_full_pipeline_can_keep_the_intermediate_files(full_pipeline):
 
 
 def _moodle_file(path, rows):
-    return _write(path, [{"Número de ID": student_id, "Nombre": first, "Apellido(s)": last,
-                          "Calificación/10,00": grade} for student_id, first, last, grade in rows])
+    return _write(
+        path,
+        [
+            {"Número de ID": student_id, "Nombre": first, "Apellido(s)": last, "Calificación/10,00": grade}
+            for student_id, first, last, grade in rows
+        ],
+    )
 
 
 class _CountingPandas:
@@ -268,19 +320,23 @@ def test_facade_reads_the_inputs_again_only_to_export_steps(tmp_path, monkeypatc
     api.merge_enrollment_sources(EnrollmentMergeConfig(source_paths=[first, second]))
     assert counting.read_excel_calls == []
 
-    api.integrate_moodle_grades(MoodleIntegrationConfig(xlsx_files=[first, second]),
-                                export_steps_dir=str(tmp_path / "pasos"))
+    api.integrate_moodle_grades(
+        MoodleIntegrationConfig(xlsx_files=[first, second]), export_steps_dir=str(tmp_path / "pasos")
+    )
     assert counting.read_excel_calls == [first, second]
 
 
 def test_moodle_integration_accepts_a_generator_of_files(tmp_path):
     """GRD-13: `xlsx_files` se recorría dos veces; con un generador, la segunda vez estaba vacío."""
-    files = [_moodle_file(tmp_path / "moodle_GIM.xlsx", [("111", "Ana", "Gil", "5,00")]),
-             _moodle_file(tmp_path / "moodle_GITI.xlsx", [("222", "Leo", "Ruiz", "6,00")])]
+    files = [
+        _moodle_file(tmp_path / "moodle_GIM.xlsx", [("111", "Ana", "Gil", "5,00")]),
+        _moodle_file(tmp_path / "moodle_GITI.xlsx", [("222", "Leo", "Ruiz", "6,00")]),
+    ]
     api = ExamCorrectionAPI(default_output_dir=str(tmp_path / "salida"))
 
-    df = api.integrate_moodle_grades(MoodleIntegrationConfig(xlsx_files=(path for path in files)),
-                                     export_steps_dir=str(tmp_path / "pasos"))
+    df = api.integrate_moodle_grades(
+        MoodleIntegrationConfig(xlsx_files=(path for path in files)), export_steps_dir=str(tmp_path / "pasos")
+    )
 
     assert sorted(df["Nombre"]) == ["Ana", "Leo"]
     assert api.session.workflow_configs["integrate_moodle_grades"]["xlsx_files"] == files
@@ -290,15 +346,19 @@ def test_explicit_absolute_output_paths_are_respected(tmp_path):
     """GRD-14: una ruta de salida absoluta acababa en la carpeta de salida por defecto (fachada y
     clases de trabajo)."""
     moodle = _moodle_file(tmp_path / "entrada" / "moodle.xlsx", [("111", "Ana", "Gil", "5,00")])
-    ocr = _write(tmp_path / "entrada" / "ocr.xlsx",
-                 [{"Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificacion/10,00": "5,00"}])
+    ocr = _write(
+        tmp_path / "entrada" / "ocr.xlsx",
+        [{"Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificacion/10,00": "5,00"}],
+    )
     elsewhere = tmp_path / "otra" / "carpeta"
     api = ExamCorrectionAPI(default_output_dir=str(tmp_path / "salida"))
 
-    api.integrate_moodle_grades(MoodleIntegrationConfig(xlsx_files=[moodle],
-                                                        output_path=str(elsewhere / "moodle_integrado.xlsx")))
-    api.integrate_ocr_grades(OCRIntegrationConfig(general_xlsx_path=moodle, ocr_xlsx_path=ocr,
-                                                  output_path=str(elsewhere / "teoria.xlsx")))
+    api.integrate_moodle_grades(
+        MoodleIntegrationConfig(xlsx_files=[moodle], output_path=str(elsewhere / "moodle_integrado.xlsx"))
+    )
+    api.integrate_ocr_grades(
+        OCRIntegrationConfig(general_xlsx_path=moodle, ocr_xlsx_path=ocr, output_path=str(elsewhere / "teoria.xlsx"))
+    )
     api.merge_enrollment_sources(EnrollmentMergeConfig(source_paths=[moodle], output_path="matricula.xlsx"))
 
     assert sorted(p.name for p in elsewhere.iterdir()) == ["moodle_integrado.xlsx", "teoria.xlsx"]
@@ -322,8 +382,9 @@ def test_session_leaves_out_config_callbacks():
         def review(self, *args):
             return None
 
-    cfg = ImageGradingConfig(xml_paths=["examen_1A.xml"], image_paths=["hoja.jpg"], enrollment_path=None,
-                             review_callback=Window().review)
+    cfg = ImageGradingConfig(
+        xml_paths=["examen_1A.xml"], image_paths=["hoja.jpg"], enrollment_path=None, review_callback=Window().review
+    )
     session = GradingSession()
 
     session.record_workflow("grade_from_images", config=cfg)
