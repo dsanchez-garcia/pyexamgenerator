@@ -178,6 +178,10 @@ búscalas por nombre de función si no coinciden.
   (`gui/question_tab.py`, `gui/bank_tab.py`, `gui/exam_tab.py`, `gui/grading_tab.py`) y extraer la
   lógica pura a `gui_logic.py` testeable (parsers de pesos, penalización, preguntas por tema,
   mapeos de plantilla/sesión, constructor de avisos OCR).
+  *Parcial (`3694d52`): `pyexamgenerator/gui_logic.py` (sin tkinter) con los parsers de los campos
+  y los avisos de la integración OCR; los mapeos de plantilla/sesión quedan en `ExamApp` porque
+  enlazan variables Tk (`0375766`). Falta dividir `main_app.py` por pestañas (conviene acordar
+  antes la estructura del subpaquete `gui/`).*
 - [x] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
   *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*
@@ -208,11 +212,13 @@ búscalas por nombre de función si no coinciden.
   terminal, en `_console.py`).
 - [ ] **ARC-8 (P2)** 134 `print()` y 0 usos de `logging`. Introducir `logging.getLogger(__name__)` en
   la librería; la GUI puede añadir un handler.
-- [ ] **ARC-9 (P2)** ~34 `except Exception`/`except:` que tragan errores (p. ej.
+- [x] **ARC-9 (P2)** ~34 `except Exception`/`except:` que tragan errores (p. ej.
   `exam_generator.py:436,1236`). Revisar uno a uno.
   *Parcial (`9d9fb12`): revisados los de la librería; corregidos los que daban resultados
   incorrectos en silencio (banco ilegible, uso no registrado, banco de duplicados ilegible). Quedan
   los de `main_app.py` (casi todos informan al usuario) y pasar los `print` a `logging` (ARC-8).*
+  — hecho en `ac8e865` (los de `main_app.py`: solo la lista de temas se tragaba los errores; pasar
+  los `print` a `logging` sigue en ARC-8).
 - [ ] **ARC-10 (P2)** Valores institucionales fijos en código (grupos `GIM`, `GITI-GIE-GIEI`, regla
   PIR, temas `LPRL`/`RSP`, columnas mojibake `"Nmero de ID"`). Moverlos a configuración.
 - [x] **ARC-11 (P2)** `QuestionGenerator`: errores de cuota/sobrecarga detectados por subcadena
@@ -286,11 +292,12 @@ búscalas por nombre de función si no coinciden.
   `0ab8970`), y `AbsenceJustificationManager.analyze` completo con `export_steps_dir` y
   `manifest.json` (`5410d6b`). Falta un fixture sintético de hoja de respuestas para el OCR.*
   — hecho en `ed07b5b` (hojas PNG sintéticas con un RapidOCR simulado, de la imagen a la nota).
-- [ ] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
+- [x] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
   *Parcial: `tests/test_gui_smoke.py` construye la ventana real (Windows y Linux con xvfb) y prueba
   prompts, clave de API, lista de ficheros, errores de entrada, la tarea única de corrección, las
   tareas en segundo plano, las lecturas desde hilos, la rueda del ratón y los tooltips. Falta
-  extraer `gui_logic.py`.*
+  extraer `gui_logic.py`.* — hecho en `3694d52` y `23d4b3b` (`tests/test_gui_logic.py`, sin
+  pantalla).
 - [x] **TST-6 (P3)** Añadir configuración de pytest (`testpaths = tests`, marcadores `ocr` e
   `integration`, `filterwarnings`). — hecho en `63e1da2`.
 - [x] **TST-7 (P3)** Renombrar `test_v023_features.py` / `test_v030_features.py` por funcionalidad

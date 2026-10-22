@@ -22,6 +22,7 @@ import pandas as pd
 from pyexamgenerator.question_generator import (
     QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
 )
+from pyexamgenerator import gui_logic
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
@@ -952,44 +953,6 @@ class ExamApp:
         return merged
 
     @staticmethod
-    def _grad_integration_warnings(summary: Any, incidents_path: str) -> List[str]:
-        """Warnings for the summary of an OCR integration (summary rows removed, blocked OCR rows)."""
-        if not isinstance(summary, dict):
-            return []
-        warning_msgs: List[str] = []
-        removed_summary_rows = int(summary.get("general_summary_rows_removed", 0) or 0)
-        if removed_summary_rows > 0:
-            warning_msgs.append(
-                "Se eliminaron automáticamente "
-                f"{removed_summary_rows} fila(s) de promedio/resumen "
-                "en las notas de teoría antes de integrar OCR."
-            )
-        blocked = [
-            ("blocked_missing_identity", "Sin identidad (ID o nombre+apellidos)"),
-            ("blocked_unmatched", "Alumno no encontrado en teoría"),
-            ("blocked_missing_target", "Sin columna destino en teoría"),
-            ("blocked_missing_grade", "Sin nota OCR válida"),
-        ]
-        parts = [
-            f"- {label}: {int(summary.get(key, 0) or 0)}"
-            for key, label in blocked if int(summary.get(key, 0) or 0) > 0
-        ]
-        if parts:
-            warning_msgs.append(
-                "Durante la integración se bloquearon filas OCR:\n"
-                + "\n".join(parts)
-                + f"\nRevisa: {incidents_path}"
-            )
-        overwritten = int(summary.get("grades_overwritten", 0) or 0)
-        if overwritten > 0:
-            warning_msgs.append(
-                f"La nota OCR sustituyó a una nota distinta que ya había en teoría en {overwritten} alumno(s); "
-                "comprueba que cada hoja es de ese alumno.\n"
-                f"Revisa: {incidents_path}"
-            )
-        return warning_msgs
-
-    @staticmethod
     def _open_folder(path: str) -> None:
         """Opens ``path`` in the file browser (Windows only; ignored elsewhere)."""
         try:
@@ -1016,23 +979,8 @@ class ExamApp:
     def _grad_image_paths(self) -> List[str]:
         return [p.strip() for p in self.grad_images_var.get().split(";") if p.strip()]
 
-    @staticmethod
-    def _grad_parse_forced_text(raw_text: str) -> Dict[str, str]:
-        forced: Dict[str, str] = {}
-        normalized = str(raw_text or "").replace("\n", ";").replace(",", ";")
-        for item in normalized.split(";"):
-            chunk = item.strip()
-            if not chunk or "=" not in chunk:
-                continue
-            name, value = chunk.split("=", 1)
-            key = name.strip()
-            exam_type = value.strip().upper()
-            if key and exam_type:
-                forced[key] = exam_type
-        return forced
-
     def _grad_parse_forced(self) -> dict:
-        return self._grad_parse_forced_text(self.grad_forced_var.get())
+        return gui_logic.parse_forced_types(self.grad_forced_var.get())
 
     def _grad_open_forced_type_table(self) -> None:
         image_paths = self._grad_image_paths()
@@ -1170,37 +1118,10 @@ class ExamApp:
         type_entry.focus_set()
 
     def _grad_parse_final_files(self) -> list:
-        sources = []
-        for item in self.grad_final_files_var.get().replace("\n", ";").split(";"):
-            item = item.strip()
-            if not item:
-                continue
-            parts = [p.strip() for p in item.split("|")]
-            source = {"path": parts[0]}
-            if len(parts) > 1 and parts[1]:
-                source["weight"] = self._parse_weight(parts[1], parts[0])
-            if len(parts) > 2 and parts[2]:
-                source["label"] = parts[2]
-            sources.append(source)
-        return sources
+        return gui_logic.parse_final_grade_files(self.grad_final_files_var.get())
 
     def _grad_parse_weights(self) -> dict:
-        weights = {}
-        for item in self.grad_final_weights_var.get().replace("\n", ";").split(";"):
-            item = item.strip()
-            if not item or "|" not in item:
-                continue
-            col, weight = item.rsplit("|", 1)
-            weights[col.strip()] = self._parse_weight(weight, col.strip())
-        return weights
-
-    @staticmethod
-    def _parse_weight(text: str, owner: str) -> float:
-        """Parses a weight written with ',' or '.' as decimal separator; ValueError with a clear message."""
-        try:
-            return float(str(text).strip().replace(",", "."))
-        except ValueError:
-            raise ValueError(f"Peso no válido para '{owner}': '{str(text).strip()}'. Usa un número, p. ej. 0,4.") from None
+        return gui_logic.parse_column_weights(self.grad_final_weights_var.get())
 
     def _grad_add_final_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -1347,7 +1268,7 @@ class ExamApp:
 
             incidents_path = str(api.results.get("ocr_integration_incidents_path")
                                  or os.path.join(out, "incidencias_integracion_ocr.xlsx"))
-            warning_msgs = self._grad_integration_warnings(api.results.get("ocr_integration_summary"), incidents_path)
+            warning_msgs = gui_logic.integration_warnings(api.results.get("ocr_integration_summary"), incidents_path)
 
             ocr_incidents_path = os.path.join(out, "incidencias.xlsx")
             if os.path.exists(ocr_incidents_path):
@@ -1643,7 +1564,7 @@ class ExamApp:
                     f"Revisa: {os.path.join(out_dir, 'incidencias_identificacion_respuestas.xlsx')}"
                 )
             integration_incidents_path = (api.results.get("full_pipeline_outputs") or {}).get("integration_incidents")
-            warning_msgs += self._grad_integration_warnings(
+            warning_msgs += gui_logic.integration_warnings(
                 api.results.get("ocr_integration_summary"),
                 integration_incidents_path or os.path.join(out_dir, "incidencias_integracion_ocr.xlsx"),
             )
@@ -2210,22 +2131,9 @@ class ExamApp:
             return  # Dialog cancelled: keep the current list.
         # Add to the current list (no duplicates) with ';' as separator: before, a second selection
         # was glued to the first one without any separator ('a.pdfb.pdf').
-        paths = self._split_paths(self.pdf_files_var.get())
+        paths = gui_logic.split_paths(self.pdf_files_var.get())
         paths += [p for p in file_paths if p not in paths]
         self.pdf_files_var.set(";".join(paths))
-
-    @staticmethod
-    def _split_paths(text: str) -> List[str]:
-        """Splits a list of paths separated by ';' (a ',' can be part of a file name).
-
-        A list typed by hand with ',' is still accepted when every piece is an existing file.
-        """
-        parts = [p.strip() for p in str(text or "").replace("\n", ";").split(";") if p.strip()]
-        if len(parts) == 1 and "," in parts[0] and not os.path.exists(parts[0]):
-            comma_parts = [p.strip() for p in parts[0].split(",") if p.strip()]
-            if comma_parts and all(os.path.exists(p) for p in comma_parts):
-                return comma_parts
-        return parts
 
     def select_existing_bank_for_gen_file(self) -> None:
         """
@@ -2247,7 +2155,7 @@ class ExamApp:
         """
         api_key = self.api_key_var.get()
         pdf_paths_str = self.pdf_files_var.get()
-        pdf_paths = self._split_paths(pdf_paths_str)
+        pdf_paths = gui_logic.split_paths(pdf_paths_str)
         selected_prompt_type = self.selected_prompt_type.get()
         custom_prompt_text_to_use = self.custom_prompt_text.get()
 
@@ -3105,14 +3013,6 @@ class ExamApp:
         else:
             messagebox.showerror("Error al Guardar", "Ocurrió un error al generar el archivo XLSX. Revise la consola para más detalles.")
 
-    @staticmethod
-    def _parse_penalty_value(raw_penalty: str, default: float = -25.0) -> float:
-        """Parses penalty values from UI entries, accepting comma or dot as decimal separator."""
-        cleaned = (raw_penalty or "").strip()
-        if not cleaned:
-            return default
-        return float(cleaned.replace(',', '.'))
-
     def select_existing_exam_xlsx_for_xml(self) -> None:
         """Opens a dialog to select an already generated exam XLSX file for XML export."""
         filepath = filedialog.askopenfilename(
@@ -3163,7 +3063,7 @@ class ExamApp:
             return
 
         try:
-            penalty = self._parse_penalty_value(self.existing_exam_xml_penalty_var.get(), default=-25.0)
+            penalty = gui_logic.parse_penalty(self.existing_exam_xml_penalty_var.get(), default=-25.0)
         except ValueError:
             messagebox.showerror("Error", "La penalización debe ser numérica (puede usar coma o punto decimal).")
             return
@@ -3188,51 +3088,65 @@ class ExamApp:
         """
         Loads themes from an Excel file for the 'questions per theme' selection UI.
         It reads the 'Tema' column and dynamically creates Spinbox widgets for each unique theme.
+        If the bank cannot be used, the reason is shown in place of the themes and in the status
+        bar (it used to reach only the console).
         """
         # Clear existing widgets
         for widget in self.by_theme_frame.winfo_children():
             widget.destroy()
         self.theme_quantity_widgets = {}  # Reset the widget dictionary.
 
-        excel_path = self.excel_filepath.get()
-        if os.path.exists(excel_path):
+        excel_path = self.excel_filepath.get().strip()
+        if not excel_path:
+            return
+        problem = None
+        unique_themes: List[Any] = []
+        if not os.path.exists(excel_path):
+            problem = f"No se encuentra el banco de preguntas: {excel_path}"
+        else:
             try:
                 df = pd.read_excel(excel_path)
-                if 'Tema' in df.columns:
-                    unique_themes = sorted(df['Tema'].unique())
-                    try:
-                        num_cols = int(self.num_columns_var.get())
-                        if num_cols < 1:
-                            num_cols = 1  # Ensure at least 1 column.
-                    except ValueError:
-                        num_cols = 3  # Default value if not a valid number.
-
-                    row = 0
-                    col = 0
-
-                    for i, theme in enumerate(unique_themes):
-                        theme_frame = ttk.Frame(self.by_theme_frame)
-                        theme_frame.grid(row=row, column=col, padx=5, pady=2, sticky='ew')
-                        ttk.Label(theme_frame, text=f"{theme}:").pack(side='left')
-                        quantity_spinbox = tk.Spinbox(theme_frame, from_=0, to=100, width=3)  # Adjustable range.
-                        quantity_spinbox.pack(side='left', padx=5)
-                        self.theme_quantity_widgets[theme] = quantity_spinbox
-
-                        col += 1
-                        if col >= num_cols:
-                            col = 0
-                            row += 1
-
-                    # Ensure the inner frame adjusts to its content.
-                    self.by_theme_frame.update_idletasks()
-                    self.by_theme_frame.config(width=self.by_theme_frame.winfo_width())
-
+            except Exception as exc:  # noqa: BLE001 - shown to the user
+                problem = f"No se pudo leer el banco de preguntas ({exc})."
+            else:
+                if 'Tema' not in df.columns:
+                    problem = "El banco de preguntas no tiene la columna 'Tema'."
                 else:
-                    print("Advertencia: La columna 'Tema' no se encontró en el archivo Excel.")
-            except Exception as e:
-                print(f"Error al leer el archivo Excel para cargar temas: {e}")
-        else:
-            print(f"Advertencia: El archivo Excel '{excel_path}' no se encuentra para cargar temas.")
+                    # An empty cell is not a topic, and sorting as text tolerates mixed types
+                    # (sorting NaN with text failed and left the list empty).
+                    topics = [t for t in df['Tema'].dropna().unique() if str(t).strip()]
+                    unique_themes = sorted(topics, key=str)
+        if problem:
+            ttk.Label(self.by_theme_frame, text=problem, wraplength=500).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+            self.update_status(problem)
+            return
+
+        try:
+            num_cols = int(self.num_columns_var.get())
+            if num_cols < 1:
+                num_cols = 1  # Ensure at least 1 column.
+        except ValueError:
+            num_cols = 3  # Default value if not a valid number.
+
+        row = 0
+        col = 0
+
+        for i, theme in enumerate(unique_themes):
+            theme_frame = ttk.Frame(self.by_theme_frame)
+            theme_frame.grid(row=row, column=col, padx=5, pady=2, sticky='ew')
+            ttk.Label(theme_frame, text=f"{theme}:").pack(side='left')
+            quantity_spinbox = tk.Spinbox(theme_frame, from_=0, to=100, width=3)  # Adjustable range.
+            quantity_spinbox.pack(side='left', padx=5)
+            self.theme_quantity_widgets[theme] = quantity_spinbox
+
+            col += 1
+            if col >= num_cols:
+                col = 0
+                row += 1
+
+        # Ensure the inner frame adjusts to its content.
+        self.by_theme_frame.update_idletasks()
+        self.by_theme_frame.config(width=self.by_theme_frame.winfo_width())
 
     def update_theme_display(self) -> None:
         """
@@ -3323,7 +3237,7 @@ class ExamApp:
             left_margin = float(left_margin_str) if left_margin_str else 0.5
             right_margin = float(right_margin_str) if right_margin_str else 0.5
             font_size = int(font_size_str) if font_size_str else 9
-            penalty = self._parse_penalty_value(penalty_str, default=-25.0)
+            penalty = gui_logic.parse_penalty(penalty_str, default=-25.0)
             usage_alert_threshold = int(usage_alert_threshold_str) if usage_alert_threshold_str else 3
             if usage_alert_threshold < 0:
                 raise ValueError
@@ -3331,7 +3245,7 @@ class ExamApp:
             messagebox.showerror("Error", "Por favor, introduce valores numericos validos para los margenes, tamano de fuente, numero de examenes, penalizacion (admite decimales) y umbral de alerta.")
             return
 
-        exam_name_list = [name.strip() for name in exam_names_str.split(',')] if exam_names_str else None
+        exam_name_list = gui_logic.parse_exam_names(exam_names_str)
 
         questions_per_topic = {}
         total_questions = None
@@ -3348,14 +3262,11 @@ class ExamApp:
                 messagebox.showerror("Error", "El 'Número total de preguntas' debe ser mayor que 0.")
                 return
         elif selection_method_var == "diccionario":
-            if self.questions_per_topic.get():
-                try:
-                    for item in self.questions_per_topic.get().split(','):
-                        topic, quantity = item.strip().split(':')
-                        questions_per_topic[topic.strip()] = int(quantity.strip())
-                except ValueError:
-                    messagebox.showerror("Error", "Formato incorrecto para 'Diccionario de preguntas por tema'. Debe ser 'Tema 01:2, Tema 02:3', etc.")
-                    return
+            try:
+                questions_per_topic = gui_logic.parse_questions_per_topic(self.questions_per_topic.get())
+            except ValueError:
+                messagebox.showerror("Error", "Formato incorrecto para 'Diccionario de preguntas por tema'. Debe ser 'Tema 01:2, Tema 02:3', etc.")
+                return
         elif selection_method_var == "mismo_numero":
             num_preguntas_str = self.num_preguntas_por_tema_entry.get()
             if num_preguntas_str:
@@ -3480,7 +3391,7 @@ class ExamApp:
     def show_moodle_suggestions(self) -> None:
         """Shows recommended Moodle quiz names / columns so the exported xlsx is identifiable."""
         exam = self.exam_name.get().strip() or "Examen"
-        exam_types = [name.strip() for name in self.exam_names.get().split(',') if name.strip()] or ["1A"]
+        exam_types = gui_logic.parse_exam_names(self.exam_names.get()) or ["1A"]
 
         lines = [
             "Usa estos nombres al crear los cuestionarios en Moodle para que las columnas del",
