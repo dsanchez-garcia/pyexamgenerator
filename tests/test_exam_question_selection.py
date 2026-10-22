@@ -4,6 +4,7 @@ número total de preguntas entre temas y alerta de uso que cancela la generació
 import random
 
 import pandas as pd
+import pytest
 
 from pyexamgenerator.exam_generator import ExamGenerator
 
@@ -183,3 +184,37 @@ def test_usage_warning_callback_can_cancel_generation(tmp_path):
     assert len(warning_df) == 2
     assert "mas de 3 veces" in message
     assert not (tmp_path / "examen_Geo_Warn_25-26_A.docx").exists()
+
+
+def test_first_questions_of_each_topic_are_selected_in_bank_order(tmp_path):
+    """TST-3: el método 'primeras' no tenía test."""
+    bank_path = tmp_path / "bank.xlsx"
+    _build_bank_df().to_excel(bank_path, index=False)
+    generator = ExamGenerator()
+
+    generator.generate_exam_from_excel(
+        bank_excel_path=str(bank_path), output_dir=str(tmp_path), subject="Geo", exam="Primeras", course="25-26",
+        exam_names=["A"], questions_per_topic={"Tema 01": 2, "Tema 03": 1}, selection_method="primeras",
+    )
+
+    assert sorted(generator.exam_df["Pregunta"]) == [
+        "Tema 01 - Pregunta 1", "Tema 01 - Pregunta 2", "Tema 03 - Pregunta 1",
+    ]
+
+
+def test_bank_without_acceptable_questions_raises_a_clear_error(tmp_path):
+    """TST-3: `NoAcceptableQuestionsError` no tenía test."""
+    from pyexamgenerator.exam_generator import NoAcceptableQuestionsError
+
+    bank_path = tmp_path / "bank.xlsx"
+    bank = _build_bank_df({"Tema 01": 2})
+    bank["Estado"] = "Pendiente de revisar"
+    bank.to_excel(bank_path, index=False)
+
+    with pytest.raises(NoAcceptableQuestionsError, match="Aceptable"):
+        ExamGenerator().generate_exam_from_excel(
+            bank_excel_path=str(bank_path), output_dir=str(tmp_path), subject="Geo", exam="Ninguna",
+            course="25-26", exam_names=["A"], questions_per_topic={"Tema 01": 1},
+        )
+
+    assert not list(tmp_path.glob("*.docx"))

@@ -166,7 +166,8 @@ búscalas por nombre de función si no coinciden.
   `ExamCorrectionAPI.run_full_pipeline(cfg)` y limpiar `_intermedios` en `finally`. — hecho en `393881d`.
 - [x] **GUI-8 (P2)** `tooltip.py:50-51` registra manejadores `<Unmap>`/`<Destroy>` en la ventana
   raíz por cada tooltip (nunca se eliminan). Enlazar solo al widget. — hecho en `6cccdbc`.
-- [ ] **GUI-9 (P3)** Parcheo global de `messagebox.show*` (`:248-250`); usar un método envoltorio.
+- [x] **GUI-9 (P3)** Parcheo global de `messagebox.show*` (`:248-250`); usar un método envoltorio.
+  — hecho en `650f9a5` (un `messagebox` propio del módulo de la GUI).
 - [x] **GUI-10 (P3)** Valores por defecto de prueba en la UI («Asignatura de Prueba», «Prueba GUI»,
   `La/ruta/del/banco...`, `:142-158`); la GUI llama a un método privado `_usage_column_name`
   (`:3604`). — hecho en `19ee139`.
@@ -202,6 +203,9 @@ búscalas por nombre de función si no coinciden.
   la librería; la GUI puede añadir un handler.
 - [ ] **ARC-9 (P2)** ~34 `except Exception`/`except:` que tragan errores (p. ej.
   `exam_generator.py:436,1236`). Revisar uno a uno.
+  *Parcial (`9d9fb12`): revisados los de la librería; corregidos los que daban resultados
+  incorrectos en silencio (banco ilegible, uso no registrado, banco de duplicados ilegible). Quedan
+  los de `main_app.py` (casi todos informan al usuario) y pasar los `print` a `logging` (ARC-8).*
 - [ ] **ARC-10 (P2)** Valores institucionales fijos en código (grupos `GIM`, `GITI-GIE-GIEI`, regla
   PIR, temas `LPRL`/`RSP`, columnas mojibake `"Nmero de ID"`). Moverlos a configuración.
 - [x] **ARC-11 (P2)** `QuestionGenerator`: errores de cuota/sobrecarga detectados por subcadena
@@ -254,7 +258,7 @@ búscalas por nombre de función si no coinciden.
   `prueba_error/examen_CSP_Q-PA_25-26.xlsx`, que no está en git (`prueba_error/` y `*.xlsx` están
   ignorados): falla en un clon limpio. Generar el banco en `tmp_path` o versionar un fixture
   anonimizado en `tests/fixtures/` (con excepción `!tests/fixtures/**` en `.gitignore`). — hecho en `07e3e4d`.
-- [ ] **TST-3 (P2)** Sin tests: `QuestionGenerator._analyze_gemini_response`, `_build_prompt`,
+- [x] **TST-3 (P2)** Sin tests: `QuestionGenerator._analyze_gemini_response`, `_build_prompt`,
   `generate_multiple_choice_questions` (con cliente simulado), `filter_generated_questions_duplicates`;
   `QuestionBankManager.read_questions_from_docx`, `generate_excel_from_docx`,
   `add_reviewed_questions_to_existing_excel`; `ExamGenerator` con `update_excel=True`, `check=True`,
@@ -262,9 +266,9 @@ búscalas por nombre de función si no coinciden.
   *Parcial: ya cubiertos `_analyze_gemini_response`, `generate_multiple_choice_questions` (cliente
   simulado), `read_questions_from_docx` (ida y vuelta), `add_reviewed_questions_to_existing_excel`,
   `update_excel=True`, `menos usadas`, `questions_per_topic`, plantillas DOCX y XML con respuestas
-  numéricas o vacías, y el borrado de la previsualización con `check=True` (`d1c6542`). Faltan
-  `filter_generated_questions_duplicates`, el resto de `check=True`, `primeras` y
-  `NoAcceptableQuestionsError`.*
+  numéricas o vacías, y el borrado de la previsualización con `check=True` (`d1c6542`).
+  Completado en `5b8f42e` (filtro de duplicados, `primeras`, `NoAcceptableQuestionsError`) y
+  `b53bbcd` (`check=True` con callback, consola y sin terminal).*
 - [ ] **TST-4 (P2)** Sin tests en `grading`: `PIRBonusCalculator` (incluido GRD-1),
   `AbsenceJustificationManager.analyze`, `MoodleGradeIntegrator.deduplicate_by_id` (GRD-4),
   `FinalGradeCalculator` con IDs mixtos/NaN (GRD-3), `export_steps_dir` + `manifest.json`,
@@ -272,8 +276,8 @@ búscalas por nombre de función si no coinciden.
   *Parcial: ya cubiertos el PIR sin sesiones, la deduplicación por ID, la nota final y la comparación
   con IDs float, la matrícula fusionada, las claves de justificación y el flujo OCR con hojas fallidas
   (extractor simulado), la detección de temas y la regla de cuestionarios del punto extra (`59fa202`,
-  `0ab8970`). Faltan `AbsenceJustificationManager.analyze` completo, `export_steps_dir` y un
-  fixture sintético de hoja de respuestas.*
+  `0ab8970`), y `AbsenceJustificationManager.analyze` completo con `export_steps_dir` y
+  `manifest.json` (`5410d6b`). Falta un fixture sintético de hoja de respuestas para el OCR.*
 - [ ] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
   *Parcial: `tests/test_gui_smoke.py` construye la ventana real (Windows y Linux con xvfb) y prueba
   prompts, clave de API, lista de ficheros, errores de entrada, la tarea única de corrección, las
@@ -314,8 +318,8 @@ búscalas por nombre de función si no coinciden.
   `c622270` (con excepción acotada a `tests/fixtures/`).
 - [x] **REPO-2 (P2)** `__init__.py` vacío en la raíz del repositorio convierte la raíz en paquete y
   puede confundir a pytest y a las herramientas. Eliminar. — hecho en `07e3e4d`.
-- [ ] **REPO-3 (P3)** PDFs de ejemplo en la raíz (`RD 31-95 LPRL*.pdf`, `RD 39-97 RSP*.pdf`, ~1 MB).
-  Moverlos a `examples/` y enlazarlos desde los tutoriales.
+- [x] **REPO-3 (P3)** PDFs de ejemplo en la raíz (`RD 31-95 LPRL*.pdf`, `RD 39-97 RSP*.pdf`, ~1 MB).
+  Moverlos a `examples/` y enlazarlos desde los tutoriales. — hecho en `f905067`.
 - [x] **REPO-4 (P2)** README: `QuestionGenerator(model_name=MODEL_NAME)` (`README.md:139`) lanza
   `TypeError` porque `api_key` es obligatorio y el código no lee `GEMINI_API_KEY`. Hacer
   `api_key: Optional[str] = None` con *fallback* a la variable de entorno (y test). — hecho en `9607102`.

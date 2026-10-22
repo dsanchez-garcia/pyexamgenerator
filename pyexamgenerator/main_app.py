@@ -16,7 +16,8 @@
 
 import tkinter as tk
 import webbrowser
-from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
+from tkinter import ttk, filedialog, scrolledtext, simpledialog
+from tkinter import messagebox as tkinter_messagebox
 import pandas as pd
 from pyexamgenerator.question_generator import (
     QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
@@ -34,6 +35,37 @@ from google import genai
 from pyexamgenerator import __version__
 
 from typing import Optional, List, Dict, Tuple, Any
+
+
+class _CopyableMessageBox:
+    """``messagebox`` of this module: info/warning/error popups use the app's copyable dialog.
+
+    Everything else (askyesno, ...) is the standard ``tkinter.messagebox``. Before, ExamApp replaced
+    ``tkinter.messagebox.show*`` for the whole process, also for any other Tk code in it.
+    """
+
+    def __init__(self) -> None:
+        self.app: Optional["ExamApp"] = None
+
+    def _show(self, kind: str, title=None, message=None, **kwargs):
+        if self.app is None:
+            return getattr(tkinter_messagebox, f"show{kind}")(title, message, **kwargs)
+        return self.app._show_copyable_messagebox(kind=kind, title=title, message=message, **kwargs)
+
+    def showinfo(self, title=None, message=None, **kwargs):
+        return self._show("info", title, message, **kwargs)
+
+    def showwarning(self, title=None, message=None, **kwargs):
+        return self._show("warning", title, message, **kwargs)
+
+    def showerror(self, title=None, message=None, **kwargs):
+        return self._show("error", title, message, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(tkinter_messagebox, name)
+
+
+messagebox = _CopyableMessageBox()
 
 
 class ExamApp:
@@ -230,17 +262,8 @@ class ExamApp:
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
 
     def _install_copyable_messageboxes(self) -> None:
-        """Replace standard info/warning/error popups with copyable dialogs."""
-
-        def _build_handler(kind: str):
-            def _handler(title=None, message=None, **kwargs):
-                return self._show_copyable_messagebox(kind=kind, title=title, message=message, **kwargs)
-
-            return _handler
-
-        messagebox.showinfo = _build_handler("info")
-        messagebox.showwarning = _build_handler("warning")
-        messagebox.showerror = _build_handler("error")
+        """Info/warning/error popups of this module use copyable dialogs (see _CopyableMessageBox)."""
+        messagebox.app = self
 
     def _show_copyable_messagebox(self, kind: str, title: Optional[str], message: Optional[str], **kwargs):
         parent = kwargs.get("parent") or self.root
@@ -3459,14 +3482,25 @@ class ExamApp:
                 usage_warning_threshold=usage_alert_threshold,
                 usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None
             )
-            return bool(getattr(generator, "generation_cancelled", False))
+            return bool(getattr(generator, "generation_cancelled", False)), getattr(generator, "bank_update_error", None)
 
-        def on_success(cancelled):
+        def on_success(outcome):
+            cancelled, bank_update_error = outcome
             if cancelled:
                 self.update_status("Generacion de examenes cancelada.")
                 messagebox.showinfo("Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
                 return
             self.update_status("Exámenes generados.")
+            if bank_update_error:
+                # The exams exist, but the bank does not record their use (e.g. it was open in Excel).
+                messagebox.showwarning(
+                    "Banco sin actualizar",
+                    "Los exámenes se han generado, pero no se pudo registrar su uso en el banco de preguntas:\n"
+                    f"{bank_update_error}\n\n"
+                    "Cierra el banco si está abierto en Excel y registra el uso con «Actualizar Banco con "
+                    "Exámenes» (pestaña «Gestionar Banco de Preguntas»).",
+                )
+                return
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
 
         def on_error(e):

@@ -23,6 +23,7 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **`GeminiRequestError`:** nueva excepción pública para los errores de Gemini que no se arreglan reintentando: clave no válida o sin permiso (401/403) y modelo inexistente o retirado (404). Con un modelo retirado, el mensaje sugiere los modelos disponibles para tu clave.
 - **Callbacks en lugar de `input()`:** `review_callback` en `ExamGenerator.generate_exam_from_excel(check=True)` y `exam_type_callback` / `review_callback` en el OCR (`ImageExamGrader.grade_from_images`, `ImageGradingConfig`), para preguntar al usuario desde una GUI o un notebook.
 - **Reglas del punto extra configurables:** `min_quiz_grade` (nota mínima de los cuestionarios en cada tema; `AbsenceJustificationConfig`, `FullPipelineConfig`) y `bonus_points` (puntos que se suman; `TheoryBonusConfig`, `FullPipelineConfig`, `TheoryBonusApplier`). Los valores por defecto no cambian (7,5 y +1).
+- **Pruebas del flujo completo de asistencia:** justificaciones asociadas al alumno y a la clase, punto extra en modo extremo y normal, y las tablas y el `manifest.json` de `export_steps_dir`. También el filtro de duplicados de preguntas generadas, el método «primeras» y el banco sin preguntas aceptables.
 
 ### Cambiado
 - **INCOMPATIBLE: Python 3.10 o superior.** La versión mínima pasa de 3.8 a 3.10: Python 3.8 y 3.9 ya no tienen soporte y la librería `google-genai` exige 3.10 en sus versiones actuales (en 3.8 ni siquiera se podía instalar). Se actualizan `python_requires` y los clasificadores, `tox.ini`, Read the Docs y la CI (que prueba 3.10 y 3.14). Con Python 3.9, la última versión utilizable es la 0.3.0.
@@ -55,6 +56,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Mensajes sin modelos concretos:** las sugerencias ya no recomiendan `gemini-2.5-flash` (desde septiembre de 2026 solo lo pueden usar quienes ya lo usaban); remiten a la lista de «Cargar Modelos». El README y el tutorial, igual.
 - **Previsualización (`check=True`) fuera de un terminal:** sin `review_callback`, un error claro antes de generar nada (antes `input()` se quedaba esperando o fallaba). En la consola se acepta sí/si/s/yes.
 - **Informe por tema del punto extra:** además de LPRL, RSP y T02..T11, incluye cualquier otro tema que aparezca en las columnas de clase (antes, un tema 1 o 12 se perdía).
+- **Diálogos de la GUI:** la aplicación ya no sustituye `tkinter.messagebox.showinfo/showwarning/showerror` para todo el proceso; solo sus propios avisos usan el diálogo con texto copiable.
+- **PDF de ejemplo en `examples/`:** los cuatro PDF que usan los tutoriales salen de la raíz del repositorio; el tutorial de generación de preguntas enlaza la carpeta.
+- **Bancos que no se pueden leer:** generar exámenes con un banco ilegible (o bloqueado) da un error, y generar preguntas con un banco de duplicados que no se puede leer se detiene antes de llamar a Gemini (antes se seguía sin el filtro).
 
 ### Arreglado
 - **Seguridad: la respuesta de Gemini ya no se ejecuta con `eval`:** se analiza con `ast.literal_eval` (o `json.loads`), de modo que un PDF que manipule la salida del modelo no puede ejecutar código. Además, una pregunta mal formada (menos de cuatro opciones, respuesta no textual) ya no descarta el resto de preguntas de la misma respuesta.
@@ -92,6 +96,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Modelo retirado o clave no válida en la generación de preguntas:** se repetía la llamada fallida en cada intento de cada fragmento y el resultado era «no se generaron preguntas» sin explicación; ahora se detiene al primer error con un mensaje que dice qué cambiar.
 - **Temas en el punto extra PIR:** «Ley 31/95» o «RD 39/97» con barra (y «Ley 31/1995») se reconocen igual que en el análisis de asistencia; antes el cálculo PIR solo aceptaba «Ley 31_95» y la sesión se ignoraba. Un texto como «Sistema 3» ya no se toma por «Tema 3».
 - **Sesiones de corrección con callbacks en el config:** al guardar la sesión, los callbacks se omiten; antes se copiaban en profundidad (con un método de la GUI, la ventana entera) y la grabación fallaba.
+- **«Exámenes generados correctamente» sin exámenes:** con un banco que no se podía leer, la generación volvía sin hacer nada y la GUI informaba de éxito.
+- **Uso no registrado en el banco sin aviso:** con «Actualizar Excel» y el banco abierto en Excel, el uso no se guardaba y solo quedaba un mensaje en la consola; ahora la GUI avisa (y la librería lo deja en `ExamGenerator.bank_update_error`) y los exámenes se conservan.
+- **Tutorial de generación de preguntas:** las rutas de los ficheros se separan con punto y coma, no con coma.
 
 ## [0.3.0] - 2026-09-15
 
