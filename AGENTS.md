@@ -64,7 +64,8 @@ pyexamgenerator/
     api.py                 ExamCorrectionAPI + dataclasses *Config
     extraction.py          OCR (único módulo que importa cv2/numpy/rapidocr)
     graders.py, integrations.py, attendance.py, final_grade.py, comparison.py, data.py, session.py
-tests/                     pytest; todos los fixtures se crean en tmp_path (salvo TST-2)
+tests/                     pytest; todos los datos se generan en tmp_path
+.github/workflows/         CI: pytest (Ubuntu/Windows, con y sin [grading]) + sphinx -W
 docs/source/               Sphinx + MyST (Read the Docs); tutoriales en Markdown, API autogenerada
 docs/dev/                  documentación para desarrolladores y agentes (fuera de Sphinx)
 setup.py                   empaquetado (extra opcional [grading] para OCR)
@@ -120,7 +121,8 @@ setup.py                   empaquetado (extra opcional [grading] para OCR)
 - **Nunca** llames a la API real de Gemini en tests: simula `google.genai.Client`. No uses ni
   imprimas `GEMINI_API_KEY`; no leas `config.json`.
 - No uses `eval`, `exec` ni `pickle.load` sobre contenido externo (respuestas del modelo, ficheros
-  del usuario). Hay deuda conocida: `SEC-1`, `SEC-2`.
+  del usuario). Las respuestas de Gemini se analizan con `QuestionGenerator._parse_question_literal`
+  y las sesiones solo leen pickle con `allow_pickle=True`.
 
 ### Acciones que requieren confirmación del mantenedor
 
@@ -151,16 +153,17 @@ Antes de dar una tarea por terminada:
 
 ## Trampas conocidas
 
-- `ExamGenerator` cachea el banco en `self.df` entre llamadas (`BUG-1`): en tests, usa una instancia
-  nueva por escenario.
 - `random` se usa para barajar: fija la semilla (`random.seed(...)`) en los tests que comparan orden.
-- Los Excel de Moodle tienen IDs con ceros iniciales: lee con `dtype=object`/`str`, nunca dejes que
-  pandas infiera números (`GRD-3`).
+- Los Excel de Moodle tienen IDs con ceros iniciales y, si hay huecos, pandas lee los numéricos como
+  float (`12345678.0`). Compara IDs siempre con `pyexamgenerator.grading._ids.normalize_id` y, si
+  necesitas conservar ceros iniciales, lee con `dtype=object`.
 - Columnas de Moodle con nombres en español y, a veces, *mojibake* (`"Nmero de ID"`); los helpers de
   `grading` buscan columnas de forma tolerante (`_find_column`). Reutilízalos.
 - Los tipos de examen pueden ser `A`/`B` o `1A`/`1B`; el tipo se infiere del sufijo del nombre del
   XML (`..._1A.xml`).
-- `tests/test_exam_order_integration.py` necesita `prueba_error/…xlsx`, que no está en git: falla en
-  un clon limpio (`TST-2`). No es una regresión tuya.
-- La GUI no tiene tests; si cambias `main_app.py`, verifica al menos que `import
-  pyexamgenerator.main_app` funciona y describe qué no pudiste probar manualmente.
+- La GUI no tiene tests funcionales; `tests/test_package_smoke.py` solo compila los módulos. Si
+  cambias `main_app.py`, verifica al menos que `import pyexamgenerator.main_app` funciona y describe
+  qué no pudiste probar manualmente.
+- Si editas ficheros con un script (heredoc de Python en Bash), cuidado con las barras invertidas:
+  `\n` o `\b` pueden acabar como saltos de línea o caracteres de control dentro del código. Prefiere la
+  herramienta de edición y compila después (`pytest tests/test_package_smoke.py`).

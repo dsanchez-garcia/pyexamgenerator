@@ -7,6 +7,25 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Añadido
+- **Integración continua:** workflow de GitHub Actions (`.github/workflows/tests.yml`) que ejecuta `pytest` en Ubuntu y Windows (Python 3.9 y 3.14, con y sin el extra `[grading]`) y compila la documentación con `sphinx -W`, igual que Read the Docs.
+- **Nuevas pruebas de regresión:** análisis seguro de la respuesta de Gemini, carga de sesiones, relectura del banco y registro de uso, punto extra PIR, columnas de asistencia, normalización de IDs y compilación de todos los módulos del paquete (incluida la GUI).
+
+### Cambiado
+- **Sesiones de corrección: JSON primero, pickle solo con permiso:** `GradingSession.load(...)` y `ExamCorrectionAPI.load_session(...)` usan siempre el `.json` y solo leen un `.pkl` (sin su `.json`) con `allow_pickle=True`, porque deserializar un pickle puede ejecutar código. La GUI pide confirmación antes de abrir un `.pkl`.
+- **Documentación para desarrolladores y agentes de IA:** `AGENTS.md`, `CLAUDE.md`, `docs/dev/` y `TODO.md` con la revisión priorizada del repositorio.
+
+### Arreglado
+- **Seguridad: la respuesta de Gemini ya no se ejecuta con `eval`:** se analiza con `ast.literal_eval` (o `json.loads`), de modo que un PDF que manipule la salida del modelo no puede ejecutar código. Además, una pregunta mal formada (menos de cuatro opciones, respuesta no textual) ya no descarta el resto de preguntas de la misma respuesta.
+- **El generador de exámenes reutilizaba el primer banco cargado:** `ExamGenerator.generate_exam_from_excel(...)` vuelve a leer el banco en cada llamada. Antes, en la GUI, una segunda generación usaba el banco anterior y, con "Actualizar Excel", podía sobrescribir el banco nuevo con el antiguo.
+- **Registro de uso con números de pregunta repetidos:** al actualizar el uso se marcan exactamente las filas seleccionadas, en lugar de todas las que compartían `Número de pregunta` (habitual tras fusionar bancos).
+- **Punto extra PIR concedido a todos:** si ninguna sesión de asistencia casaba con el horario, todos los alumnos recibían el punto extra; ahora no se concede y se emite un aviso.
+- **Asistencias a partir de 2027:** las columnas de asistencia solo se reconocían si contenían "2026"; ahora se acepta cualquier año.
+- **Alumnos partidos en dos filas por el ID:** la nota final y la comparación de resultados emparejan `12345678` y `12345678.0` (columna leída como número con huecos) como el mismo alumno.
+- **Deduplicación de notas de Moodle:** `MoodleGradeIntegrator.integrate_grades(deduplicate_by_id=True)` ya no fusiona en una sola fila a todos los alumnos sin `Número de ID`.
+- **Compatibilidad de anotaciones:** `question_generator.py` usaba `tuple[...]`, que no funciona en Python 3.8.
+- **Test de integración independiente de datos locales:** `tests/test_exam_order_integration.py` genera su banco sintético en lugar de depender de `prueba_error/` (no versionado).
+
 ## [0.3.0] - 2026-09-15
 
 ### Añadido

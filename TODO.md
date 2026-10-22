@@ -19,16 +19,16 @@ búscalas por nombre de función si no coinciden.
 
 ## 1. Seguridad y privacidad
 
-- [ ] **SEC-1 (P0)** `eval()` sobre la respuesta de Gemini — `pyexamgenerator/question_generator.py:444`.
+- [x] **SEC-1 (P0)** `eval()` sobre la respuesta de Gemini — `pyexamgenerator/question_generator.py:444`.
   Un PDF con texto que manipule la respuesta del modelo puede ejecutar código Python en el equipo
   del usuario. Sustituir por `json.loads` (idealmente con `response_mime_type="application/json"` y
   un esquema en la llamada a Gemini) o, como mínimo, `ast.literal_eval`. Test con una respuesta
-  maliciosa que no debe ejecutarse.
-- [ ] **SEC-2 (P0)** Carga de sesiones con `pickle.load` — `pyexamgenerator/grading/session.py:165,174`
+  maliciosa que no debe ejecutarse. — hecho en `7d7fabb`.
+- [x] **SEC-2 (P0)** Carga de sesiones con `pickle.load` — `pyexamgenerator/grading/session.py:165,174`
   y botón «Cargar sesión» (`main_app.py:~1401`). Abrir un `.pkl` recibido de un tercero ejecuta
   código arbitrario, y al pasar una ruta sin extensión se prefiere el `.pkl` al `.json`. El JSON ya
   hace round-trip (`from_dict`): cargar JSON por defecto y dejar pickle tras un flag explícito
-  (`trusted=True`) o eliminarlo.
+  (`trusted=True`) o eliminarlo. — hecho en `9161e7c`.
 - [ ] **SEC-3 (P1)** Clave de API en texto plano en `config.json` del directorio actual —
   `main_app.py:2149,2162`. Además se puede guardar el marcador `"TU_CLAVE_API"` como clave. Usar
   `keyring` o una carpeta de configuración por usuario (`platformdirs`) y rechazar el marcador.
@@ -43,15 +43,15 @@ búscalas por nombre de función si no coinciden.
 
 ### Generación de exámenes y banco
 
-- [ ] **BUG-1 (P0)** `ExamGenerator` reutiliza el primer banco cargado — `exam_generator.py:861`
+- [x] **BUG-1 (P0)** `ExamGenerator` reutiliza el primer banco cargado — `exam_generator.py:861`
   (`if self.df is None`). La GUI mantiene una única instancia (`main_app.py:131`), así que una
   segunda generación con otro banco (o tras editar el Excel) usa datos viejos y, con
   `update_excel=True`, **sobrescribe el banco nuevo con el antiguo** (`:1233`). Re-leer siempre el
-  banco (o cachear por ruta + `mtime`).
-- [ ] **BUG-2 (P0)** El registro de uso empareja por `Número de pregunta`, que no es único —
+  banco (o cachear por ruta + `mtime`). — hecho en `d41d15f`.
+- [x] **BUG-2 (P0)** El registro de uso empareja por `Número de pregunta`, que no es único —
   `exam_generator.py:1202-1206`. `add_questions_without_duplicates` (`question_bank_manager.py:186`)
   y `unify_question_banks` (`:653`) concatenan sin renumerar. Una pregunta puede marcar varias filas.
-  Emparejar por enunciado (como hace `QuestionBankManager`) o renumerar al fusionar.
+  Emparejar por enunciado (como hace `QuestionBankManager`) o renumerar al fusionar. — hecho en `d41d15f`.
 - [ ] **BUG-3 (P1)** Ruta de banco sin carpeta (`"banco.xlsx"`) rompe la generación —
   `exam_generator.py:986-988`, `question_bank_manager.py:738-741`: `os.makedirs('')` lanza
   `FileNotFoundError`. Usar `os.path.dirname(os.path.abspath(p))`.
@@ -70,8 +70,8 @@ búscalas por nombre de función si no coinciden.
 - [ ] **BUG-8 (P1)** Respuesta correcta en formato inesperado (`"B)"`, `"b "`) provoca `KeyError` o
   deja la pregunta sin respuesta correcta en Moodle sin avisar — `exam_generator.py:161-178`.
   Normalizar a `[A-D]` y avisar/lanzar si no hay coincidencia.
-- [ ] **BUG-9 (P2)** Una pregunta mal formada descarta toda la respuesta de Gemini —
-  `question_generator.py:456-473` (`IndexError`/`AttributeError` no capturados por pregunta).
+- [x] **BUG-9 (P2)** Una pregunta mal formada descarta toda la respuesta de Gemini —
+  `question_generator.py:456-473` (`IndexError`/`AttributeError` no capturados por pregunta). — hecho en `7d7fabb`.
 - [ ] **BUG-10 (P2)** `generate_excel_from_docx` devuelve una ruta distinta de la que escribe —
   `question_bank_manager.py:778-781`. Devolver lo que devuelve `save_dataframe_to_excel`.
 - [ ] **BUG-11 (P2)** Nombres de archivo de examen sin sanear — `exam_generator.py:1002`.
@@ -86,19 +86,21 @@ búscalas por nombre de función si no coinciden.
 
 ### Corrección (`grading`)
 
-- [ ] **GRD-1 (P0)** El punto extra PIR se concede a todos si no casa ninguna sesión —
+- [x] **GRD-1 (P0)** El punto extra PIR se concede a todos si no casa ninguna sesión —
   `grading/attendance.py:1496-1502`: `all([])` es `True`. Exigir `topics` no vacío (la otra ruta ya
-  lo hace en `:742`).
-- [ ] **GRD-2 (P0)** Columnas de asistencia limitadas a 2026 — `grading/attendance.py:187`
+  lo hace en `:742`). — hecho en `5a8b9e1`.
+- [x] **GRD-2 (P0)** Columnas de asistencia limitadas a 2026 — `grading/attendance.py:187`
   (`"2026" in text`). A partir de 2027 no se detecta ninguna columna. Detectar por
-  `_parse_attendance_date(col) is not None`.
+  `_parse_attendance_date(col) is not None`. — hecho en `5a8b9e1`.
 - [ ] **GRD-3 (P0)** IDs leídos como float dividen a un alumno en dos filas —
   `grading/final_grade.py:100`, `grading/comparison.py:140-141`, `grading/data.py:108,184`,
   `grading/attendance.py:432,528`: `read_excel` sin `dtype` → `"12345678.0"` y ceros iniciales
   perdidos. Leer con `dtype=object` y un único `normalize_id()` (reutilizar
   `OcrGradeIntegrator._normalize_id`).
-- [ ] **GRD-4 (P0)** Deduplicación fusiona a todos los alumnos sin ID — `grading/integrations.py:335`.
-  Deduplicar solo filas con ID no vacío.
+  *Parcial (`cdceb49`): `grading._ids.normalize_id` se usa en `final_grade.py`, `comparison.py` y
+  `integrations.py`. Falta aplicarlo en `data.py` y `attendance.py`.*
+- [x] **GRD-4 (P0)** Deduplicación fusiona a todos los alumnos sin ID — `grading/integrations.py:335`.
+  Deduplicar solo filas con ID no vacío. — hecho en `cdceb49`.
 - [ ] **GRD-5 (P1)** Marcas de tiempo falsas en la corrección desde Excel — `grading/graders.py:82-84`
   escribe `"20 de abril de 2026 17:05"` y una duración fija en todas las filas.
 - [ ] **GRD-6 (P1)** Modo `extremo` + emparejamiento difuso pueden justificar faltas al alumno
@@ -203,6 +205,9 @@ búscalas por nombre de función si no coinciden.
   (EOL 2024-10) y 3.9 (EOL 2025-10) ya no tienen soporte. **Decisión pendiente del mantenedor:**
   subir el mínimo a 3.10 y actualizar clasificadores, `tox.ini`, `.readthedocs.yaml` (usa 3.9) y
   README.
+  *Parcial (`07e3e4d`): corregida la anotación `tuple[...]`. Además, `google-genai` exige Python ≥ 3.9
+  (≥ 3.10 en sus versiones actuales), así que 3.8 ni siquiera es instalable. Sigue pendiente decidir el
+  mínimo.*
 - [ ] **PKG-2 (P2)** Migrar `setup.py` → `pyproject.toml` (PEP 621) con extras `dev`, `docs`,
   `grading`; centralizar configuración de pytest y ruff. Mantener la versión única en
   `pyexamgenerator/__init__.py` (dinámica).
@@ -222,13 +227,13 @@ búscalas por nombre de función si no coinciden.
 
 ## 6. Tests y CI
 
-- [ ] **TST-1 (P1)** No hay CI. Añadir `.github/workflows/tests.yml`: pytest en Windows y Ubuntu,
+- [x] **TST-1 (P1)** No hay CI. Añadir `.github/workflows/tests.yml`: pytest en Windows y Ubuntu,
   versiones mínima y máxima soportadas, con y sin extra `[grading]`; y un job de build de docs
-  (`sphinx -W`).
-- [ ] **TST-2 (P1)** `tests/test_exam_order_integration.py` depende de
+  (`sphinx -W`). — hecho en `07e3e4d`.
+- [x] **TST-2 (P1)** `tests/test_exam_order_integration.py` depende de
   `prueba_error/examen_CSP_Q-PA_25-26.xlsx`, que no está en git (`prueba_error/` y `*.xlsx` están
   ignorados): falla en un clon limpio. Generar el banco en `tmp_path` o versionar un fixture
-  anonimizado en `tests/fixtures/` (con excepción `!tests/fixtures/**` en `.gitignore`).
+  anonimizado en `tests/fixtures/` (con excepción `!tests/fixtures/**` en `.gitignore`). — hecho en `07e3e4d`.
 - [ ] **TST-3 (P2)** Sin tests: `QuestionGenerator._analyze_gemini_response`, `_build_prompt`,
   `generate_multiple_choice_questions` (con cliente simulado), `filter_generated_questions_duplicates`;
   `QuestionBankManager.read_questions_from_docx`, `generate_excel_from_docx`,
@@ -244,6 +249,7 @@ búscalas por nombre de función si no coinciden.
 - [ ] **TST-7 (P3)** Renombrar `test_v023_features.py` / `test_v030_features.py` por funcionalidad
   (`test_moodle_xml.py`, `test_bank_usage.py`…). `test_exam_order_integration.py` mezcla
   tabuladores con espacios.
+  *Parcial (`07e3e4d`): `test_exam_order_integration.py` ya usa solo espacios.*
 - [ ] **TST-8 (P3)** `tests/test_image_mode_unit.py:28` crea un `genai.Client` real con clave falsa;
   simularlo.
 
@@ -264,8 +270,8 @@ búscalas por nombre de función si no coinciden.
 - [ ] **REPO-1 (P2)** `.gitignore`: faltan `.tox/`, `.pytest_cache/`, `docs/build/`, `.ruff_cache/`,
   `.mypy_cache/`; los patrones globales `*.xlsx`, `*.docx`, `*.xml`, `*.jpg` impedirán versionar
   fixtures de test (ver TST-2). Hay además un cambio sin commitear (`deposito_rodin/`).
-- [ ] **REPO-2 (P2)** `__init__.py` vacío en la raíz del repositorio convierte la raíz en paquete y
-  puede confundir a pytest y a las herramientas. Eliminar.
+- [x] **REPO-2 (P2)** `__init__.py` vacío en la raíz del repositorio convierte la raíz en paquete y
+  puede confundir a pytest y a las herramientas. Eliminar. — hecho en `07e3e4d`.
 - [ ] **REPO-3 (P3)** PDFs de ejemplo en la raíz (`RD 31-95 LPRL*.pdf`, `RD 39-97 RSP*.pdf`, ~1 MB).
   Moverlos a `examples/` y enlazarlos desde los tutoriales.
 - [ ] **REPO-4 (P2)** README: `QuestionGenerator(model_name=MODEL_NAME)` (`README.md:139`) lanza

@@ -75,7 +75,7 @@ los botones.
 - `generate_exam_from_excel(bank_excel_path, output_dir, subject, exam, course, num_exams | exam_names,
   selection_method, questions_per_topic | total_questions + total_distribution, export_moodle_xml,
   update_excel, template_docx_path, session_output_path, check, ...)`:
-  1. Lee el banco (⚠ cacheado en `self.df`, ver `BUG-1`) y filtra `Estado == "aceptable"`
+  1. Lee el banco (en cada llamada) y filtra `Estado == "aceptable"`
      (sin distinguir mayúsculas); si no hay ninguna, `NoAcceptableQuestionsError`.
   2. Selecciona preguntas: `azar`, `primeras` o `menos usadas`; por tema, número fijo o total
      (`equitativo`/`azar`).
@@ -95,7 +95,7 @@ Columnas, en este orden habitual:
 
 | Columna | Contenido |
 |---|---|
-| `Número de pregunta` | entero (⚠ no garantizado único tras fusionar bancos, ver `BUG-2`) |
+| `Número de pregunta` | entero; **no** es único tras fusionar bancos (no lo uses como clave) |
 | `Tema` | nombre del tema; inicialmente derivado del nombre del PDF |
 | `Estado` | `Pendiente de revisar` o `Aceptable` (comparación sin distinguir mayúsculas) |
 | `Pregunta` | enunciado |
@@ -179,14 +179,19 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `config.json` | directorio actual | clave de API (texto plano, `SEC-3`) |
 | `custom_prompts.json` | directorio actual | prompts personalizados |
 | `exam_generation_template.json` | directorio actual → `%APPDATA%\pyexamgenerator` | plantilla de la pestaña de exámenes |
-| sesión `.json` + `.pkl` | ruta elegida por el usuario | sesión de corrección |
+| sesión `.json` + `.pkl` | ruta elegida por el usuario | sesión de corrección (se carga el `.json`; el `.pkl` solo con `allow_pickle=True`) |
 
 ## Tests
 
 | Fichero | Cubre |
 |---|---|
 | `test_exam_order_unit.py` | orden canónico y respuesta correcta tras barajar |
-| `test_exam_order_integration.py` | DOCX vs XML con un banco real (fixture fuera de git, `TST-2`) |
+| `test_exam_order_integration.py` | DOCX vs XML con un banco sintético realista |
+| `test_exam_generator_bank.py` | relectura del banco y registro de uso por fila |
+| `test_question_generator_parsing.py` | análisis seguro de la respuesta de Gemini |
+| `test_grading_bonus_and_attendance.py` | punto extra PIR y columnas de asistencia |
+| `test_grading_ids.py` | `normalize_id`, nota final/comparación con IDs float, deduplicación |
+| `test_package_smoke.py` | compila todos los módulos (incluida la GUI) |
 | `test_image_mode_unit.py` | utilidades de `input_mode='image'` |
 | `test_v023_features.py` | estado sin mayúsculas, XML no blanco, placeholders de plantilla DOCX |
 | `test_v030_features.py` | reparto por total, layout del DOCX, uso desde exámenes, etiquetas, unificación |
