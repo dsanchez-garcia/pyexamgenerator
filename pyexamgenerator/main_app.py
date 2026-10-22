@@ -979,7 +979,7 @@ class ExamApp:
             parts = [p.strip() for p in item.split("|")]
             source = {"path": parts[0]}
             if len(parts) > 1 and parts[1]:
-                source["weight"] = float(parts[1].replace(",", "."))
+                source["weight"] = self._parse_weight(parts[1], parts[0])
             if len(parts) > 2 and parts[2]:
                 source["label"] = parts[2]
             sources.append(source)
@@ -992,8 +992,16 @@ class ExamApp:
             if not item or "|" not in item:
                 continue
             col, weight = item.rsplit("|", 1)
-            weights[col.strip()] = float(weight.strip().replace(",", "."))
+            weights[col.strip()] = self._parse_weight(weight, col.strip())
         return weights
+
+    @staticmethod
+    def _parse_weight(text: str, owner: str) -> float:
+        """Parses a weight written with ',' or '.' as decimal separator; ValueError with a clear message."""
+        try:
+            return float(str(text).strip().replace(",", "."))
+        except ValueError:
+            raise ValueError(f"Peso no válido para '{owner}': '{str(text).strip()}'. Usa un número, p. ej. 0,4.") from None
 
     def _grad_add_final_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -1217,14 +1225,22 @@ class ExamApp:
 
         if mode == "by_column":
             source = self.grad_final_source_var.get().strip()
-            weights = self._grad_parse_weights()
+            try:
+                weights = self._grad_parse_weights()
+            except ValueError as exc:
+                messagebox.showerror("Datos no válidos", str(exc))
+                return
             if not source or not weights:
                 messagebox.showerror("Faltan datos", "Indica el fichero y las columnas con su peso (Columna|peso ; …).")
                 return
             cfg = FinalGradeConfig(mode="by_column", source_path=source, weights=weights,
                                    output_path="calificaciones_finales_ponderadas.xlsx", output_dir=out, cap_to_10=cap)
         else:
-            sources = self._grad_parse_final_files()
+            try:
+                sources = self._grad_parse_final_files()
+            except ValueError as exc:
+                messagebox.showerror("Datos no válidos", str(exc))
+                return
             if not sources:
                 messagebox.showerror("Faltan datos", "Añade al menos un examen (Fichero|peso ; …).")
                 return
@@ -1662,7 +1678,7 @@ class ExamApp:
         ToolTip(pdf_label, "Seleccione PDFs o imágenes desde los cuales se generarán las preguntas.")
         self.pdf_entry = ttk.Entry(pdf_frame, width=50, textvariable=self.pdf_files_var)
         self.pdf_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ToolTip(self.pdf_entry, "Rutas de los archivos PDF seleccionados (separados por comas).")
+        ToolTip(self.pdf_entry, "Rutas de los archivos seleccionados, separadas por ';' (un nombre de archivo puede contener comas).")
         select_pdf_button = ttk.Button(pdf_frame, text="Seleccionar Archivos", command=self.select_pdf_files)
         select_pdf_button.grid(row=0, column=2, padx=5, pady=5)
         ToolTip(select_pdf_button, "Abre un diálogo para seleccionar uno o más PDFs o imágenes.")
@@ -2138,7 +2154,26 @@ class ExamApp:
                 ("Todos los archivos", "*.*"),
             )
         )
-        self.pdf_entry.insert(tk.END, ",".join(file_paths))
+        if not file_paths:
+            return  # Dialog cancelled: keep the current list.
+        # Add to the current list (no duplicates) with ';' as separator: before, a second selection
+        # was glued to the first one without any separator ('a.pdfb.pdf').
+        paths = self._split_paths(self.pdf_files_var.get())
+        paths += [p for p in file_paths if p not in paths]
+        self.pdf_files_var.set(";".join(paths))
+
+    @staticmethod
+    def _split_paths(text: str) -> List[str]:
+        """Splits a list of paths separated by ';' (a ',' can be part of a file name).
+
+        A list typed by hand with ',' is still accepted when every piece is an existing file.
+        """
+        parts = [p.strip() for p in str(text or "").replace("\n", ";").split(";") if p.strip()]
+        if len(parts) == 1 and "," in parts[0] and not os.path.exists(parts[0]):
+            comma_parts = [p.strip() for p in parts[0].split(",") if p.strip()]
+            if comma_parts and all(os.path.exists(p) for p in comma_parts):
+                return comma_parts
+        return parts
 
     def select_existing_bank_for_gen_file(self) -> None:
         """
@@ -2160,7 +2195,7 @@ class ExamApp:
         """
         api_key = self.api_key_var.get()
         pdf_paths_str = self.pdf_files_var.get()
-        pdf_paths = [path.strip() for path in pdf_paths_str.split(',') if path.strip()]
+        pdf_paths = self._split_paths(pdf_paths_str)
         selected_prompt_type = self.selected_prompt_type.get()
         custom_prompt_text_to_use = self.custom_prompt_text.get()
 
@@ -3232,6 +3267,22 @@ class ExamApp:
             # Load themes after selecting a file.
             self.load_themes_for_selection()
 
+    def _read_bank_with_topics(self, excel_path: str) -> Optional[pd.DataFrame]:
+        """Reads the bank to list its topics; shows the problem and returns None if it cannot.
+
+        Before, a missing or locked file (open in Excel) raised an error that only reached the
+        console, or was reported as an invalid number.
+        """
+        try:
+            df = pd.read_excel(excel_path)
+        except Exception as exc:  # noqa: BLE001 - shown to the user
+            messagebox.showerror("Error", f"No se pudo leer el banco de preguntas:\n{excel_path}\n\n{exc}")
+            return None
+        if 'Tema' not in df.columns:
+            messagebox.showerror("Error", "La columna 'Tema' no se encontró en el archivo Excel.")
+            return None
+        return df
+
     def generate_exams(self) -> None:
         """
         Gathers all parameters from the 'Generate Exams' tab and triggers the exam generation process.
@@ -3310,22 +3361,21 @@ class ExamApp:
             if num_preguntas_str:
                 try:
                     num_preguntas = int(num_preguntas_str)
-                    df_temp = pd.read_excel(excel_path)
-                    if 'Tema' in df_temp.columns:
-                        unique_themes = df_temp['Tema'].unique()
-                        for theme in unique_themes:
-                            questions_per_topic[theme] = num_preguntas
-                    else:
-                        messagebox.showerror("Error", "La columna 'Tema' no se encontró en el archivo Excel.")
-                        return
                 except ValueError:
                     messagebox.showerror("Error", "Por favor, introduce un número entero válido para 'Mismo número de preguntas por tema'.")
                     return
+                df_temp = self._read_bank_with_topics(excel_path)
+                if df_temp is None:
+                    return
+                for theme in df_temp['Tema'].unique():
+                    questions_per_topic[theme] = num_preguntas
             else:
                 messagebox.showinfo("Información", "Por favor, introduce el número de preguntas por tema.")
                 return
         elif selection_method_var == "por_tema":
-            df_temp = pd.read_excel(excel_path)
+            df_temp = self._read_bank_with_topics(excel_path)
+            if df_temp is None:
+                return
             if 'Tema' in df_temp.columns:
                 unique_themes = df_temp['Tema'].unique()
                 for theme in unique_themes:
