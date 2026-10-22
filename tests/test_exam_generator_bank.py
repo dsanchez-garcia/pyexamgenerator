@@ -82,3 +82,48 @@ def test_update_excel_marks_only_selected_rows_with_duplicate_numbers(tmp_path):
     marked = updated.loc[updated[usage_cols[0]] == 1, "Tema"].tolist()
     assert marked == ["Tema 01", "Tema 01"]
     assert updated["Veces usada en examen"].tolist() == [1, 1, 0, 0]
+
+
+def test_usage_column_name_strips_accents_like_the_bank_manager(tmp_path):
+    """BUG-6: la generación convertía las tildes en '_' ('Evaluaci_n'), a diferencia del banco."""
+    bank_path = tmp_path / "banco.xlsx"
+    _bank("Q", [1, 2]).to_excel(bank_path, index=False)
+
+    generator = ExamGenerator()
+    generator.generate_exam_from_excel(
+        bank_excel_path=str(bank_path),
+        output_dir=str(tmp_path / "out"),
+        subject="Asig",
+        exam="Evaluación Final",
+        course="25-26",
+        exam_names=["A"],
+        update_excel=True,
+    )
+
+    usage_cols = [col for col in pd.read_excel(bank_path).columns if col.endswith("_uso")]
+    assert usage_cols == ["Evaluacion_Final_25_26_uso"]
+
+
+def test_usage_column_reuses_legacy_name_when_present(tmp_path):
+    """BUG-6: si el banco ya tiene la columna con el nombre antiguo, se reutiliza (sin duplicar)."""
+    bank = _bank("Q", [1, 2])
+    bank["Evaluaci_n_Final_25_26_uso"] = [1, 0]
+    bank_path = tmp_path / "banco.xlsx"
+    bank.to_excel(bank_path, index=False)
+
+    generator = ExamGenerator()
+    random.seed(0)
+    generator.generate_exam_from_excel(
+        bank_excel_path=str(bank_path),
+        output_dir=str(tmp_path / "out"),
+        subject="Asig",
+        exam="Evaluación Final",
+        course="25-26",
+        exam_names=["A"],
+        update_excel=True,
+    )
+
+    updated = pd.read_excel(bank_path)
+    usage_cols = [col for col in updated.columns if col.endswith("_uso")]
+    assert usage_cols == ["Evaluaci_n_Final_25_26_uso"]
+    assert updated["Veces usada en examen"].tolist() == [1, 1]

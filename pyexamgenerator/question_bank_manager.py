@@ -18,20 +18,30 @@ import pandas as pd
 from docx import Document
 import os
 import re
-import unicodedata
 from typing import Optional, List, Tuple
+
+from pyexamgenerator._text import strip_accents
 
 class QuestionBankManager:
     """
     Manages a question bank, allowing reading from DOCX files,
     saving to Excel, and adding new questions while avoiding duplicates.
     """
+    # Paragraph markers of the review DOCX written by QuestionGenerator.save_questions_to_docx.
+    # DOTALL: a paragraph may contain soft line breaks ('\n') added while reviewing in Word.
+    _DOCX_QUESTION_HEADER = re.compile(r"^Pregunta\s+(\d+)\s*[:.)-]?\s*(.*)$", re.DOTALL)
+    _DOCX_ANSWER_LINE = re.compile(r"^([ABCD])\)\s*(.*)$", re.DOTALL)
+    _DOCX_SINGLE_LINE_FIELDS = (("Tema:", "Tema"), ("Estado:", "Estado"), ("Respuesta correcta:", "Respuesta correcta"))
+
     #TODO: review how the transformation from revised docx to xlsx, etc. is used in the code.
     def read_questions_from_docx(self, docx_path: str) -> Optional[pd.DataFrame]:
         """
         Reads revised questions from a DOCX file and returns a pandas DataFrame.
         The DOCX file must follow a specific format where each piece of information
         (question, topic, state, options, etc.) is prefixed with a specific keyword.
+
+        A paragraph without any prefix continues the previous question, answer or relevant text
+        (reviewers often split long texts into several paragraphs).
 
         Args:
             docx_path (str): The path to the DOCX file containing the questions.
@@ -44,39 +54,44 @@ class QuestionBankManager:
             document = Document(docx_path)
             questions = []
             current_question = {}
-            state = None  # To track what information we are reading
+            current_field = None  # Field that receives continuation paragraphs.
 
             for paragraph in document.paragraphs:
                 text = paragraph.text.strip()
-                if text.startswith("Pregunta "):
+                if not text:
+                    continue
+
+                header = self._DOCX_QUESTION_HEADER.match(text)
+                if header:
                     if current_question:
                         questions.append(current_question)
-                    current_question = {"Número de pregunta": text.split(":")[0].replace("Pregunta ", "").strip(), "Pregunta": text.split(":")[1].strip()}
-                    state = "pregunta"
-                elif text.startswith("Tema:"):
-                    current_question["Tema"] = text.replace("Tema:", "").strip()
-                    state = "tema"
-                elif text.startswith("Estado:"):
-                    current_question["Estado"] = text.replace("Estado:", "").strip()
-                    state = "estado"
-                elif text.startswith("A)"):
-                    current_question["Respuesta A"] = text.replace("A)", "").strip()
-                    state = "respuesta_a"
-                elif text.startswith("B)"):
-                    current_question["Respuesta B"] = text.replace("B)", "").strip()
-                    state = "respuesta_b"
-                elif text.startswith("C)"):
-                    current_question["Respuesta C"] = text.replace("C)", "").strip()
-                    state = "respuesta_c"
-                elif text.startswith("D)"):
-                    current_question["Respuesta D"] = text.replace("D)", "").strip()
-                    state = "respuesta_d"
-                elif text.startswith("Respuesta correcta:"):
-                    current_question["Respuesta correcta"] = text.replace("Respuesta correcta:", "").strip().upper()
-                    state = "respuesta_correcta"
-                elif text.startswith("Texto relevante:"):
-                    current_question["Texto relevante"] = text.replace("Texto relevante:", "").strip()
-                    state = "texto_relevante"
+                    current_question = {"Número de pregunta": int(header.group(1)), "Pregunta": header.group(2).strip()}
+                    current_field = "Pregunta"
+                    continue
+                if not current_question:
+                    continue  # Document title or notes before the first question.
+
+                answer = self._DOCX_ANSWER_LINE.match(text)
+                if answer:
+                    # Only the 'A)' prefix is removed: the same characters inside the text are kept.
+                    current_field = f"Respuesta {answer.group(1)}"
+                    current_question[current_field] = answer.group(2).strip()
+                    continue
+                if text.startswith("Texto relevante:"):
+                    current_field = "Texto relevante"
+                    current_question[current_field] = text[len("Texto relevante:"):].strip()
+                    continue
+
+                for prefix, field in self._DOCX_SINGLE_LINE_FIELDS:
+                    if text.startswith(prefix):
+                        value = text[len(prefix):].strip()
+                        current_question[field] = value.upper() if field == "Respuesta correcta" else value
+                        current_field = None  # One-line fields never continue.
+                        break
+                else:
+                    if current_field:
+                        previous = current_question.get(current_field, "")
+                        current_question[current_field] = f"{previous}\n{text}" if previous else text
 
             if current_question:
                 questions.append(current_question)
@@ -190,13 +205,8 @@ class QuestionBankManager:
 
     @staticmethod
     def _strip_accents(text: str) -> str:
-        """Removes diacritics from ``text`` (á→a, é→e, ñ→n, ü→u, ...).
-
-        Used before building safe column names so accented letters are kept as their base
-        letter instead of being turned into underscores by the ``[^a-zA-Z0-9_]`` sanitizer.
-        """
-        normalized = unicodedata.normalize('NFKD', str(text))
-        return ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+        """Removes diacritics from ``text`` (á→a, é→e, ñ→n, ü→u, ...); see :func:`strip_accents`."""
+        return strip_accents(text)
 
     @classmethod
     def _usage_column_name(cls, exam_label: Optional[str], exam_path: str) -> str:
@@ -777,9 +787,13 @@ class QuestionBankManager:
             print(f"Se añadieron {added_count} preguntas sin duplicados.")
             # Save the updated DataFrame to a new file
             save_path: str = "banco_de_preguntas_actualizado.xlsx"
-            self.save_dataframe_to_excel(updated_df, save_path, overwrite=False)
-            print(f"Banco de preguntas actualizado guardado en: {save_path}")
-            return save_path
+            # Return the file that was really written (overwrite=False adds a suffix) or None.
+            saved_path = self.save_dataframe_to_excel(updated_df, save_path, overwrite=False)
+            if saved_path is None:
+                print("Ocurrió un error al guardar el banco de preguntas actualizado.")
+                return None
+            print(f"Banco de preguntas actualizado guardado en: {saved_path}")
+            return saved_path
         else:
             print("Ocurrió un error al añadir las preguntas.")
         return None

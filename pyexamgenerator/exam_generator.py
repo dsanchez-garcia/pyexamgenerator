@@ -27,7 +27,9 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import os
-from typing import Callable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
+from typing import Callable, Iterable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
+
+from pyexamgenerator._text import strip_accents
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -223,11 +225,28 @@ class ExamGenerator:
         return exam_df_variant
 
     @staticmethod
-    def _generation_usage_column_name(exam: Optional[str], course: Optional[str]) -> str:
-        """Builds the usage column name used while generating exams."""
-        safe_exam_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(exam or "examen")).strip('_') or "examen"
-        safe_course_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(course or "curso")).strip('_') or "curso"
-        return f'{safe_exam_name}_{safe_course_name}_uso'
+    def _generation_usage_column_name(exam: Optional[str], course: Optional[str],
+                                      existing_columns: Optional[Iterable[str]] = None) -> str:
+        """Builds the usage column name used while generating exams (``<exam>_<course>_uso``).
+
+        Accents are stripped before sanitizing, as ``QuestionBankManager`` does, so 'Evaluación'
+        becomes 'Evaluacion' instead of 'Evaluaci_n'. If ``existing_columns`` (the bank's columns)
+        already has the column under that old name, it is reused so that regenerating an exam
+        does not create a second column for it.
+        """
+        def safe(text: Optional[str], default: str, keep_accents_as_underscore: bool = False) -> str:
+            raw = str(text or default)
+            if not keep_accents_as_underscore:
+                raw = strip_accents(raw)
+            return re.sub(r'[^a-zA-Z0-9_]', '_', raw).strip('_') or default
+
+        name = f'{safe(exam, "examen")}_{safe(course, "curso")}_uso'
+        if existing_columns is not None:
+            columns = set(existing_columns)
+            legacy_name = f'{safe(exam, "examen", True)}_{safe(course, "curso", True)}_uso'
+            if name not in columns and legacy_name in columns:
+                return legacy_name
+        return name
 
     @staticmethod
     def _questions_over_usage_threshold(exam_df: pd.DataFrame, threshold: int) -> pd.DataFrame:
@@ -1044,7 +1063,7 @@ class ExamGenerator:
             # abspath: a bare file name ('banco.xlsx') has an empty dirname and makedirs('') fails.
             output_dir = os.path.dirname(os.path.abspath(bank_excel_path))
         os.makedirs(output_dir, exist_ok=True)
-        usage_column_name = self._generation_usage_column_name(exam, course)
+        usage_column_name = self._generation_usage_column_name(exam, course, existing_columns=self.df.columns)
 
         for i in range(num_exams_to_generate):
             exam_type_name = exam_name_list[i]
