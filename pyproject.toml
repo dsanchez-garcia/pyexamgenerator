@@ -62,6 +62,8 @@ dev = [
     "tox",
     "build",
     "twine",
+    "ruff",
+    "pre-commit",
 ]
 # Compilar la documentación. Read the Docs y la CI usan las versiones fijadas en docs/requirements.txt.
 docs = [
@@ -85,6 +87,15 @@ version = { attr = "pyexamgenerator.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["pyexamgenerator*"]
+
+[tool.ruff]
+# Initial, permissive setup (DEV-1): only real errors for now (pyflakes, "F"). The formatter
+# (`ruff format`) will be applied in a separate change without functional changes.
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F"]
 
 [tool.pytest.ini_options]
 # Only the project's tests (never a copy of the repository such as the OneDrive backup link).

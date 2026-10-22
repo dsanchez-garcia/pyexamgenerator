@@ -1051,8 +1051,6 @@ class ExamGenerator:
                     os.remove(f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx')
                     print("Archivo de previsualización eliminado.")
                 except OSError as e:
-                    print("Archivo de previsualización eliminado.")
-                except OSError as e:
                     print(f"Error al eliminar el archivo de previsualización: {e}")
             else:
                 print("Generación de exámenes cancelada.")

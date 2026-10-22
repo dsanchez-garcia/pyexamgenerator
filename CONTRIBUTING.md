@@ -22,7 +22,7 @@ Si se trata de un problema de **seguridad**, no abras un *issue* público: sigue
 2. Crea una rama desde `master` (`fix/...`, `feat/...`, `docs/...`, `test/...`).
 3. Escribe primero un test que reproduzca el problema (con datos sintéticos en `tmp_path`) y después
    el arreglo mínimo.
-4. Ejecuta toda la suite: `python -m pytest -q`.
+4. Ejecuta toda la suite y el lint: `python -m pytest -q` y `python -m ruff check .`.
 5. Añade una entrada en `CHANGELOG.md`, bajo `## [Unreleased]`, en español.
 6. Si la tarea venía de `TODO.md`, márcala y cita su identificador en el commit
    (p. ej. `fix(exam): ... (BUG-3)`).

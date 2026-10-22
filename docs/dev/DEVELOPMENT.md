@@ -27,7 +27,11 @@ venv/Scripts/python.exe -m pytest -q                      # todo
 venv/Scripts/python.exe -m pytest tests/test_v030_features.py -q
 venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
 venv/Scripts/python.exe -m tox                            # matriz py310 / py314 (tox.ini)
+venv/Scripts/python.exe -m ruff check .                   # lint (reglas en pyproject.toml)
 ```
+
+La CI también ejecuta `ruff check` (de momento solo las reglas `F` de pyflakes). Para que se compruebe
+en cada commit: `venv/Scripts/pre-commit.exe install` (configuración en `.pre-commit-config.yaml`).
 
 Estado a 2026-10-22: 190 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
 pruebas de la GUI, que necesitan pantalla). La CI (`.github/workflows/tests.yml`) repite la suite en

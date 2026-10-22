@@ -37,6 +37,9 @@ venv/Scripts/python.exe -m pytest -q
 venv/Scripts/python.exe -m pytest tests/test_grading_unit.py -q
 venv/Scripts/python.exe -m pytest -q -k "unify"
 
+# Lint (reglas en pyproject.toml; la CI lo exige)
+venv/Scripts/python.exe -m ruff check .
+
 # Comprobar que el paquete se importa
 venv/Scripts/python.exe -c "import pyexamgenerator as p; print(p.__version__, p.grading.HAS_OCR)"
 
@@ -47,8 +50,9 @@ venv/Scripts/python.exe -m pyexamgenerator.main_app
 En Linux/macOS sustituye `venv/Scripts/python.exe` por `venv/bin/python`. Instalación de un entorno
 nuevo: ver `docs/dev/DEVELOPMENT.md`.
 
-No hay linter ni formateador configurados todavía (ver `DEV-1` en `TODO.md`). No reformatees
-ficheros enteros: limita el diff a lo que cambias.
+`ruff check .` debe pasar (de momento solo las reglas `F` de pyflakes; `pre-commit install` lo
+ejecuta en cada commit). Aún no se aplica formateador (`ruff format` irá en un cambio aparte): no
+reformatees ficheros enteros; limita el diff a lo que cambias.
 
 ## Mapa del repositorio
 

@@ -139,12 +139,9 @@ class SharedExamDataStore:
 
 # Enrollment merge utilities
 
-import re
 import unicodedata
-from pathlib import Path
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable
 
-import pandas as pd
 
 
 def _normalize(text: str) -> str:

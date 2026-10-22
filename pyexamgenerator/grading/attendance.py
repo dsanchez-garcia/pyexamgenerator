@@ -703,14 +703,6 @@ class AbsenceJustificationManager:
                     attendance_state = "dudosa"
                 attendance_state_by_label[class_label] = attendance_state
 
-                quiz_grade_group = None
-                quiz_col_group = ""
-                if qrow is not None and topic and group and "|" not in group:
-                    qcol = quiz_cols.get((topic, group))
-                    if qcol:
-                        quiz_col_group = qcol
-                        quiz_grade_group = self._parse_grade(qrow.get(qcol, ""))
-
                 quiz_topic_scores = []
                 if qrow is not None and topic:
                     for g in ["GIM", "GITI-GIE-GIEI"]:
@@ -1208,13 +1200,9 @@ if __name__ == "__main__":
 
 # PIR bonus calculation
 
-import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import date
-from typing import Dict, List, Optional, Tuple
 
-import pandas as pd
 
 
 @dataclass(frozen=True)
