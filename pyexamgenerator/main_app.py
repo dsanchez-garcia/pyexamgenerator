@@ -129,10 +129,11 @@ class ExamApp:
         self.update_status("Aplicación iniciada.")
 
         # --- Variables for the "Generate Exams" tab ---
-        self.excel_filepath = tk.StringVar(value="La/ruta/del/banco/de/preguntas.xlsx")
-        self.subject = tk.StringVar(value="Asignatura de Prueba")
-        self.exam_name = tk.StringVar(value="Examen de Prueba")
-        self.course = tk.StringVar(value="Curso 2024-2025")
+        # No sample values in the exam data: they ended up in real exams when left unchanged.
+        self.excel_filepath = tk.StringVar()
+        self.subject = tk.StringVar()
+        self.exam_name = tk.StringVar()
+        self.course = tk.StringVar()
         self.num_exams = tk.StringVar(value="2")
         self.exam_names = tk.StringVar(value="Tipo A,Tipo B")
         self.questions_per_topic = tk.StringVar(value="Tema 01:2,Tema 02:2")
@@ -143,9 +144,9 @@ class ExamApp:
         self.left_margin = tk.StringVar(value="0.5")
         self.right_margin = tk.StringVar(value="0.5")
         self.font_size = tk.StringVar(value="10")
-        self.answer_sheet_instructions = tk.StringVar(value="Prueba GUI")
+        self.answer_sheet_instructions = tk.StringVar()
         self.penalty = tk.StringVar(value="-25")
-        self.xml_cat_additional_text = tk.StringVar(value="Prueba GUI")
+        self.xml_cat_additional_text = tk.StringVar()
         self.export_moodle = tk.BooleanVar(value=False)
         self.update_excel = tk.BooleanVar(value=False)
         self.usage_alert_enabled_var = tk.BooleanVar(value=True)
@@ -160,7 +161,7 @@ class ExamApp:
         # --- Variables for the "Generate Questions" tab ---
         self.pdf_files_var = tk.StringVar()
         self.num_questions_var = tk.StringVar(value="5")
-        self.output_filename_var = tk.StringVar(value="banco_prueba")
+        self.output_filename_var = tk.StringVar(value="preguntas")
         self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else "TU_CLAVE_API")
         self.gen_questions_output_dir_var = tk.StringVar()
 
@@ -2245,7 +2246,8 @@ class ExamApp:
             messagebox.showerror("Error", "El número máximo de intentos por fragmento debe ser un entero.")
             return
 
-        output_filename = self.output_filename_var.get()
+        # Empty name: the library default ('preguntas').
+        output_filename = self.output_filename_var.get().strip() or None
 
         # Obtenemos el modelo directamente de la variable que se actualiza con la tabla
         technical_model_name = self.selected_model_var.get()
@@ -3319,6 +3321,9 @@ class ExamApp:
         usage_alert_enabled = self.usage_alert_enabled_var.get()
         usage_alert_threshold_str = self.usage_alert_threshold_var.get().strip()
 
+        if not excel_path.strip():
+            messagebox.showerror("Error", "Selecciona el archivo Excel del banco de preguntas.")
+            return
         if not os.path.exists(excel_path):
             messagebox.showerror("Error", f"El archivo Excel '{excel_path}' no se encuentra.")
             return
@@ -3610,7 +3615,7 @@ class ExamApp:
         """
         self.update_exams_tree.delete(*self.update_exams_tree.get_children())
         for index, spec in enumerate(self.update_exam_specs):
-            column_name = self.question_bank_manager._usage_column_name(spec["label"], spec["path"])
+            column_name = self.question_bank_manager.usage_column_name(spec["label"], spec["path"])
             self.update_exams_tree.insert(
                 "", "end", iid=str(index),
                 values=(os.path.basename(spec["path"]), spec["label"], column_name)

@@ -477,3 +477,32 @@ def test_mouse_wheel_scrolls_tables_and_text_boxes_inside_the_tabs(app):
 
     # The rest of the tab still scrolls the page from any widget.
     assert app.pdf_entry.bind("<MouseWheel>") != ""
+
+
+def test_exam_tab_starts_without_sample_values(app):
+    """GUI-10: «Asignatura de Prueba», «Prueba GUI»... venían rellenos y acababan en exámenes reales
+    (p. ej. «Prueba GUI» como instrucciones de la hoja de respuestas y en la categoría de Moodle)."""
+    for var in (app.excel_filepath, app.subject, app.exam_name, app.course,
+                app.answer_sheet_instructions, app.xml_cat_additional_text):
+        assert var.get() == ""
+    assert app.output_filename_var.get() == "preguntas"
+
+    app.generate_exams()
+
+    assert app.shown_messages == [("error", "Error", "Selecciona el archivo Excel del banco de preguntas.")]
+
+
+def test_exam_list_shows_usage_columns_through_the_public_api(app, monkeypatch):
+    """GUI-10: la GUI llamaba al método privado `_usage_column_name` del gestor del banco."""
+    from pyexamgenerator.question_bank_manager import QuestionBankManager
+
+    def private_helper(*args, **kwargs):
+        raise AssertionError("la GUI no debe usar el método privado")
+
+    monkeypatch.setattr(QuestionBankManager, "_usage_column_name", private_helper)
+    app.update_exam_specs = [{"path": "examen_Evaluación_1A_completo.xlsx", "label": "Evaluación 1"}]
+
+    app._refresh_update_exams_tree()
+
+    values = [app.update_exams_tree.item(item, "values") for item in app.update_exams_tree.get_children()]
+    assert values == [("examen_Evaluación_1A_completo.xlsx", "Evaluación 1", "Evaluacion_1_uso")]

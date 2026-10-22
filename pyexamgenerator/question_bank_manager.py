@@ -209,15 +209,19 @@ class QuestionBankManager:
         return strip_accents(text)
 
     @classmethod
-    def _usage_column_name(cls, exam_label: Optional[str], exam_path: str) -> str:
+    def usage_column_name(cls, exam_label: Optional[str], exam_path: str) -> str:
         """Builds the per-exam usage column name (``<label>_uso``) from a label or the file name.
 
-        Accents are stripped first so e.g. 'Evaluación' becomes 'Evaluacion' (not 'Evaluaci_n').
+        It is the column that registering the exam writes in the bank. Accents are stripped first
+        so e.g. 'Evaluación' becomes 'Evaluacion' (not 'Evaluaci_n').
         """
         label = (exam_label or '').strip() or os.path.splitext(os.path.basename(exam_path))[0]
         label = cls._strip_accents(label)
         safe_label = re.sub(r'[^a-zA-Z0-9_]', '_', label)
         return f'{safe_label}_uso'
+
+    # Former private name, kept for existing code.
+    _usage_column_name = usage_column_name
 
     @staticmethod
     def _resolve_parts_indices(num_tokens: int, parts) -> List[int]:
@@ -445,7 +449,7 @@ class QuestionBankManager:
         effective_label = (exam_label or '').strip() or self.label_from_filename(
             exam_path, label_delimiter, label_parts
         )
-        usage_column_name = self._usage_column_name(effective_label, exam_path)
+        usage_column_name = self.usage_column_name(effective_label, exam_path)
         df_bank, matched_count = self._mark_exam_usage(df_bank, df_exam, usage_column_name, match_columns)
         df_bank = self._recompute_usage_aggregate(df_bank)
         return matched_count, df_bank
@@ -538,7 +542,7 @@ class QuestionBankManager:
             effective_label = (exam_label or '').strip() or self.label_from_filename(
                 exam_path, label_delimiter, label_parts
             )
-            usage_column_name = self._usage_column_name(effective_label, exam_path)
+            usage_column_name = self.usage_column_name(effective_label, exam_path)
             df_bank, matched = self._mark_exam_usage(df_bank, df_exam, usage_column_name, match_columns)
             total_matched += matched
             stats["exams"].append({
