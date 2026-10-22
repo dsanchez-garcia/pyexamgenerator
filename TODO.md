@@ -235,10 +235,16 @@ búscalas por nombre de función si no coinciden.
   (`"429"`, `question_generator.py:980,994`) y `time.sleep(1)` fijo. Usar
   `google.genai.errors.APIError.code` y reintentos con backoff exponencial. — hecho en `f61113a`
   (y `GeminiRequestError` para 401/403/404).
-- [ ] **ARC-12 (P2)** Ubicación de ficheros de configuración inconsistente (`config.json` y
+- [x] **ARC-12 (P2)** Ubicación de ficheros de configuración inconsistente (`config.json` y
   `custom_prompts.json` en CWD; plantilla en CWD → `%APPDATA%`, solo Windows). Un único
   `config_dir()` con `platformdirs`. Hay además un `pyexamgenerator/custom_prompts.json` suelto e
   ignorado dentro del paquete.
+  *Decidido por el mantenedor (2026-10-22): una carpeta por usuario calculada sin dependencias
+  (`%APPDATA%\pyexamgenerator`, `~/.config/pyexamgenerator`, `~/Library/Application Support/…`);
+  al arrancar se pregunta si mover los ficheros de la carpeta actual (los prompts se combinan); menú
+  «Abrir carpeta de configuración».* — hecho en la rama `refactor/carpeta-configuracion`
+  (`pyexamgenerator/user_config.py`). El `pyexamgenerator/custom_prompts.json` suelto es un fichero
+  local, ignorado por git: la aplicación ofrece moverlo si se abre desde esa carpeta.
 - [x] **ARC-13 (P3)** Estado compartido en `self` (`self.text`, `self.quiz`, `self.page_texts`) hace
   que las instancias no sean reutilizables de forma segura. — hecho en `b6913cb`.
 

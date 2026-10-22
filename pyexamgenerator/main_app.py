@@ -22,12 +22,11 @@ import pandas as pd
 from pyexamgenerator.question_generator import (
     QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
 )
-from pyexamgenerator import credentials, gui_logic
+from pyexamgenerator import credentials, gui_logic, user_config
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
 import os
-import json
 import tempfile
 import threading
 from google import genai
@@ -255,10 +254,12 @@ class ExamApp:
         menubar.add_cascade(label="Ayuda", menu=help_menu)
 
         help_menu.add_command(label="Configurar API Key (Ayuda)...", command=self.open_api_key_help)
+        help_menu.add_command(label="Abrir carpeta de configuración", command=self.open_config_folder)
         help_menu.add_separator()
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
 
         self._offer_legacy_key_migration()
+        self._offer_legacy_config_migration()
 
     def _install_copyable_messageboxes(self) -> None:
         """Info/warning/error popups of this module use copyable dialogs (see _CopyableMessageBox)."""
@@ -342,14 +343,13 @@ class ExamApp:
             Dict[str, str]: A dictionary where keys are prompt type names
                            and values are the prompt texts.
         """
-        filename = "custom_prompts.json"
-        custom_prompts = {}
-        if os.path.exists(filename):
-            with open(filename, 'r', encoding='utf-8') as f:
-                try:
-                    custom_prompts = json.load(f)
-                except json.JSONDecodeError:
-                    messagebox.showerror("Error", "Error al decodificar el archivo de prompts personalizados (custom_prompts.json).")
+        # In the user's configuration folder, not in the current one (ARC-12).
+        custom_prompts: Dict[str, str] = {}
+        try:
+            custom_prompts = user_config.read_json(user_config.PROMPTS_FILE) or {}
+        except (OSError, ValueError):
+            path = user_config.config_path(user_config.PROMPTS_FILE)
+            messagebox.showerror("Error", f"Error al decodificar el archivo de prompts personalizados:\n{path}")
 
         default_prompts = self.load_default_prompt_types()
 
@@ -375,13 +375,60 @@ class ExamApp:
 
     def save_prompt_types(self) -> None:
         """
-        Saves custom prompt types to a JSON file.
+        Saves custom prompt types to a JSON file in the user's configuration folder.
         """
-        filename = "custom_prompts.json"
         # Filtra para guardar solo los prompts que no son los predeterminados.
         custom_prompts = {k: v for k, v in self.prompt_types.items() if k not in self.load_default_prompt_types()}
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(custom_prompts, f, indent=4, ensure_ascii=False)
+        try:
+            user_config.write_json(user_config.PROMPTS_FILE, custom_prompts)
+        except OSError as exc:
+            messagebox.showerror("Error", f"No se pudieron guardar los prompts personalizados:\n{exc}")
+
+    def open_config_folder(self) -> None:
+        """Opens the user's configuration folder (custom prompts, exam template) in the file browser."""
+        folder = user_config.config_dir()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            messagebox.showerror("Error", f"No se pudo crear la carpeta de configuración:\n{folder}\n\n{exc}")
+            return
+        self._open_folder(str(folder))
+        messagebox.showinfo(
+            "Carpeta de configuración",
+            f"Tus prompts personalizados y la plantilla de exámenes se guardan en:\n{folder}",
+        )
+
+    def _offer_legacy_config_migration(self) -> None:
+        """ARC-12: older versions kept the prompts and the exam template in the current folder.
+
+        Offers to move them to the user's configuration folder (prompts are merged with the ones
+        already there). If the user declines, they stay where they are and are not used.
+        """
+        legacy = user_config.find_legacy_files()
+        if not legacy:
+            return
+        labels = {user_config.PROMPTS_FILE: "prompts personalizados",
+                  user_config.EXAM_TEMPLATE_FILE: "plantilla de exámenes"}
+        listed = "\n".join(f"- {path.name} ({labels[path.name]})" for path in legacy)
+        question = (
+            f"Hay ficheros de configuración de una versión anterior en la carpeta actual:\n{listed}\n\n"
+            f"¿Moverlos a tu carpeta de configuración?\n{user_config.config_dir()}\n\n"
+            "Los prompts se combinan con los que ya tengas. Si no los mueves, la aplicación no los usará."
+        )
+        if not messagebox.askyesno("Configuración de una versión anterior", question):
+            return
+        try:
+            moved = user_config.move_legacy_files()
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Error", f"No se pudieron mover los ficheros (no se ha borrado ninguno):\n{exc}")
+            return
+        self.prompt_types = self.load_prompt_types()
+        self.update_prompt_type_options()
+        message = f"Configuración movida a:\n{user_config.config_dir()}"
+        if moved.prompts_kept:
+            message += (f"\n\n{moved.prompts_kept} prompt(s) de la carpeta actual tenían el mismo nombre que otros "
+                        "que ya tenías: se han conservado los tuyos.")
+        messagebox.showinfo("Configuración", message)
 
     def add_edit_prompt_type(self, existing_type: Optional[str] = None) -> None:
         """
@@ -3788,18 +3835,6 @@ class ExamApp:
         if filepath:
             self.template_docx_path_var.set(filepath)
 
-    @staticmethod
-    def _get_exam_template_config_paths() -> Tuple[str, str]:
-        local_path = os.path.join(os.getcwd(), "exam_generation_template.json")
-        appdata = os.getenv("APPDATA")
-        if appdata:
-            central_dir = os.path.join(appdata, "pyexamgenerator")
-            os.makedirs(central_dir, exist_ok=True)
-            central_path = os.path.join(central_dir, "exam_generation_template.json")
-        else:
-            central_path = local_path
-        return local_path, central_path
-
     def _exam_template_fields(self) -> Dict[str, tk.Variable]:
         """Fields of the exam tab saved in the exam template, by their key in the JSON file."""
         return {
@@ -3831,44 +3866,25 @@ class ExamApp:
         }
 
     def save_exam_tab_template(self) -> None:
-        """Saves current exam-tab values to a JSON template (local first, then central fallback)."""
+        """Saves the current exam-tab values to the template in the user's configuration folder."""
         template_data = {key: var.get() for key, var in self._exam_template_fields().items()}
-
-        local_path, central_path = self._get_exam_template_config_paths()
-        saved_path = None
-        for path in (local_path, central_path):
-            try:
-                with open(path, 'w', encoding='utf-8') as f:
-                    json.dump(template_data, f, ensure_ascii=False, indent=2)
-                saved_path = path
-                break
-            except OSError:
-                continue
-
-        if saved_path:
-            messagebox.showinfo("Plantilla", f"Plantilla guardada en:\n{saved_path}")
-        else:
-            messagebox.showerror("Error", "No se pudo guardar la plantilla de exámenes.")
+        try:
+            saved_path = user_config.write_json(user_config.EXAM_TEMPLATE_FILE, template_data)
+        except OSError as exc:
+            messagebox.showerror("Error", f"No se pudo guardar la plantilla de exámenes:\n{exc}")
+            return
+        messagebox.showinfo("Plantilla", f"Plantilla guardada en:\n{saved_path}")
 
     def load_exam_tab_template(self) -> None:
-        """Loads exam-tab values from local JSON first, then central fallback."""
-        local_path, central_path = self._get_exam_template_config_paths()
-        config = None
-        loaded_path = None
-
-        for path in (local_path, central_path):
-            if not os.path.exists(path):
-                continue
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                loaded_path = path
-                break
-            except (OSError, json.JSONDecodeError):
-                continue
-
+        """Loads the exam-tab values from the template in the user's configuration folder."""
+        loaded_path = user_config.config_path(user_config.EXAM_TEMPLATE_FILE)
+        try:
+            config = user_config.read_json(user_config.EXAM_TEMPLATE_FILE)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Error", f"No se pudo leer la plantilla de exámenes:\n{loaded_path}\n\n{exc}")
+            return
         if not config:
-            messagebox.showwarning("Plantilla", "No se encontró plantilla de exámenes en ruta local ni central.")
+            messagebox.showwarning("Plantilla", "Todavía no has guardado ninguna plantilla de exámenes.")
             return
 
         for key, var in self._exam_template_fields().items():

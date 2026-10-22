@@ -29,12 +29,13 @@ class MemoryKeyring(KeyringBackend):
 
 @pytest.fixture(autouse=True)
 def memory_keyring(monkeypatch, tmp_path):
-    """An empty credential store per test, and the user's configuration folder inside ``tmp_path``."""
-    from pyexamgenerator import credentials
+    """An empty credential store per test, and the user's configuration folder inside ``tmp_path``
+    (prompts, exam template and key file: the tests never touch the real ones, ARC-12)."""
+    from pyexamgenerator import user_config
 
     store = MemoryKeyring()
     keyring.set_keyring(store)
-    monkeypatch.setattr(credentials, "_config_dir", lambda: tmp_path / "configuracion_usuario")
+    monkeypatch.setattr(user_config, "config_dir", lambda: tmp_path / "configuracion_usuario")
     return store
 
 

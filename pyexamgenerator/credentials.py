@@ -34,6 +34,8 @@ from typing import NamedTuple, Optional, Tuple
 
 import keyring
 
+from pyexamgenerator import user_config
+
 ENV_VAR = "GEMINI_API_KEY"
 PLACEHOLDER = "TU_CLAVE_API"  # shown in the GUI's empty key field: never a key
 _SERVICE = "pyexamgenerator"
@@ -54,19 +56,8 @@ def _clean(key: object) -> Optional[str]:
     return text if text and text != PLACEHOLDER else None
 
 
-def _config_dir() -> Path:
-    """The user's configuration folder for the application (never the current folder)."""
-    if sys.platform == "win32":
-        base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
-    elif sys.platform == "darwin":
-        base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
-    else:
-        base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
-    return Path(base) / "pyexamgenerator"
-
-
 def _key_file() -> Path:
-    return _config_dir() / _KEY_FILE_NAME
+    return user_config.config_path(_KEY_FILE_NAME)
 
 
 def _store_name() -> str:

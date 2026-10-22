@@ -67,6 +67,7 @@ pyexamgenerator/
   main_app.py              GUI Tkinter (clase ExamApp, ~3.800 líneas) y entry point main()
   gui_logic.py             lógica de la GUI sin tkinter: interpretar los campos, avisos (se prueba sin pantalla)
   credentials.py           clave de API de Gemini: GEMINI_API_KEY o almacén de credenciales (keyring)
+  user_config.py           carpeta de configuración del usuario (prompts, plantilla): nunca el CWD
   tooltip.py               ToolTip para la GUI
   grading/                 corrección de exámenes (ver ARCHITECTURE.md)
     api.py                 ExamCorrectionAPI + dataclasses *Config
