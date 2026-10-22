@@ -11,7 +11,7 @@ import pytest
 tk = pytest.importorskip("tkinter")
 from tkinter import messagebox, ttk  # noqa: E402
 
-from pyexamgenerator import credentials, gui_logic  # noqa: E402
+from pyexamgenerator import credentials, gui_logic, user_config  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -88,9 +88,57 @@ def test_renaming_a_custom_prompt_replaces_it(app, tmp_path):
     assert app.shown_messages == []
     assert "Historia" not in app.prompt_types
     assert app.prompt_types["Historia moderna"] == "Prompt de historia"
-    saved = json.loads((tmp_path / "custom_prompts.json").read_text(encoding="utf-8"))
-    assert saved == {"Historia moderna": "Prompt de historia"}
+    # ARC-12: in the user's configuration folder, not in the current one (tmp_path).
+    assert user_config.read_json("custom_prompts.json") == {"Historia moderna": "Prompt de historia"}
+    assert not (tmp_path / "custom_prompts.json").exists()
     assert app.selected_prompt_type.get() == "Historia moderna"
+
+
+def _old_config_files(folder):
+    (folder / "custom_prompts.json").write_text(json.dumps({"Historia": "Prompt antiguo"}), encoding="utf-8")
+    (folder / "exam_generation_template.json").write_text(json.dumps({"subject": "Física"}), encoding="utf-8")
+
+
+def test_config_files_of_older_versions_are_moved_when_accepted(app, tmp_path):
+    """ARC-12: prompts y plantilla vivían en la carpeta desde la que se abría la aplicación."""
+    _old_config_files(tmp_path)
+
+    app._offer_legacy_config_migration()  # askyesno answers "yes" in these tests
+
+    assert not (tmp_path / "custom_prompts.json").exists()
+    assert not (tmp_path / "exam_generation_template.json").exists()
+    assert app.prompt_types["Historia"] == "Prompt antiguo"
+    assert user_config.read_json("exam_generation_template.json") == {"subject": "Física"}
+    assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
+
+
+def test_config_files_of_older_versions_stay_unused_when_declined(app, tmp_path, monkeypatch):
+    _old_config_files(tmp_path)
+    monkeypatch.setattr(messagebox, "askyesno", lambda *args, **kwargs: False)
+
+    app._offer_legacy_config_migration()
+
+    assert (tmp_path / "custom_prompts.json").exists()
+    assert "Historia" not in app.prompt_types
+    assert user_config.read_json("custom_prompts.json") is None
+
+
+def test_help_menu_opens_the_configuration_folder(app, monkeypatch):
+    menubar = app.root.nametowidget(app.root["menu"])
+    (help_index,) = [i for i in range(menubar.index("end") + 1)
+                     if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") == "Ayuda"]
+    help_menu = app.root.nametowidget(menubar.entrycget(help_index, "menu"))
+    labels = [help_menu.entrycget(i, "label") for i in range(help_menu.index("end") + 1)
+              if help_menu.type(i) == "command"]
+    assert "Abrir carpeta de configuración" in labels
+    opened = []
+    monkeypatch.setattr(app, "_open_folder", opened.append)
+
+    app.open_config_folder()
+
+    assert opened == [str(user_config.config_dir())]
+    assert user_config.config_dir().is_dir()
+    assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
 
 def test_api_key_placeholder_is_never_saved(app, tmp_path):
@@ -605,7 +653,6 @@ def test_bank_problems_when_loading_topics_are_shown(app, tmp_path, problem):
 
 def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch):
     """ARC-2: guardar y cargar repetían a mano la lista de campos; un campo nuevo podía quedarse fuera."""
-    monkeypatch.delenv("APPDATA", raising=False)  # template next to the CWD (tmp_path)
     values = [
         (app.subject, "Física"), (app.num_exams, "3"), (app.penalty, "-1/3"), (app.font_size, "12"),
         (app.export_moodle, True), (app.usage_alert_threshold_var, "4"),
@@ -624,6 +671,9 @@ def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch
     app.load_grading_session()
 
     assert [var.get() for var, _ in values] == [value for _, value in values]
+    # ARC-12: the template goes to the user's configuration folder, never to the current one.
+    assert user_config.read_json("exam_generation_template.json")["subject"] == "Física"
+    assert not (tmp_path / "exam_generation_template.json").exists()
 
 
 def test_exam_tab_starts_without_sample_values(app):

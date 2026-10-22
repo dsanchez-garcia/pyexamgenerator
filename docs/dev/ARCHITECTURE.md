@@ -61,7 +61,8 @@ los botones.
   `ServiceOverloadedError` (5xx persistente) y `GeminiRequestError` (401/403 clave, 404 modelo
   retirado; sin reintentos). Los mensajes no nombran modelos concretos: Google los retira.
 - Los «tipos de prompt» (p. ej. `PRL`, `PM`) los define la GUI
-  (`ExamApp.load_default_prompt_types`) y los personalizados se guardan en `custom_prompts.json`.
+  (`ExamApp.load_default_prompt_types`) y los personalizados se guardan en `custom_prompts.json`,
+  en la carpeta de configuración del usuario (`user_config.py`).
 
 ### `QuestionBankManager()` — `question_bank_manager.py`
 
@@ -226,11 +227,18 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 
 | Fichero | Ubicación | Contenido |
 |---|---|---|
-| clave de API | almacén de credenciales del sistema (`keyring`: Administrador de credenciales de Windows, Llavero de macOS, Secret Service); sin almacén, `credentials.json` en la carpeta de configuración del usuario (`%LOCALAPPDATA%\pyexamgenerator`, `~/.config/pyexamgenerator`) | la clave, cifrada por el sistema (sin cifrar en el fichero alternativo, solo legible por el usuario); `GEMINI_API_KEY` tiene prioridad (`credentials.py`, `SEC-3`) |
+| clave de API | almacén de credenciales del sistema (`keyring`: Administrador de credenciales de Windows, Llavero de macOS, Secret Service); sin almacén, `credentials.json` en la carpeta de configuración del usuario | la clave, cifrada por el sistema (sin cifrar en el fichero alternativo, solo legible por el usuario); `GEMINI_API_KEY` tiene prioridad (`credentials.py`, `SEC-3`) |
 | `config.json` (versiones anteriores) | directorio actual | clave de API sin cifrar: la aplicación ofrece moverla al almacén y borrar el fichero |
 | copias temporales del OCR | `<temp del sistema>/pyexamgenerator_temp` (configurable) | solo si falla la lectura directa; se borran al terminar |
-| `custom_prompts.json` | directorio actual | prompts personalizados |
-| `exam_generation_template.json` | directorio actual → `%APPDATA%\pyexamgenerator` | plantilla de la pestaña de exámenes |
+| `custom_prompts.json` | carpeta de configuración del usuario | prompts personalizados |
+| `exam_generation_template.json` | carpeta de configuración del usuario | plantilla de la pestaña de exámenes |
+| `custom_prompts.json` y `exam_generation_template.json` (versiones anteriores) | directorio actual | la aplicación ofrece moverlos a la carpeta de configuración (los prompts se combinan) |
+
+La **carpeta de configuración del usuario** (`user_config.config_dir()`, `ARC-12`) es
+`%APPDATA%\pyexamgenerator` en Windows, `~/Library/Application Support/pyexamgenerator` en macOS y
+`$XDG_CONFIG_HOME/pyexamgenerator` (por defecto `~/.config/pyexamgenerator`) en Linux. Nunca es la
+carpeta desde la que se abre la aplicación. El menú «Ayuda > Abrir carpeta de configuración» la abre.
+En los tests, `conftest.py` la lleva a `tmp_path`.
 | sesión `.json` + `.pkl` | ruta elegida por el usuario | sesión de corrección (se carga el `.json`; el `.pkl` solo con `allow_pickle=True`) |
 
 ## Tests
@@ -257,6 +265,7 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `test_grading_text_helpers.py` | reglas comunes de `grading/_text.py`; filas sin ID ni nombre en la nota final y la comparación |
 | `test_gui_logic.py` | `gui_logic.py` sin pantalla: listas de rutas, penalización, pesos, tipos forzados, nombres de examen, preguntas por tema |
 | `test_credentials.py` | clave de API: almacén de credenciales (en memoria, `conftest.py`), fichero alternativo, `GEMINI_API_KEY`, `config.json` antiguo y uso desde la librería |
+| `test_user_config.py` | carpeta de configuración del usuario por sistema y migración de prompts y plantilla desde la carpeta actual |
 | `test_dev_scripts.py` | `install_current_version.bat` sin `setx`; `add_user_path.ps1` con `-WhatIf` (solo Windows) |
 | `test_gui_smoke.py` | ventana real de la GUI: prompts, clave de API, lista de ficheros, errores de entrada, una sola tarea de corrección, variables Tk solo en el hilo principal, tareas en segundo plano, rueda del ratón, tooltips y valores por defecto (se salta sin pantalla; en la CI de Linux usa xvfb) |
 | `test_package_smoke.py` | compila todos los módulos (incluida la GUI) |
