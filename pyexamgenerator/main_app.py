@@ -22,25 +22,15 @@ from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededE
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
-from docx import Document
 import os
 import json
 import shutil
 import tempfile
 import threading
-from ttkwidgets.frames import ScrolledFrame
 from google import genai
 
 # Importamos la versión directamente desde nuestro paquete
 from pyexamgenerator import __version__
-# Ya no necesitamos importlib_metadata para la versión, pero lo dejamos por si se usa en otro sitio.
-# Si no se usa en ningún otro sitio, se puede eliminar.
-try:
-    # Para Python 3.8+
-    import importlib.metadata as importlib_metadata
-except ImportError:
-    # Para Python < 3.8, se usa el paquete de retrocompatibilidad
-    import importlib_metadata
 
 from typing import Optional, List, Dict, Tuple, Any
 

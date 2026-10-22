@@ -37,8 +37,6 @@ setup(
         'pandas',
         'openpyxl',
         'PyMuPDF',
-        'ttkwidgets',
-        'importlib-metadata; python_version < "3.8"',
     ],
     extras_require={
         # Corrección con OCR de hojas manuscritas (subpaquete `grading`).

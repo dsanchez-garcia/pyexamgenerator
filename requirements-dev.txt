@@ -11,8 +11,6 @@ python-docx
 pandas
 openpyxl
 PyMuPDF
-ttkwidgets
-importlib-metadata; python_version < "3.8"
 
 # === Herramientas de Documentación ===
 # Para construir la documentación desde la carpeta /docs
