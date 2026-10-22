@@ -104,8 +104,7 @@ class ToolTip(object):
         tw.wm_overrideredirect(True)
 
         # Create a label inside the Toplevel window to display the text
-        label = tk.Label(tw, text=self.text, relief='solid', borderwidth=1,
-                         font=("tahoma", "8", "normal"))
+        label = tk.Label(tw, text=self.text, relief='solid', borderwidth=1, font=("tahoma", "8", "normal"))
         label.pack(ipadx=1)
 
         # Position the tooltip window at the calculated coordinates

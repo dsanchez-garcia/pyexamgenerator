@@ -16,8 +16,14 @@ from pyexamgenerator.grading.final_grade import FinalGradeCalculator
 
 @pytest.mark.parametrize(
     "value, expected",
-    [("  Dirección de Correo ", "direcciondecorreo"), ("Apellido(s)", "apellidos"), ("Nº", "n"),
-     (float("nan"), ""), (None, ""), (12345678, "12345678")],
+    [
+        ("  Dirección de Correo ", "direcciondecorreo"),
+        ("Apellido(s)", "apellidos"),
+        ("Nº", "n"),
+        (float("nan"), ""),
+        (None, ""),
+        (12345678, "12345678"),
+    ],
 )
 def test_normalize_key(value, expected):
     assert normalize_key(value) == expected
@@ -39,9 +45,23 @@ def test_find_column_tolerates_accents_case_and_mojibake_candidates():
 
 @pytest.mark.parametrize(
     "value, expected",
-    [("7,50", 7.5), (" -0,25 ", -0.25), ("10", 10.0), (8, 8.0), (6.5, 6.5), ("+3.0", 3.0),
-     ("", None), ("-", None), (None, None), (float("nan"), None), ("Ausente", None),
-     ("nan", None), ("inf", None), ("1e3", None), (True, None)],
+    [
+        ("7,50", 7.5),
+        (" -0,25 ", -0.25),
+        ("10", 10.0),
+        (8, 8.0),
+        (6.5, 6.5),
+        ("+3.0", 3.0),
+        ("", None),
+        ("-", None),
+        (None, None),
+        (float("nan"), None),
+        ("Ausente", None),
+        ("nan", None),
+        ("inf", None),
+        ("1e3", None),
+        (True, None),
+    ],
 )
 def test_parse_decimal(value, expected):
     assert parse_decimal(value) == expected
@@ -61,17 +81,31 @@ def _write(path, records):
     pd.DataFrame(records).to_excel(path, index=False)
 
 
-_NOTE_ROW = {"Número de ID": None, "Nombre": None, "Apellido(s)": None, "Calificación/10,00": None,
-             "Observaciones": "Revisado el 3 de febrero"}
+_NOTE_ROW = {
+    "Número de ID": None,
+    "Nombre": None,
+    "Apellido(s)": None,
+    "Calificación/10,00": None,
+    "Observaciones": "Revisado el 3 de febrero",
+}
 
 
 def test_rows_without_id_or_name_are_not_a_student_in_the_final_grade(tmp_path):
     """Una fila sin ID ni nombre (p. ej. una nota al pie) salía como un alumno sin nombre con un 0."""
     source = tmp_path / "teoria.xlsx"
-    _write(source, [
-        {"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "8,00", "Observaciones": ""},
-        _NOTE_ROW,
-    ])
+    _write(
+        source,
+        [
+            {
+                "Número de ID": "1",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Calificación/10,00": "8,00",
+                "Observaciones": "",
+            },
+            _NOTE_ROW,
+        ],
+    )
 
     df = FinalGradeCalculator().compute_by_files([{"path": str(source), "weight": 1.0}])
 
@@ -81,13 +115,31 @@ def test_rows_without_id_or_name_are_not_a_student_in_the_final_grade(tmp_path):
 def test_rows_without_id_or_name_are_not_compared_as_a_student(tmp_path):
     """La misma fila se comparaba como un alumno («eliminado» si solo estaba en un fichero)."""
     old, new = tmp_path / "old.xlsx", tmp_path / "new.xlsx"
-    _write(old, [
-        {"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "8,00", "Observaciones": ""},
-        _NOTE_ROW,
-    ])
-    _write(new, [
-        {"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "9,00", "Observaciones": ""},
-    ])
+    _write(
+        old,
+        [
+            {
+                "Número de ID": "1",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Calificación/10,00": "8,00",
+                "Observaciones": "",
+            },
+            _NOTE_ROW,
+        ],
+    )
+    _write(
+        new,
+        [
+            {
+                "Número de ID": "1",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Calificación/10,00": "9,00",
+                "Observaciones": "",
+            },
+        ],
+    )
 
     result = ResultComparator().compare(str(old), str(new), overwrite=True)
 

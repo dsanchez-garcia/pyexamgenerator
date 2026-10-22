@@ -69,10 +69,7 @@ class MoodleGradeIntegrator:
 
         path_by_type = {}
         for group_type in types:
-            matches = [
-                path for path in files
-                if cls._matches_group_type(os.path.basename(path), group_type)
-            ]
+            matches = [path for path in files if cls._matches_group_type(os.path.basename(path), group_type)]
             if not matches:
                 raise ValueError(f"No XLSX found for group type '{group_type}'.")
             if len(matches) > 1:
@@ -95,8 +92,7 @@ class MoodleGradeIntegrator:
         match = re.search(r"-\s*([^-]+)-calificaciones\.xlsx$", base_name, re.IGNORECASE)
         if not match:
             raise ValueError(
-                "Could not detect group type in template filename. "
-                "Expected format: '... - 1A-calificaciones.xlsx'."
+                "Could not detect group type in template filename. Expected format: '... - 1A-calificaciones.xlsx'."
             )
 
         original_type = match.group(1).strip()
@@ -104,7 +100,9 @@ class MoodleGradeIntegrator:
 
         paths = []
         for group_type in group_types:
-            new_name = base_name.replace(f"- {original_type}-calificaciones.xlsx", f"- {group_type}-calificaciones.xlsx")
+            new_name = base_name.replace(
+                f"- {original_type}-calificaciones.xlsx", f"- {group_type}-calificaciones.xlsx"
+            )
             paths.append(os.path.join(directory, new_name))
         return paths
 
@@ -209,9 +207,7 @@ class MoodleGradeIntegrator:
             quiz_columns.append((col, group_name, exam_type))
 
         if first_name_source_col is None or last_name_source_col is None or not quiz_columns:
-            raise ValueError(
-                f"File '{file_path}' does not have expected columns for exam totals format."
-            )
+            raise ValueError(f"File '{file_path}' does not have expected columns for exam totals format.")
 
         normalized_rows = []
         for _, row in df.iterrows():
@@ -233,7 +229,9 @@ class MoodleGradeIntegrator:
                     self.id_col: "" if id_source_col is None else str(row.get(id_source_col, "")).strip(),
                     self.first_name_col: str(row.get(first_name_source_col, "")).strip(),
                     self.last_name_col: str(row.get(last_name_source_col, "")).strip(),
-                    "Dirección de correo": "" if email_source_col is None else str(row.get(email_source_col, "")).strip(),
+                    "Dirección de correo": ""
+                    if email_source_col is None
+                    else str(row.get(email_source_col, "")).strip(),
                     self.total_grade_col: "-" if pd.isna(best_grade) else f"{float(best_grade):.2f}".replace(".", ","),
                     "Tipo_Grupo": best_group,
                     "Tipo_Examen": best_exam_type,
@@ -343,7 +341,9 @@ class MoodleGradeIntegrator:
 
 # Backward-compatible alias
 IntegradorCalificacionesMoodle = MoodleGradeIntegrator
-MoodleGradeIntegrator.construir_rutas_desde_lista_y_tipos = staticmethod(MoodleGradeIntegrator.build_paths_from_list_and_types)
+MoodleGradeIntegrator.construir_rutas_desde_lista_y_tipos = staticmethod(
+    MoodleGradeIntegrator.build_paths_from_list_and_types
+)
 MoodleGradeIntegrator.construir_rutas_desde_plantilla = staticmethod(MoodleGradeIntegrator.build_paths_from_template)
 MoodleGradeIntegrator.integrar = MoodleGradeIntegrator.integrate_grades
 MoodleGradeIntegrator.integrar_y_exportar = MoodleGradeIntegrator.integrate_and_export
@@ -528,10 +528,17 @@ class OcrGradeIntegrator:
 
         shown = ", ".join(f"'{col}': {fmt(old)} -> {fmt(new)}" for col, old, new in changes[:3])
         more = f" y {len(changes) - 3} más" if len(changes) > 3 else ""
-        detail = (f"La nota OCR sustituye a una nota distinta que ya existía ({shown}{more}); "
-                  "comprueba que la hoja es de este alumno.")
+        detail = (
+            f"La nota OCR sustituye a una nota distinta que ya existía ({shown}{more}); "
+            "comprueba que la hoja es de este alumno."
+        )
         return self._build_integration_incident(
-            ocr_row, row_index, "OVERWRITTEN_GRADE", detail, severity="media", **incident_cols,
+            ocr_row,
+            row_index,
+            "OVERWRITTEN_GRADE",
+            detail,
+            severity="media",
+            **incident_cols,
         )
 
     def _set_last_integration_report(self, summary: Dict[str, int], incidents: List[Dict[str, str]]) -> None:
@@ -544,7 +551,9 @@ class OcrGradeIntegrator:
         return pd.read_excel(file_path, sheet_name=sheet_name, dtype=object, keep_default_na=False)
 
     @staticmethod
-    def _best_grade_from_quiz_columns(row: pd.Series, quiz_columns: List[Tuple[str, str, str]]) -> Tuple[object, str, str]:
+    def _best_grade_from_quiz_columns(
+        row: pd.Series, quiz_columns: List[Tuple[str, str, str]]
+    ) -> Tuple[object, str, str]:
         best_grade = pd.NA
         best_group = ""
         best_exam_type = ""
@@ -574,6 +583,7 @@ class OcrGradeIntegrator:
         With fixed 'Nombre'/'Apellido(s)' names, files using 'Apellidos' compared two empty last
         names and matched students by first name only.
         """
+
         def value(row: pd.Series, col: Optional[str]) -> str:
             return str(row.get(col, "")).strip().lower() if col else ""
 
@@ -677,7 +687,9 @@ class OcrGradeIntegrator:
 
         general_id_col = self._find_column(general_cols, ["numerodeid", "nmerodeid", "id", "nombredeusuario"])
         general_first_name_col = self._find_column(general_cols, ["nombre", "firstname"])
-        general_last_name_col = self._find_column(general_cols, ["apellidos", "apellido", "apellidosynombre", "lastname"])
+        general_last_name_col = self._find_column(
+            general_cols, ["apellidos", "apellido", "apellidosynombre", "lastname"]
+        )
         ocr_id_col = self._find_column(ocr_cols, ["numerodeid", "nmerodeid", "idoficial", "id"])
         ocr_first_name_col = self._find_column(ocr_cols, ["nombre", "firstname"])
         ocr_last_name_col = self._find_column(ocr_cols, ["apellidos", "apellido", "lastname"])
@@ -714,7 +726,9 @@ class OcrGradeIntegrator:
             quiz_columns_meta.append((col, group_name, exam_type))
 
         if not quizzes_by_group_type:
-            raise ValueError("General file does not contain quiz total columns with pattern 'Cuestionario:..._Tipo X (Real)'.")
+            raise ValueError(
+                "General file does not contain quiz total columns with pattern 'Cuestionario:..._Tipo X (Real)'."
+            )
 
         group_by_id = self._build_group_map_from_enrollment()
         out_df = general_df.copy()
@@ -756,8 +770,14 @@ class OcrGradeIntegrator:
 
             if target_idx is None:
                 for idx_general, general_row in out_df.iterrows():
-                    if self._name_match(general_row, ocr_row, general_first_name_col, general_last_name_col,
-                                        ocr_first_name_col, ocr_last_name_col):
+                    if self._name_match(
+                        general_row,
+                        ocr_row,
+                        general_first_name_col,
+                        general_last_name_col,
+                        ocr_first_name_col,
+                        ocr_last_name_col,
+                    ):
                         target_idx = int(idx_general)
                         break
 
@@ -847,7 +867,9 @@ class OcrGradeIntegrator:
 
         id_source_col = self._find_column(general_cols, ["numerodeid", "nmerodeid", "id", "nombredeusuario"])
         first_name_source_col = self._find_column(general_cols, ["nombre", "firstname"])
-        last_name_source_col = self._find_column(general_cols, ["apellidos", "apellido", "apellidosynombre", "lastname"])
+        last_name_source_col = self._find_column(
+            general_cols, ["apellidos", "apellido", "apellidosynombre", "lastname"]
+        )
         email_source_col = self._find_column(general_cols, ["direcciondecorreo", "direccindecorreo", "email", "correo"])
 
         normalized_rows = []
@@ -858,8 +880,12 @@ class OcrGradeIntegrator:
                 {
                     "Número de ID": "" if id_source_col is None else self._normalize_id(row.get(id_source_col, "")),
                     "Nombre": "" if first_name_source_col is None else str(row.get(first_name_source_col, "")).strip(),
-                    "Apellido(s)": "" if last_name_source_col is None else str(row.get(last_name_source_col, "")).strip(),
-                    "Dirección de correo": "" if email_source_col is None else str(row.get(email_source_col, "")).strip(),
+                    "Apellido(s)": ""
+                    if last_name_source_col is None
+                    else str(row.get(last_name_source_col, "")).strip(),
+                    "Dirección de correo": ""
+                    if email_source_col is None
+                    else str(row.get(email_source_col, "")).strip(),
                     "Calificación/10,00": pd.NA if pd.isna(best_grade) else float(best_grade),
                     "Tipo_Grupo": best_group,
                     "Tipo_Examen": best_exam_type,
@@ -915,7 +941,8 @@ class OcrGradeIntegrator:
             general_cols = list(general_df.columns)
 
         grade_cols_general = [
-            c for c in general_cols
+            c
+            for c in general_cols
             if self._normalize(c).startswith("calificacion")
             or re.match(r"^p\.?\s*\d+\s*/", str(c).strip().lower()) is not None
         ]
@@ -961,8 +988,14 @@ class OcrGradeIntegrator:
 
             if target_idx is None:
                 for idx_general, general_row in out_df.iterrows():
-                    if self._name_match(general_row, ocr_row, general_first_name_col, general_last_name_col,
-                                        ocr_first_name_col, ocr_last_name_col):
+                    if self._name_match(
+                        general_row,
+                        ocr_row,
+                        general_first_name_col,
+                        general_last_name_col,
+                        ocr_first_name_col,
+                        ocr_last_name_col,
+                    ):
                         target_idx = int(idx_general)
                         break
 
@@ -1084,7 +1117,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ocr", required=True, help="OCR grades XLSX")
     parser.add_argument("--output", required=True, help="Output integrated XLSX")
     parser.add_argument("--output-dir", default=None, help="Directory where output is generated")
-    parser.add_argument("--enrollment-list", nargs="+", default=None, help="Optional enrollment Excels to resolve group per student")
+    parser.add_argument(
+        "--enrollment-list", nargs="+", default=None, help="Optional enrollment Excels to resolve group per student"
+    )
     parser.add_argument("--enrollment-sheet", type=int, default=0, help="Sheet index for enrollment files")
     return parser.parse_args()
 
@@ -1109,4 +1144,3 @@ OcrGradeIntegrator.integrar = OcrGradeIntegrator.integrate
 
 if __name__ == "__main__":
     main()
-

@@ -33,8 +33,16 @@ def test_ocr_integration_matches_by_full_name_with_apellidos_column(tmp_path):
         ]
     )
     ocr = pd.DataFrame(
-        [{"Imagen": "hoja.jpg", "Tipo_Examen": "A", "Nombre": "Ana", "Apellidos": "Ruiz",
-          "ID_Oficial": "", "Calificacion/10,00": "9,00"}]
+        [
+            {
+                "Imagen": "hoja.jpg",
+                "Tipo_Examen": "A",
+                "Nombre": "Ana",
+                "Apellidos": "Ruiz",
+                "ID_Oficial": "",
+                "Calificacion/10,00": "9,00",
+            }
+        ]
     )
     general_path, ocr_path = tmp_path / "teoria.xlsx", tmp_path / "ocr.xlsx"
     general.to_excel(general_path, index=False)
@@ -69,10 +77,21 @@ def test_ocr_grade_replacing_a_moodle_grade_is_reported(tmp_path):
     también el cuestionario en Moodle, o la hoja se asignó a otra persona)."""
     quiz = "Cuestionario:Examen GIM_Tipo 1A (Real)"
     students = [("111", "Ana", "Gil"), ("222", "Leo", "Ruiz"), ("333", "Eva", "Sanz")]
-    general = [{"Número de ID": i, "Nombre": n, "Apellido(s)": a, quiz: grade}
-               for (i, n, a), grade in zip(students, ["7,00", "-", "6,00"])]
-    ocr = [{"Imagen": f"hoja_{n}.jpg", "Tipo_Examen": "1A", "Número de ID": i, "Nombre": n, "Apellido(s)": a,
-            "Calificacion/10,00": grade} for (i, n, a), grade in zip(students, ["5,00", "6,00", "6,00"])]
+    general = [
+        {"Número de ID": i, "Nombre": n, "Apellido(s)": a, quiz: grade}
+        for (i, n, a), grade in zip(students, ["7,00", "-", "6,00"])
+    ]
+    ocr = [
+        {
+            "Imagen": f"hoja_{n}.jpg",
+            "Tipo_Examen": "1A",
+            "Número de ID": i,
+            "Nombre": n,
+            "Apellido(s)": a,
+            "Calificacion/10,00": grade,
+        }
+        for (i, n, a), grade in zip(students, ["5,00", "6,00", "6,00"])
+    ]
 
     integrator, result = _integrate(tmp_path, general, ocr)
 
@@ -89,10 +108,28 @@ def test_ocr_grade_replacing_a_moodle_grade_is_reported(tmp_path):
 def test_overwritten_grades_give_one_incident_per_sheet(tmp_path):
     """GRD-12 (formato general): una hoja que cambia la nota total y las de cada pregunta da una
     sola incidencia, no una por columna."""
-    general = [{"Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil",
-                "Calificación/10,00": "4,00", "P. 1 /5,00": "2,00", "P. 2 /5,00": "2,00"}]
-    ocr = [{"Imagen": "hoja.jpg", "Tipo_Examen": "A", "Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil",
-            "Calificacion/10,00": "9,00", "P. 1 /5,00": "5,00", "P. 2 /5,00": "4,00"}]
+    general = [
+        {
+            "Número de ID": "111",
+            "Nombre": "Ana",
+            "Apellido(s)": "Gil",
+            "Calificación/10,00": "4,00",
+            "P. 1 /5,00": "2,00",
+            "P. 2 /5,00": "2,00",
+        }
+    ]
+    ocr = [
+        {
+            "Imagen": "hoja.jpg",
+            "Tipo_Examen": "A",
+            "Número de ID": "111",
+            "Nombre": "Ana",
+            "Apellido(s)": "Gil",
+            "Calificacion/10,00": "9,00",
+            "P. 1 /5,00": "5,00",
+            "P. 2 /5,00": "4,00",
+        }
+    ]
 
     integrator, result = _integrate(tmp_path, general, ocr)
 
@@ -104,8 +141,16 @@ def test_overwritten_grades_give_one_incident_per_sheet(tmp_path):
 
 def test_same_grade_again_is_not_an_incident(tmp_path):
     general = [{"Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "6,00"}]
-    ocr = [{"Imagen": "hoja.jpg", "Tipo_Examen": "A", "Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil",
-            "Calificacion/10,00": "6"}]
+    ocr = [
+        {
+            "Imagen": "hoja.jpg",
+            "Tipo_Examen": "A",
+            "Número de ID": "111",
+            "Nombre": "Ana",
+            "Apellido(s)": "Gil",
+            "Calificacion/10,00": "6",
+        }
+    ]
 
     integrator, _result = _integrate(tmp_path, general, ocr)
 

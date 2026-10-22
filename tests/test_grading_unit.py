@@ -29,12 +29,28 @@ def test_grading_imports_and_has_ocr_flag():
 
 def test_enrollment_merger_combines_sources(tmp_path):
     df_gim = pd.DataFrame(
-        [{"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "1",
-          "Dirección de correo": "ana@x.es", "Grupo": "GIM", "Consulta": "P1"}]
+        [
+            {
+                "Apellido(s)": "Gil",
+                "Nombre": "Ana",
+                "Número de ID": "1",
+                "Dirección de correo": "ana@x.es",
+                "Grupo": "GIM",
+                "Consulta": "P1",
+            }
+        ]
     )
     df_giti = pd.DataFrame(
-        [{"Apellido(s)": "Ruiz", "Nombre": "Leo", "Número de ID": "2",
-          "Dirección de correo": "leo@x.es", "Grupo": "GITI", "Consulta": "P2"}]
+        [
+            {
+                "Apellido(s)": "Ruiz",
+                "Nombre": "Leo",
+                "Número de ID": "2",
+                "Dirección de correo": "leo@x.es",
+                "Grupo": "GITI",
+                "Consulta": "P2",
+            }
+        ]
     )
     p1 = tmp_path / "gim.xlsx"
     p2 = tmp_path / "giti.xlsx"
@@ -59,12 +75,17 @@ def test_exam_type_inference_accepts_letter_only_and_numeric_letter():
 
 
 def test_theory_bonus_applies_plus_one(tmp_path):
-    theory = pd.DataFrame(
-        [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "6,00"}]
-    )
+    theory = pd.DataFrame([{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "6,00"}])
     attendance_quiz = pd.DataFrame(
-        [{"ID_Alumno": "1", "Nombre": "Ana", "Apellido(s)": "Gil",
-          "Tiene_Punto_Adicional_Teoria": "si", "Motivo_No_Punto": ""}]
+        [
+            {
+                "ID_Alumno": "1",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Tiene_Punto_Adicional_Teoria": "si",
+                "Motivo_No_Punto": "",
+            }
+        ]
     )
     out = tmp_path / "teoria.xlsx"
     result = TheoryBonusApplier(theory, attendance_quiz, cap_to_10=True).apply(str(out))
@@ -75,12 +96,17 @@ def test_theory_bonus_applies_plus_one(tmp_path):
 
 
 def test_theory_bonus_caps_at_ten():
-    theory = pd.DataFrame(
-        [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "10,00"}]
-    )
+    theory = pd.DataFrame([{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "10,00"}])
     attendance_quiz = pd.DataFrame(
-        [{"ID_Alumno": "1", "Nombre": "Ana", "Apellido(s)": "Gil",
-          "Tiene_Punto_Adicional_Teoria": "si", "Motivo_No_Punto": ""}]
+        [
+            {
+                "ID_Alumno": "1",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Tiene_Punto_Adicional_Teoria": "si",
+                "Motivo_No_Punto": "",
+            }
+        ]
     )
     result = TheoryBonusApplier(theory, attendance_quiz, cap_to_10=True).apply()
 
@@ -90,12 +116,17 @@ def test_theory_bonus_caps_at_ten():
 
 
 def test_theory_bonus_not_granted_when_no_bonus():
-    theory = pd.DataFrame(
-        [{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "6,00"}]
-    )
+    theory = pd.DataFrame([{"Número de ID": "1", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificación/10,00": "6,00"}])
     attendance_quiz = pd.DataFrame(
-        [{"ID_Alumno": "1", "Nombre": "Ana", "Apellido(s)": "Gil",
-          "Tiene_Punto_Adicional_Teoria": "no", "Motivo_No_Punto": "nota_baja_cuestionario"}]
+        [
+            {
+                "ID_Alumno": "1",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Tiene_Punto_Adicional_Teoria": "no",
+                "Motivo_No_Punto": "nota_baja_cuestionario",
+            }
+        ]
     )
     result = TheoryBonusApplier(theory, attendance_quiz).apply()
 
@@ -105,8 +136,15 @@ def test_theory_bonus_not_granted_when_no_bonus():
 
 def test_theory_topic_reporter_exposes_extra_point():
     attendance_quiz = pd.DataFrame(
-        [{"ID_Alumno": "1", "Nombre": "Ana", "Apellido(s)": "Gil",
-          "Tiene_Punto_Adicional_Teoria": "si", "Motivo_No_Punto": ""}]
+        [
+            {
+                "ID_Alumno": "1",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Tiene_Punto_Adicional_Teoria": "si",
+                "Motivo_No_Punto": "",
+            }
+        ]
     )
     reporter = TheoryTopicReporter(attendance_quiz)
     attendance_report, quiz_report = reporter.build()
@@ -124,25 +162,29 @@ def test_ocr_integrator_quiz_totals_uses_group_hint(tmp_path, exam_type):
     la nota manuscrita debe aterrizar en la columna del grupo indicado por la fila OCR
     (Grupo_Principal), no quedarse sin volcar."""
     general = pd.DataFrame(
-        [{
-            "Nombre de usuario": "uy8862138",
-            "Apellido(s)": "CHEBBI",
-            "Nombre": "LOUAY",
-            "Dirección de correo": "louay.chebbi@x.es",
-            f"Cuestionario:GIM_Tipo {exam_type} (Real)": "-",
-            f"Cuestionario:GITI-GIE-GIEI_Tipo {exam_type} (Real)": "-",
-        }]
+        [
+            {
+                "Nombre de usuario": "uy8862138",
+                "Apellido(s)": "CHEBBI",
+                "Nombre": "LOUAY",
+                "Dirección de correo": "louay.chebbi@x.es",
+                f"Cuestionario:GIM_Tipo {exam_type} (Real)": "-",
+                f"Cuestionario:GITI-GIE-GIEI_Tipo {exam_type} (Real)": "-",
+            }
+        ]
     )
     ocr = pd.DataFrame(
-        [{
-            "Imagen": "img.jpg",
-            "Tipo_Examen": exam_type,
-            "Nombre": "LOUAY",
-            "Apellido(s)": "CHEBBI",
-            "Número de ID": "190708",
-            "Grupo_Principal": "GITI-GIE-GIEI",
-            "Calificacion/10,00": "9,13",
-        }]
+        [
+            {
+                "Imagen": "img.jpg",
+                "Tipo_Examen": exam_type,
+                "Nombre": "LOUAY",
+                "Apellido(s)": "CHEBBI",
+                "Número de ID": "190708",
+                "Grupo_Principal": "GITI-GIE-GIEI",
+                "Calificacion/10,00": "9,13",
+            }
+        ]
     )
     general_path = tmp_path / "teoria.xlsx"
     ocr_path = tmp_path / "ocr.xlsx"
@@ -181,13 +223,15 @@ def test_ocr_integrator_quiz_totals_drops_summary_row_from_general(tmp_path):
         ]
     )
     ocr = pd.DataFrame(
-        [{
-            "Imagen": "img.jpg",
-            "Tipo_Examen": "A",
-            "Nombre": "LOUAY",
-            "Apellido(s)": "CHEBBI",
-            "Calificacion/10,00": "8,75",
-        }]
+        [
+            {
+                "Imagen": "img.jpg",
+                "Tipo_Examen": "A",
+                "Nombre": "LOUAY",
+                "Apellido(s)": "CHEBBI",
+                "Calificacion/10,00": "8,75",
+            }
+        ]
     )
     general_path = tmp_path / "teoria.xlsx"
     ocr_path = tmp_path / "ocr.xlsx"
@@ -209,12 +253,14 @@ def test_ocr_integrator_quiz_totals_drops_summary_row_from_general(tmp_path):
 
 def test_moodle_integrator_preserves_leading_zero_ids(tmp_path):
     source = pd.DataFrame(
-        [{
-            "Número de ID": "001234",
-            "Nombre": "Ana",
-            "Apellido(s)": "Gil",
-            "Calificación/10,00": "6,50",
-        }]
+        [
+            {
+                "Número de ID": "001234",
+                "Nombre": "Ana",
+                "Apellido(s)": "Gil",
+                "Calificación/10,00": "6,50",
+            }
+        ]
     )
     source_path = tmp_path / "moodle.xlsx"
     source.to_excel(source_path, index=False)
@@ -225,13 +271,15 @@ def test_moodle_integrator_preserves_leading_zero_ids(tmp_path):
 
 def test_ocr_integrator_preserves_leading_zero_ids_on_match_and_append(tmp_path):
     general = pd.DataFrame(
-        [{
-            "Número de ID": "000123",
-            "Apellido(s)": "Gil",
-            "Nombre": "Ana",
-            "Calificación/10,00": "6,00",
-            "P. 1 /0,40": "0,40",
-        }]
+        [
+            {
+                "Número de ID": "000123",
+                "Apellido(s)": "Gil",
+                "Nombre": "Ana",
+                "Calificación/10,00": "6,00",
+                "P. 1 /0,40": "0,40",
+            }
+        ]
     )
     ocr = pd.DataFrame(
         [
@@ -334,24 +382,28 @@ def test_ocr_integrator_appends_unmatched_and_blocks_missing_identity_by_default
 
 def test_ocr_integrator_blocks_unmatched_when_strict_mode_is_enabled(tmp_path):
     general = pd.DataFrame(
-        [{
-            "Número de ID": "1",
-            "Apellido(s)": "Gil",
-            "Nombre": "Ana",
-            "Calificación/10,00": "6,00",
-            "P. 1 /0,40": "0,40",
-        }]
+        [
+            {
+                "Número de ID": "1",
+                "Apellido(s)": "Gil",
+                "Nombre": "Ana",
+                "Calificación/10,00": "6,00",
+                "P. 1 /0,40": "0,40",
+            }
+        ]
     )
     ocr = pd.DataFrame(
-        [{
-            "Imagen": "img_unmatched.jpg",
-            "Tipo_Examen": "A",
-            "Nombre": "Zoe",
-            "Apellido(s)": "Mar",
-            "ID_Oficial": "999",
-            "Calificacion/10,00": "5,33",
-            "P. 1 /0,40": "0,40",
-        }]
+        [
+            {
+                "Imagen": "img_unmatched.jpg",
+                "Tipo_Examen": "A",
+                "Nombre": "Zoe",
+                "Apellido(s)": "Mar",
+                "ID_Oficial": "999",
+                "Calificacion/10,00": "5,33",
+                "P. 1 /0,40": "0,40",
+            }
+        ]
     )
     general_path = tmp_path / "teoria.xlsx"
     ocr_path = tmp_path / "ocr.xlsx"
@@ -468,5 +520,3 @@ def test_image_exam_grader_accepts_forced_type_by_full_image_path():
     forced = {"D:\\TMP\\20260612_112047.jpg": "b"}
     resolved = grader._resolve_exam_type(sheet, forced_type_by_image=forced, prompt_if_missing=False)
     assert resolved == "B"
-
-

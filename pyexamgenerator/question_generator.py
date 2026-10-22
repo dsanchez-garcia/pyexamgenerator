@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from google import genai
-from google.genai import types # Opcional, útil para tipado, pero no estricto
+from google.genai import types  # Opcional, útil para tipado, pero no estricto
 from pypdf import PdfReader
 from pyexamgenerator import credentials
 import ast
@@ -36,17 +36,23 @@ except ImportError:
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 
+
 class QuotaExceededError(Exception):
     """Excepción para cuando se excede el límite de cuota de la API de Gemini."""
+
     pass
+
 
 class ServiceOverloadedError(Exception):
     """Excepción para cuando los servidores de Google están saturados (Error 503)."""
+
     pass
+
 
 class GeminiRequestError(Exception):
     """Error de la API de Gemini que no se arregla reintentando: clave de API no válida o sin
     permiso (401/403), o modelo que no existe o que Google ya ha retirado (404)."""
+
     pass
 
 
@@ -138,7 +144,7 @@ class QuestionGenerator:
             """,
             "PM": """
             Genera preguntas tipo test de opción múltiple enfocadas en Gestión de Proyectos.
-            """
+            """,
         }
         self.existing_bank_df = None
         self.similarity_threshold = 0.8  # Default threshold
@@ -246,14 +252,12 @@ class QuestionGenerator:
         """Splits a list into chunks of a given size."""
         if not items or chunk_size <= 0:
             return []
-        return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+        return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
     def _extract_pdf_pages_as_images(self, pdf_path: str, zoom: float = 2.0) -> List[Dict]:
         """Renders each PDF page as PNG bytes for multimodal generation."""
         if fitz is None:
-            raise ImportError(
-                "PyMuPDF no está instalado. Instala 'PyMuPDF' para usar input_mode='image' con PDFs."
-            )
+            raise ImportError("PyMuPDF no está instalado. Instala 'PyMuPDF' para usar input_mode='image' con PDFs.")
 
         rendered_pages: List[Dict] = []
         doc = fitz.open(pdf_path)
@@ -261,10 +265,12 @@ class QuestionGenerator:
         try:
             for page in doc:
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
-                rendered_pages.append({
-                    "bytes": pix.tobytes("png"),
-                    "mime_type": "image/png",
-                })
+                rendered_pages.append(
+                    {
+                        "bytes": pix.tobytes("png"),
+                        "mime_type": "image/png",
+                    }
+                )
         finally:
             doc.close()
 
@@ -354,16 +360,16 @@ class QuestionGenerator:
         return chunks
 
     def _build_prompt(
-            self,
-            working_chunk_text: str,
-            num_questions_to_generate: int,
-            prompt_type: str,
-            custom_prompt: Optional[str],
-            existing_questions_df: Optional[pd.DataFrame],
-            current_topic: str,
-            full_document_context_text: Optional[str] = None,
-            bank_prompt_scope: Optional[str] = None,
-            questions_from_current_chunk_attempts: Optional[List[Dict]] = None
+        self,
+        working_chunk_text: str,
+        num_questions_to_generate: int,
+        prompt_type: str,
+        custom_prompt: Optional[str],
+        existing_questions_df: Optional[pd.DataFrame],
+        current_topic: str,
+        full_document_context_text: Optional[str] = None,
+        bank_prompt_scope: Optional[str] = None,
+        questions_from_current_chunk_attempts: Optional[List[Dict]] = None,
     ) -> str:
         """
         Constructs the complete prompt to be sent to the Gemini model.
@@ -399,10 +405,12 @@ class QuestionGenerator:
 
         # --- Guidance from the existing question bank ---
         prompt_guidance_from_bank_str = ""
-        if existing_questions_df is not None and \
-                not existing_questions_df.empty and \
-                bank_prompt_scope and bank_prompt_scope != "no_incluir_en_prompt":
-
+        if (
+            existing_questions_df is not None
+            and not existing_questions_df.empty
+            and bank_prompt_scope
+            and bank_prompt_scope != "no_incluir_en_prompt"
+        ):
             questions_for_guidance_df = pd.DataFrame()
             header_for_bank_guidance = ""
 
@@ -410,7 +418,7 @@ class QuestionGenerator:
                 if 'Tema' in existing_questions_df.columns:
                     questions_for_guidance_df = existing_questions_df[
                         existing_questions_df['Tema'].astype(str).str.lower() == current_topic.lower()
-                        ]
+                    ]
                 if not questions_for_guidance_df.empty:
                     header_for_bank_guidance = "\n\nPara evitar redundancia con el BANCO DE PREGUNTAS EXISTENTE, considera las siguientes preguntas del MISMO TEMA (asegúrate de que las nuevas preguntas sean originales y basadas estrictamente en el FRAGMENTO DE TRABAJO proporcionado):\n"
             elif bank_prompt_scope == "todos_los_temas":
@@ -424,7 +432,11 @@ class QuestionGenerator:
                     question_text = row.get('Pregunta', '')
                     prompt_guidance_from_bank_str += f"- Pregunta del banco: {question_text}\n"
                     if self.current_prompt_example_content_type == "enunciados_y_respuestas":
-                        options = [row.get(f'Respuesta {chr(65 + i)}', '') for i in range(4) if pd.notna(row.get(f'Respuesta {chr(65 + i)}', ''))]
+                        options = [
+                            row.get(f'Respuesta {chr(65 + i)}', '')
+                            for i in range(4)
+                            if pd.notna(row.get(f'Respuesta {chr(65 + i)}', ''))
+                        ]
                         options_str = "\n".join([f"  - {opt}" for opt in options if opt])
                         if options_str:
                             prompt_guidance_from_bank_str += f"{options_str}\n"
@@ -437,7 +449,9 @@ class QuestionGenerator:
             for question_dict in questions_from_current_chunk_attempts:
                 question_text = question_dict.get('Pregunta', '')
                 if question_text:
-                    prompt_guidance_from_current_attempts_str += f"- Pregunta ya generada para este fragmento: {question_text}\n"
+                    prompt_guidance_from_current_attempts_str += (
+                        f"- Pregunta ya generada para este fragmento: {question_text}\n"
+                    )
                     # Optionally, you could also include the options if you find it useful
                     # if self.current_prompt_example_content_type == "enunciados_y_respuestas":
                     #     options = [question_dict.get(f'Respuesta {chr(65 + i)}', '') for i in range(4)]
@@ -542,7 +556,7 @@ class QuestionGenerator:
                     "Respuesta C": options[2],
                     "Respuesta D": options[3],
                     "Respuesta correcta": str(question_data.get("Respuesta correcta", "")).strip().upper(),
-                    "Texto relevante": question_data.get("Texto relevante", "")
+                    "Texto relevante": question_data.get("Texto relevante", ""),
                 }
 
                 if is_similar:
@@ -579,11 +593,7 @@ class QuestionGenerator:
         except (ValueError, SyntaxError):
             return json.loads(text)
 
-    def save_questions_to_excel(
-            self,
-            df: pd.DataFrame,
-            filepath: str
-    ) -> None:
+    def save_questions_to_excel(self, df: pd.DataFrame, filepath: str) -> None:
         """Saves the questions to an Excel file."""
         if not df.empty:
             if 'Número de pregunta' not in df.columns:
@@ -593,11 +603,7 @@ class QuestionGenerator:
         else:
             print("No se generaron preguntas aceptadas para guardar en Excel.")
 
-    def save_questions_to_docx(
-            self,
-            df: pd.DataFrame,
-            filepath: str
-    ) -> None:
+    def save_questions_to_docx(self, df: pd.DataFrame, filepath: str) -> None:
         """Saves the questions to a DOCX file for manual review."""
         if not df.empty:
             document = Document()
@@ -693,9 +699,7 @@ class QuestionGenerator:
         union = len(words1.union(words2))
         return intersection / union
 
-    def _is_similar_question(self,
-                             new_question_text: str
-                             ) -> Tuple[bool, float, Optional[str]]:
+    def _is_similar_question(self, new_question_text: str) -> Tuple[bool, float, Optional[str]]:
         """
         Checks if the new question is similar to any existing one in the bank,
         comparing ONLY the question statements for filtering purposes.
@@ -718,8 +722,7 @@ class QuestionGenerator:
                 normalized_existing_question_text = self._normalize_text(existing_question_text_from_bank)
 
                 question_similarity = self._calculate_jaccard_similarity(
-                    normalized_new_question_text,
-                    normalized_existing_question_text
+                    normalized_new_question_text, normalized_existing_question_text
                 )
 
                 if question_similarity >= self.similarity_threshold:
@@ -729,10 +732,7 @@ class QuestionGenerator:
         return (False, 0.0, None)
 
     def filter_generated_questions_duplicates(
-            self,
-            generated_questions_df: pd.DataFrame,
-            existing_bank_path: str,
-            similarity_threshold: float = 0.8
+        self, generated_questions_df: pd.DataFrame, existing_bank_path: str, similarity_threshold: float = 0.8
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Filters an external DataFrame of generated questions against an existing bank.
@@ -765,20 +765,20 @@ class QuestionGenerator:
         return pd.DataFrame(accepted_rows), pd.DataFrame(rejected_rows)
 
     def build_generation_prompts(
-            self,
-            pdf_paths: List[str],
-            prompt_type: str,
-            num_questions_per_chunk_target: int = 5,
-            custom_prompt: Optional[str] = None,
-            existing_bank_path: Optional[str] = None,
-            process_by_pages: bool = False,
-            pages_per_chunk: int = 1,
-            total_chunks: Optional[int] = None,
-            chunking_mode: str = "pages",
-            bank_prompt_scope: Optional[str] = None,
-            prompt_example_content_type: str = "solo_enunciados",
-            include_similar_questions_in_prompt: bool = True,
-            input_mode: str = "text"
+        self,
+        pdf_paths: List[str],
+        prompt_type: str,
+        num_questions_per_chunk_target: int = 5,
+        custom_prompt: Optional[str] = None,
+        existing_bank_path: Optional[str] = None,
+        process_by_pages: bool = False,
+        pages_per_chunk: int = 1,
+        total_chunks: Optional[int] = None,
+        chunking_mode: str = "pages",
+        bank_prompt_scope: Optional[str] = None,
+        prompt_example_content_type: str = "solo_enunciados",
+        include_similar_questions_in_prompt: bool = True,
+        input_mode: str = "text",
     ) -> pd.DataFrame:
         """Builds prompts for manual use (AI Studio/Gemini web) without calling the API."""
         prompts_rows: List[Dict] = []
@@ -795,26 +795,30 @@ class QuestionGenerator:
             if input_mode == "image":
                 # Manual prompt generation in image mode only exports text instructions.
                 # User must attach the corresponding images/PDF in AI Studio manually.
-                prompts_rows.append({
-                    "PDF": pdf_path,
-                    "Tema": current_pdf_topic,
-                    "Fragmento": 1,
-                    "Total fragmentos": 1,
-                    "Prompt": self._build_prompt(
-                        working_chunk_text=(
-                            "IMPORTANTE: Debes basarte en las imágenes adjuntas por el usuario. "
-                            "No inventes información que no sea visible en esas imágenes."
-                        ),
-                        num_questions_to_generate=num_questions_per_chunk_target,
-                        prompt_type=prompt_type,
-                        custom_prompt=custom_prompt,
-                        existing_questions_df=self.existing_bank_df if include_similar_questions_in_prompt else None,
-                        current_topic=current_pdf_topic,
-                        full_document_context_text=None,
-                        bank_prompt_scope=bank_prompt_scope if include_similar_questions_in_prompt else None,
-                        questions_from_current_chunk_attempts=None,
-                    ).strip(),
-                })
+                prompts_rows.append(
+                    {
+                        "PDF": pdf_path,
+                        "Tema": current_pdf_topic,
+                        "Fragmento": 1,
+                        "Total fragmentos": 1,
+                        "Prompt": self._build_prompt(
+                            working_chunk_text=(
+                                "IMPORTANTE: Debes basarte en las imágenes adjuntas por el usuario. "
+                                "No inventes información que no sea visible en esas imágenes."
+                            ),
+                            num_questions_to_generate=num_questions_per_chunk_target,
+                            prompt_type=prompt_type,
+                            custom_prompt=custom_prompt,
+                            existing_questions_df=self.existing_bank_df
+                            if include_similar_questions_in_prompt
+                            else None,
+                            current_topic=current_pdf_topic,
+                            full_document_context_text=None,
+                            bank_prompt_scope=bank_prompt_scope if include_similar_questions_in_prompt else None,
+                            questions_from_current_chunk_attempts=None,
+                        ).strip(),
+                    }
+                )
                 continue
 
             page_texts, pdf_full_text_content = self._read_pdf(pdf_path) or ([], "")
@@ -847,15 +851,17 @@ class QuestionGenerator:
                     current_topic=current_pdf_topic,
                     full_document_context_text=context_for_chunks if process_by_pages else None,
                     bank_prompt_scope=bank_prompt_scope if include_similar_questions_in_prompt else None,
-                    questions_from_current_chunk_attempts=None
+                    questions_from_current_chunk_attempts=None,
                 )
-                prompts_rows.append({
-                    "PDF": pdf_path,
-                    "Tema": current_pdf_topic,
-                    "Fragmento": i + 1,
-                    "Total fragmentos": len(text_chunks_to_process),
-                    "Prompt": prompt.strip()
-                })
+                prompts_rows.append(
+                    {
+                        "PDF": pdf_path,
+                        "Tema": current_pdf_topic,
+                        "Fragmento": i + 1,
+                        "Total fragmentos": len(text_chunks_to_process),
+                        "Prompt": prompt.strip(),
+                    }
+                )
 
         return pd.DataFrame(prompts_rows)
 
@@ -913,7 +919,7 @@ class QuestionGenerator:
         """The exception for an error that retrying does not fix (401/403/404)."""
         if code == 404:
             available = self._available_model_names()
-            suggestion = (f"\n\nModelos disponibles ahora con tu clave: {', '.join(available)}." if available else "")
+            suggestion = f"\n\nModelos disponibles ahora con tu clave: {', '.join(available)}." if available else ""
             return GeminiRequestError(
                 f"El modelo '{self.model_name}' no existe o ya no está disponible (Error 404): Google "
                 "retira los modelos antiguos. Elige otro en la tabla de modelos («Cargar Modelos»)."
@@ -934,26 +940,26 @@ class QuestionGenerator:
         return [name for name in names if "gemini" in name][:limit]
 
     def generate_multiple_choice_questions(
-            self,
-            pdf_paths: List[str],
-            prompt_type: str,
-            num_questions_per_chunk_target: int = 5,
-            output_filename: Optional[str] = None,
-            output_dir: Optional[str] = None,
-            custom_prompt: Optional[str] = None,
-            generate_docx: bool = True,
-            existing_bank_path: Optional[str] = None,
-            process_by_pages: bool = False,
-            pages_per_chunk: int = 1,
-            total_chunks: Optional[int] = None,
-            chunking_mode: str = "pages",
-            similarity_threshold: Optional[float] = 0.8,
-            bank_prompt_scope: Optional[str] = None,
-            prompt_example_content_type: str = "solo_enunciados",
-            print_raw_gemini_answer: bool = False,
-            max_generation_attempts_per_chunk: int = 3,
-            include_similar_questions_in_prompt: bool = True,
-            input_mode: str = "text"
+        self,
+        pdf_paths: List[str],
+        prompt_type: str,
+        num_questions_per_chunk_target: int = 5,
+        output_filename: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        custom_prompt: Optional[str] = None,
+        generate_docx: bool = True,
+        existing_bank_path: Optional[str] = None,
+        process_by_pages: bool = False,
+        pages_per_chunk: int = 1,
+        total_chunks: Optional[int] = None,
+        chunking_mode: str = "pages",
+        similarity_threshold: Optional[float] = 0.8,
+        bank_prompt_scope: Optional[str] = None,
+        prompt_example_content_type: str = "solo_enunciados",
+        print_raw_gemini_answer: bool = False,
+        max_generation_attempts_per_chunk: int = 3,
+        include_similar_questions_in_prompt: bool = True,
+        input_mode: str = "text",
     ) -> pd.DataFrame:
         """
         Main function to generate multiple-choice questions from multiple PDFs,
@@ -1020,9 +1026,7 @@ class QuestionGenerator:
             try:
                 self.existing_bank_df = pd.read_excel(existing_bank_path)
             except Exception as e:
-                raise ValueError(
-                    f"No se pudo leer el banco de preguntas existente '{existing_bank_path}': {e}"
-                ) from e
+                raise ValueError(f"No se pudo leer el banco de preguntas existente '{existing_bank_path}': {e}") from e
             print(f"Banco de preguntas existente cargado desde '{existing_bank_path}' para el filtro de similitud.")
         else:
             self.existing_bank_df = None
@@ -1063,7 +1067,9 @@ class QuestionGenerator:
 
                     context_for_chunks = pdf_full_text_content
                     if chunking_mode == "pages" and total_chunks is None:
-                        print(f"PDF dividido en {len(text_chunks_to_process)} fragmentos de ~{pages_per_chunk} página(s).")
+                        print(
+                            f"PDF dividido en {len(text_chunks_to_process)} fragmentos de ~{pages_per_chunk} página(s)."
+                        )
                     else:
                         print(f"PDF dividido en {len(text_chunks_to_process)} fragmentos (modo: {chunking_mode}).")
                 else:
@@ -1102,13 +1108,16 @@ class QuestionGenerator:
                 questions_accepted_for_this_chunk = []  # This list will hold question dicts
                 attempts_for_this_chunk = 0
 
-                while len(questions_accepted_for_this_chunk) < num_questions_per_chunk_target and \
-                        attempts_for_this_chunk < max_generation_attempts_per_chunk:
-
+                while (
+                    len(questions_accepted_for_this_chunk) < num_questions_per_chunk_target
+                    and attempts_for_this_chunk < max_generation_attempts_per_chunk
+                ):
                     attempts_for_this_chunk += 1
                     num_still_needed = num_questions_per_chunk_target - len(questions_accepted_for_this_chunk)
 
-                    print(f"  Intento {attempts_for_this_chunk}/{max_generation_attempts_per_chunk} para el fragmento: Se necesitan {num_still_needed} preguntas más.")
+                    print(
+                        f"  Intento {attempts_for_this_chunk}/{max_generation_attempts_per_chunk} para el fragmento: Se necesitan {num_still_needed} preguntas más."
+                    )
 
                     prompt = self._build_prompt(
                         working_chunk_text=chunk_text,
@@ -1119,7 +1128,7 @@ class QuestionGenerator:
                         current_topic=current_pdf_topic,
                         full_document_context_text=context_for_chunks if process_by_pages else None,
                         bank_prompt_scope=bank_prompt_scope if include_similar_questions_in_prompt else None,
-                        questions_from_current_chunk_attempts=questions_accepted_for_this_chunk
+                        questions_from_current_chunk_attempts=questions_accepted_for_this_chunk,
                     )
 
                     try:
@@ -1135,9 +1144,13 @@ class QuestionGenerator:
                         # Temporary errors (429/5xx) are retried inside, with increasing waits.
                         response = self._generate_content(contents)
                         if print_raw_gemini_answer:
-                            print(f"    Respuesta cruda de Gemini (Fragmento {i + 1}, Intento {attempts_for_this_chunk}):\n    >>>\n{response.text}\n    <<<\n    ---")
+                            print(
+                                f"    Respuesta cruda de Gemini (Fragmento {i + 1}, Intento {attempts_for_this_chunk}):\n    >>>\n{response.text}\n    <<<\n    ---"
+                            )
 
-                        newly_accepted_this_attempt = self._analyze_gemini_response(response.text or "", current_pdf_topic)
+                        newly_accepted_this_attempt = self._analyze_gemini_response(
+                            response.text or "", current_pdf_topic
+                        )
 
                         # Filter out duplicates that might have been generated within the same chunk attempt
                         unique_newly_accepted = []
@@ -1145,7 +1158,9 @@ class QuestionGenerator:
                             is_dup_within_chunk = False
                             for q_existing_chunk_dict in questions_accepted_for_this_chunk:
                                 # Compare only the statement for duplicates within the chunk
-                                if self._normalize_text(q_new.get("Pregunta", "")) == self._normalize_text(q_existing_chunk_dict.get("Pregunta", "")):
+                                if self._normalize_text(q_new.get("Pregunta", "")) == self._normalize_text(
+                                    q_existing_chunk_dict.get("Pregunta", "")
+                                ):
                                     is_dup_within_chunk = True
                                     break
                             if not is_dup_within_chunk:
@@ -1153,20 +1168,25 @@ class QuestionGenerator:
 
                         questions_accepted_for_this_chunk.extend(unique_newly_accepted)
                         print(
-                            f"    Intento {attempts_for_this_chunk}: {len(unique_newly_accepted)} preguntas nuevas aceptadas para este fragmento. Total para fragmento: {len(questions_accepted_for_this_chunk)}/{num_questions_per_chunk_target}")
+                            f"    Intento {attempts_for_this_chunk}: {len(unique_newly_accepted)} preguntas nuevas aceptadas para este fragmento. Total para fragmento: {len(questions_accepted_for_this_chunk)}/{num_questions_per_chunk_target}"
+                        )
 
                     except (QuotaExceededError, ServiceOverloadedError, GeminiRequestError):
                         # Already retried or not fixable by retrying (see _generate_content): stop here.
                         raise
                     except Exception as e_gen:
                         # Si es otro error, lo imprimimos para depuración pero no detenemos el proceso
-                        print(f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}")
+                        print(
+                            f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}"
+                        )
                         import traceback
+
                         print(traceback.format_exc())
 
                 if len(questions_accepted_for_this_chunk) < num_questions_per_chunk_target:
                     print(
-                        f"  Advertencia: No se alcanzó el objetivo de {num_questions_per_chunk_target} preguntas para el fragmento {i + 1} después de {max_generation_attempts_per_chunk} intentos. Se obtuvieron {len(questions_accepted_for_this_chunk)}.")
+                        f"  Advertencia: No se alcanzó el objetivo de {num_questions_per_chunk_target} preguntas para el fragmento {i + 1} después de {max_generation_attempts_per_chunk} intentos. Se obtuvieron {len(questions_accepted_for_this_chunk)}."
+                    )
 
                 all_questions_for_this_pdf.extend(questions_accepted_for_this_chunk)
 
@@ -1191,9 +1211,12 @@ class QuestionGenerator:
         print("\n--- Proceso de generación completado. ---")
         print(f"Total preguntas aceptadas y guardadas: {len(self.final_df)}")
         if self.rejected_questions_list:
-            print(f"Total preguntas rechazadas por similitud (acumulado de todos los intentos): {len(self.rejected_questions_list)}")
+            print(
+                f"Total preguntas rechazadas por similitud (acumulado de todos los intentos): {len(self.rejected_questions_list)}"
+            )
 
         return self.final_df
+
 
 # Example of use (uncomment to test)
 # if __name__ == '__main__':

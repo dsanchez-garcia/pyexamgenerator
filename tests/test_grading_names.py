@@ -16,12 +16,15 @@ def test_name_words_ignore_order_accents_case_and_punctuation():
     assert name_words("GARCÍA LÓPEZ, María") == name_words("maria garcia lopez") == ("garcia", "lopez", "maria")
 
 
-@pytest.mark.parametrize("written, expected", [
-    ("María García López", 0),
-    ("GARCIA LOPEZ, MARIA", 0),        # «Apellidos, Nombre» from the mail client
-    ("garcía lópez maría", 0),
-    ("Pedro Sánchez Ruiz", 1),
-])
+@pytest.mark.parametrize(
+    "written, expected",
+    [
+        ("María García López", 0),
+        ("GARCIA LOPEZ, MARIA", 0),  # «Apellidos, Nombre» from the mail client
+        ("garcía lópez maría", 0),
+        ("Pedro Sánchez Ruiz", 1),
+    ],
+)
 def test_same_name_in_any_order_is_assigned(written, expected):
     match = match_name(written, ENROLLED)
 
@@ -35,12 +38,15 @@ def test_fewer_words_are_assigned_to_the_only_student_containing_them(written, e
     assert (match.position, match.kind) == (expected, CONTAINED)
 
 
-@pytest.mark.parametrize("written, candidate", [
-    ("Mario García López", 0),         # another person, 0.94 against María
-    ("Pablo Sánchez Ruiz", 1),         # sibling
-    ("Laura Martín Gómez", 2),         # same first name and first surname
-    ("Maria Garcia Lopes", 0),         # a typo: also not assigned automatically
-])
+@pytest.mark.parametrize(
+    "written, candidate",
+    [
+        ("Mario García López", 0),  # another person, 0.94 against María
+        ("Pablo Sánchez Ruiz", 1),  # sibling
+        ("Laura Martín Gómez", 2),  # same first name and first surname
+        ("Maria Garcia Lopes", 0),  # a typo: also not assigned automatically
+    ],
+)
 def test_similar_names_are_not_assigned_but_reported_with_a_candidate(written, candidate):
     match = match_name(written, ENROLLED)
 

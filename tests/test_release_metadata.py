@@ -27,6 +27,5 @@ def test_version_and_release_date_match_everywhere():
     assert zenodo["version"] == version
     assert zenodo["publication_date"] == release_date
     assert f"## [{version}] - {release_date}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    tag_urls = [item["identifier"] for item in zenodo.get("related_identifiers", [])
-                if "/tree/" in item["identifier"]]
+    tag_urls = [item["identifier"] for item in zenodo.get("related_identifiers", []) if "/tree/" in item["identifier"]]
     assert tag_urls and all(url.endswith(f"/tree/v{version}") for url in tag_urls)

@@ -140,14 +140,11 @@ def integration_warnings(summary: Any, incidents_path: str) -> List[str]:
         ("blocked_missing_grade", "Sin nota OCR válida"),
     ]
     parts = [
-        f"- {label}: {int(summary.get(key, 0) or 0)}"
-        for key, label in blocked if int(summary.get(key, 0) or 0) > 0
+        f"- {label}: {int(summary.get(key, 0) or 0)}" for key, label in blocked if int(summary.get(key, 0) or 0) > 0
     ]
     if parts:
         warning_msgs.append(
-            "Durante la integración se bloquearon filas OCR:\n"
-            + "\n".join(parts)
-            + f"\nRevisa: {incidents_path}"
+            "Durante la integración se bloquearon filas OCR:\n" + "\n".join(parts) + f"\nRevisa: {incidents_path}"
         )
     overwritten = int(summary.get("grades_overwritten", 0) or 0)
     if overwritten > 0:

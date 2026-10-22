@@ -196,7 +196,7 @@ class AbsenceJustificationManager:
         if match:
             return match.group(1).strip().lower()
         match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
-        return (match.group(0).strip().lower() if match else "")
+        return match.group(0).strip().lower() if match else ""
 
     @staticmethod
     def _is_attendance_date_column(column_name: str) -> bool:
@@ -267,7 +267,9 @@ class AbsenceJustificationManager:
 
     @staticmethod
     def _student_name_key(first_name: object, last_name: object) -> str:
-        return f"{AbsenceJustificationManager._normalize(first_name)}_{AbsenceJustificationManager._normalize(last_name)}"
+        return (
+            f"{AbsenceJustificationManager._normalize(first_name)}_{AbsenceJustificationManager._normalize(last_name)}"
+        )
 
     @staticmethod
     def _student_lookup_keys(student_id: object, first_name: object, last_name: object) -> List[str]:
@@ -338,8 +340,19 @@ class AbsenceJustificationManager:
             return "no_justifica", 0, "sin_texto"
 
         positive_patterns = [
-            r"justific", r"justificante", r"adjunt", r"certific", r"parte med", r"m[ée]dic",
-            r"ausenc", r"falta", r"asisten", r"no pude", r"no he podido", r"motivo", r"permiso",
+            r"justific",
+            r"justificante",
+            r"adjunt",
+            r"certific",
+            r"parte med",
+            r"m[ée]dic",
+            r"ausenc",
+            r"falta",
+            r"asisten",
+            r"no pude",
+            r"no he podido",
+            r"motivo",
+            r"permiso",
         ]
         evidence_patterns = [r"archivo adjunto", r"adjunto", r"enlace", r"certificado"]
         negative_patterns = [r"consulta", r"duda", r"gracias", r"examen", r"tutor[íi]a"]
@@ -372,8 +385,13 @@ class AbsenceJustificationManager:
     def _load_enrollment(self) -> pd.DataFrame:
         df = pd.read_excel(self.enrollment_xlsx_path, sheet_name=self.enrollment_sheet)
         first_name_col = self._find_column(df.columns, self._candidates(self.first_name_col, ["Nombre"]))
-        last_name_col = self._find_column(df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"]))
-        email_col = self._find_column(df.columns, self._candidates(self.email_col, ["Dirección de correo", "Direccin de correo", "Correo", "Email"]))
+        last_name_col = self._find_column(
+            df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+        )
+        email_col = self._find_column(
+            df.columns,
+            self._candidates(self.email_col, ["Dirección de correo", "Direccin de correo", "Correo", "Email"]),
+        )
         id_col = self._find_column(df.columns, self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID"]))
 
         if first_name_col is None or last_name_col is None:
@@ -384,7 +402,9 @@ class AbsenceJustificationManager:
         out["_last_name_col"] = last_name_col
         out["_email_col"] = email_col or ""
         out["_id_col"] = id_col or ""
-        out["_full_name"] = (out[first_name_col].astype(str).str.strip() + " " + out[last_name_col].astype(str).str.strip()).str.strip()
+        out["_full_name"] = (
+            out[first_name_col].astype(str).str.strip() + " " + out[last_name_col].astype(str).str.strip()
+        ).str.strip()
         out["_full_name_norm"] = out["_full_name"].map(self._normalize)
         if email_col:
             out["_email_norm"] = out[email_col].astype(str).str.strip().str.lower()
@@ -418,16 +438,25 @@ class AbsenceJustificationManager:
         return None, match.kind, float(match.score), str(candidate)
 
     def _build_attendance_lookup(self) -> Tuple[pd.DataFrame, List[str], str, str, str]:
-        attendance_df = pd.read_excel(self.attendance_xlsx_path, sheet_name=self.attendance_sheet, header=self.attendance_header_row)
+        attendance_df = pd.read_excel(
+            self.attendance_xlsx_path, sheet_name=self.attendance_sheet, header=self.attendance_header_row
+        )
         first_name_col = self._find_column(attendance_df.columns, self._candidates(self.first_name_col, ["Nombre"]))
-        last_name_col = self._find_column(attendance_df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"]))
-        id_col = self._find_column(attendance_df.columns, self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"]))
+        last_name_col = self._find_column(
+            attendance_df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+        )
+        id_col = self._find_column(
+            attendance_df.columns,
+            self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"]),
+        )
 
         if first_name_col is None or last_name_col is None:
             raise ValueError("Attendance file must contain first and last name columns.")
 
         attendance_df["_full_name"] = (
-            attendance_df[first_name_col].astype(str).str.strip() + " " + attendance_df[last_name_col].astype(str).str.strip()
+            attendance_df[first_name_col].astype(str).str.strip()
+            + " "
+            + attendance_df[last_name_col].astype(str).str.strip()
         ).str.strip()
         attendance_df["_full_name_norm"] = attendance_df["_full_name"].map(self._normalize)
         attendance_df["_id_norm"] = attendance_df[id_col].map(normalize_id) if id_col else ""
@@ -445,7 +474,9 @@ class AbsenceJustificationManager:
             schedule_df = pd.read_excel(self.schedule_xlsx_path, sheet_name=self.schedule_sheet)
             start_date_col = self._find_column(schedule_df.columns, ["Fecha de Inicio"])
             desc_col = self._find_column(schedule_df.columns, ["Descripción", "Descripcin", "Descripcion"])
-            title_col = self._find_column(schedule_df.columns, ["Título (EDITABLE)", "Ttulo (EDITABLE)", "Titulo (EDITABLE)"])
+            title_col = self._find_column(
+                schedule_df.columns, ["Título (EDITABLE)", "Ttulo (EDITABLE)", "Titulo (EDITABLE)"]
+            )
             if start_date_col:
                 schedule_df = schedule_df.copy()
                 schedule_df[start_date_col] = pd.to_datetime(schedule_df[start_date_col], errors="coerce")
@@ -510,7 +541,10 @@ class AbsenceJustificationManager:
                 meta.get("Grupo_Clase", ""),
             )
             session_columns.append((str(col), class_label, session_col_name))
-        topic_by_col = {str(row["Fecha_Asistencia_Col"]): str(row.get("Tema_Clase", "")).strip() for _, row in theory_sessions_df.iterrows()}
+        topic_by_col = {
+            str(row["Fecha_Asistencia_Col"]): str(row.get("Tema_Clase", "")).strip()
+            for _, row in theory_sessions_df.iterrows()
+        }
 
         by_id: Dict[str, pd.Series] = {}
         by_name: Dict[str, pd.Series] = {}
@@ -623,13 +657,15 @@ class AbsenceJustificationManager:
                 synthetic_idx += 1
                 class_label = f"SIN_ASISTENCIA_REGISTRADA | {topic} | {group}"
                 session_col_name = self._short_class_column_name(synthetic_idx, "", topic, group)
-                session_columns.append((
-                    f"__synthetic__{topic}__{group}",
-                    class_label,
-                    session_col_name,
-                    topic,
-                    group,
-                ))
+                session_columns.append(
+                    (
+                        f"__synthetic__{topic}__{group}",
+                        class_label,
+                        session_col_name,
+                        topic,
+                        group,
+                    )
+                )
 
         q_first_col = self._find_column(quizzes_df.columns, ["Nombre"])
         q_last_col = self._find_column(quizzes_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
@@ -802,7 +838,11 @@ class AbsenceJustificationManager:
             full_name = f"{str(row.get('Nombre', '')).strip()} {str(row.get('Apellido(s)', '')).strip()}".strip()
             full_name_norm = self._normalize(full_name)
             key = f"{student_id}|{full_name_norm}"
-            if not (key in sender_keys or (student_id and student_id in sender_ids) or (full_name_norm and full_name_norm in sender_name_norms)):
+            if not (
+                key in sender_keys
+                or (student_id and student_id in sender_ids)
+                or (full_name_norm and full_name_norm in sender_name_norms)
+            ):
                 continue
 
             sender = sender_info.get(key, {})
@@ -866,7 +906,9 @@ class AbsenceJustificationManager:
                 message_class = "justifica_falta"
                 message_reasons = ("plantilla_estructurada | " + message_reasons).strip(" |")
             structured_cols = {
-                "Justif_Fecha": (structured.get("fecha_normalizada") or structured.get("fecha", "")) if structured else "",
+                "Justif_Fecha": (structured.get("fecha_normalizada") or structured.get("fecha", ""))
+                if structured
+                else "",
                 "Justif_Tema_Practica": structured.get("tema_practica", "") if structured else "",
                 "Justif_Grupo": structured.get("grupo", "") if structured else "",
                 "Justif_Subgrupo_Practicas": structured.get("subgrupo_practicas", "") if structured else "",
@@ -941,7 +983,9 @@ class AbsenceJustificationManager:
                             "Clase_Label": col_label,
                             "Valor_Asistencia": value_text,
                             "Es_Falta_Clara": "si" if self._is_absence_value(value) else "no",
-                            "Es_Dudosa": "si" if (not self._is_present_value(value) and not self._is_absence_value(value)) else "no",
+                            "Es_Dudosa": "si"
+                            if (not self._is_present_value(value) and not self._is_absence_value(value))
+                            else "no",
                         }
                     )
             else:
@@ -1000,10 +1044,7 @@ class AbsenceJustificationManager:
         summary_df = pd.DataFrame(summary_rows)
         detailed_df = pd.DataFrame(detailed_rows)
 
-        overview_by_name = {
-            str(row.get("Alumno", "")).strip(): row
-            for _, row in attendance_overview_df.iterrows()
-        }
+        overview_by_name = {str(row.get("Alumno", "")).strip(): row for _, row in attendance_overview_df.iterrows()}
 
         sender_check_rows: List[Dict[str, object]] = []
         for _, row in summary_df.iterrows():
@@ -1121,7 +1162,9 @@ class AbsenceJustificationManager:
         if attendance_quiz_output_path:
             attendance_quiz_output_path = prepare_output_path(attendance_quiz_output_path, output_dir)
         if extreme_justified_absences_output_path:
-            extreme_justified_absences_output_path = prepare_output_path(extreme_justified_absences_output_path, output_dir)
+            extreme_justified_absences_output_path = prepare_output_path(
+                extreme_justified_absences_output_path, output_dir
+            )
 
         result.summary_df.to_excel(summary_output_path, index=False)
         result.detailed_df.to_excel(detailed_output_path, index=False)
@@ -1130,7 +1173,11 @@ class AbsenceJustificationManager:
             result.attendance_overview_df.to_excel(attendance_overview_output_path, index=False)
         if sender_absence_check_output_path and result.sender_absence_check_df is not None:
             result.sender_absence_check_df.to_excel(sender_absence_check_output_path, index=False)
-        if attendance_quiz_output_path and result.attendance_quiz_df is not None and not result.attendance_quiz_df.empty:
+        if (
+            attendance_quiz_output_path
+            and result.attendance_quiz_df is not None
+            and not result.attendance_quiz_df.empty
+        ):
             result.attendance_quiz_df.to_excel(attendance_quiz_output_path, index=False)
         if (
             extreme_justified_absences_output_path
@@ -1142,9 +1189,13 @@ class AbsenceJustificationManager:
         print(f"OK: justification summary -> {summary_output_path} ({len(result.summary_df)} rows)")
         print(f"OK: justification detail -> {detailed_output_path} ({len(result.detailed_df)} rows)")
         if attendance_overview_output_path and result.attendance_overview_df is not None:
-            print(f"OK: attendance overview -> {attendance_overview_output_path} ({len(result.attendance_overview_df)} rows)")
+            print(
+                f"OK: attendance overview -> {attendance_overview_output_path} ({len(result.attendance_overview_df)} rows)"
+            )
         if sender_absence_check_output_path and result.sender_absence_check_df is not None:
-            print(f"OK: sender absence check -> {sender_absence_check_output_path} ({len(result.sender_absence_check_df)} rows)")
+            print(
+                f"OK: sender absence check -> {sender_absence_check_output_path} ({len(result.sender_absence_check_df)} rows)"
+            )
         if attendance_quiz_output_path and result.attendance_quiz_df is not None:
             print(f"OK: attendance + quizzes -> {attendance_quiz_output_path} ({len(result.attendance_quiz_df)} rows)")
         if extreme_justified_absences_output_path and result.extreme_justified_absences_df is not None:
@@ -1322,12 +1373,16 @@ class PIRBonusCalculator:
     def _load_quizzes(self) -> pd.DataFrame:
         return pd.read_excel(self.quizzes_path)
 
-    def _build_sessions(self, attendance_df: pd.DataFrame, schedule_df: pd.DataFrame) -> Tuple[List[PIRSession], List[str]]:
+    def _build_sessions(
+        self, attendance_df: pd.DataFrame, schedule_df: pd.DataFrame
+    ) -> Tuple[List[PIRSession], List[str]]:
         warnings: List[str] = []
 
         start_date_col = next((c for c in schedule_df.columns if normalize_text(c) == "fecha de inicio"), None)
         desc_col = next((c for c in schedule_df.columns if normalize_text(c) in {"descripcion", "descripcin"}), None)
-        title_col = next((c for c in schedule_df.columns if "titulo" in normalize_text(c) and "editable" in normalize_text(c)), None)
+        title_col = next(
+            (c for c in schedule_df.columns if "titulo" in normalize_text(c) and "editable" in normalize_text(c)), None
+        )
 
         if not start_date_col or not desc_col or not title_col:
             raise ValueError("Required columns were not found in schedule file.")
@@ -1407,7 +1462,9 @@ class PIRBonusCalculator:
             raise ValueError("Quizzes file must include 'Apellido(s)' and 'Nombre'.")
 
         attendance_work = attendance_df.copy()
-        attendance_work["_key"] = attendance_work.apply(lambda r: _student_key(r.get("Apellido(s)"), r.get("Nombre")), axis=1)
+        attendance_work["_key"] = attendance_work.apply(
+            lambda r: _student_key(r.get("Apellido(s)"), r.get("Nombre")), axis=1
+        )
 
         quizzes_work = quizzes_df.copy()
         quizzes_work["_key"] = quizzes_work.apply(lambda r: _student_key(r.get("Apellido(s)"), r.get("Nombre")), axis=1)
@@ -1514,10 +1571,7 @@ class PIRBonusCalculator:
 
         bonus_work = bonus_df.copy()
         bonus_work["_key"] = bonus_work.apply(lambda r: _student_key(r.get("Apellido(s)"), r.get("Nombre")), axis=1)
-        bonus_map = {
-            row["_key"]: float(row.get("PIR_Bonus", 0.0) or 0.0)
-            for _, row in bonus_work.iterrows()
-        }
+        bonus_map = {row["_key"]: float(row.get("PIR_Bonus", 0.0) or 0.0) for _, row in bonus_work.iterrows()}
 
         def parse_theory_grade(value: object) -> float:
             parsed = parse_decimal(value)
@@ -1683,10 +1737,7 @@ def _compute_theory_bonus(
             if name_key and name_key in bonus_by_name:
                 has_bonus, no_bonus_reason = bonus_by_name[name_key]
 
-        original_values = {
-            col: parse_decimal(row.get(col, ""))
-            for col in grade_columns
-        }
+        original_values = {col: parse_decimal(row.get(col, "")) for col in grade_columns}
         valid_values = [value for value in original_values.values() if value is not None]
         original_reference = max(valid_values) if valid_values else None
         out_df.at[idx, "Punto_Adicional_Cuestionarios"] = has_bonus
@@ -1853,4 +1904,3 @@ def export_theory_topic_reports(
 
 if __name__ == "__main__":
     main()
-

@@ -424,7 +424,9 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "incidents", incidents_df)
         self._finalize_step_export(export_state, {"output_path": output_path, "incidents_output": incidents_path})
         self.session.record_workflow(
-            "grade_from_excel", config=cfg, outputs={"output_path": output_path, "incidents_output": incidents_path},
+            "grade_from_excel",
+            config=cfg,
+            outputs={"output_path": output_path, "incidents_output": incidents_path},
             summary={"rows": int(len(result_df)), "incidents": int(len(incidents_df))},
         )
         return result_df
@@ -477,8 +479,11 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "answers_detected", answers_df)
         self._export_step_dataframe(export_state, "grades_generated", grades_df)
         self._export_step_dataframe(export_state, "audit_details", audit_df)
-        for step_name, output in (("ocr_incidents", cfg.output_incidents), ("ocr_manual_review", cfg.output_review),
-                                  ("ocr_manual_changes", cfg.output_manual_changes)):
+        for step_name, output in (
+            ("ocr_incidents", cfg.output_incidents),
+            ("ocr_manual_review", cfg.output_review),
+            ("ocr_manual_changes", cfg.output_manual_changes),
+        ):
             if export_state is not None and output:
                 written_path = self._resolve_output_path(output, cfg.output_dir)
                 if Path(written_path).exists():
@@ -486,9 +491,13 @@ class ExamCorrectionAPI:
         out_answers = self._resolve_output_path(cfg.output_answers, cfg.output_dir)
         out_grades = self._resolve_output_path(cfg.output_grades, cfg.output_dir)
         out_audit = self._resolve_output_path(cfg.output_audit, cfg.output_dir) if cfg.output_audit else None
-        out_incidents = self._resolve_output_path(cfg.output_incidents, cfg.output_dir) if cfg.output_incidents else None
+        out_incidents = (
+            self._resolve_output_path(cfg.output_incidents, cfg.output_dir) if cfg.output_incidents else None
+        )
         out_review = self._resolve_output_path(cfg.output_review, cfg.output_dir) if cfg.output_review else None
-        out_manual_changes = self._resolve_output_path(cfg.output_manual_changes, cfg.output_dir) if cfg.output_manual_changes else None
+        out_manual_changes = (
+            self._resolve_output_path(cfg.output_manual_changes, cfg.output_dir) if cfg.output_manual_changes else None
+        )
         self._finalize_step_export(
             export_state,
             {
@@ -504,7 +513,8 @@ class ExamCorrectionAPI:
         self.results["image_grades"] = grades_df
         self.results["image_audit"] = audit_df
         self.session.record_workflow(
-            "grade_from_images", config=cfg,
+            "grade_from_images",
+            config=cfg,
             outputs={"output_answers": out_answers, "output_grades": out_grades, "output_incidents": out_incidents},
             summary={"rows": int(len(grades_df)), "skipped_sheets": len(getattr(grader, "skipped_sheets", []))},
         )
@@ -519,15 +529,16 @@ class ExamCorrectionAPI:
                 self.results["ocr_incidents"] = pd.read_excel(incidents_path)
         return answers_df, grades_df, audit_df
 
-    def integrate_moodle_grades(self, cfg: MoodleIntegrationConfig, export_steps_dir: Optional[str] = None) -> pd.DataFrame:
+    def integrate_moodle_grades(
+        self, cfg: MoodleIntegrationConfig, export_steps_dir: Optional[str] = None
+    ) -> pd.DataFrame:
         from pyexamgenerator.grading.integrations import MoodleGradeIntegrator
 
         # Iterated more than once: a generator would be empty the second time.
         cfg = replace(cfg, xlsx_files=list(cfg.xlsx_files), group_types=list(cfg.group_types))
         export_state = self._start_step_export(export_steps_dir, "integrate_moodle_grades")
         for i, path in enumerate(cfg.xlsx_files, start=1):
-            self._export_step_input(export_state, f"source_file_{i}",
-                                    _read_excel_later(path, cfg.sheet))
+            self._export_step_input(export_state, f"source_file_{i}", _read_excel_later(path, cfg.sheet))
 
         integrator = MoodleGradeIntegrator(
             xlsx_files=cfg.xlsx_files,
@@ -547,7 +558,9 @@ class ExamCorrectionAPI:
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
         self._finalize_step_export(export_state, {"output_path": output_path})
         self.session.record_workflow(
-            "integrate_moodle_grades", config=cfg, outputs={"output_path": output_path},
+            "integrate_moodle_grades",
+            config=cfg,
+            outputs={"output_path": output_path},
             summary={"rows": int(len(result_df))},
         )
         return result_df
@@ -606,7 +619,9 @@ class ExamCorrectionAPI:
                 summary_payload[key] = int(integration_summary.get(key, 0) or 0)
 
         self.session.record_workflow(
-            "integrate_ocr_grades", config=cfg, outputs={"output_path": output_path},
+            "integrate_ocr_grades",
+            config=cfg,
+            outputs={"output_path": output_path},
             summary=summary_payload,
         )
         return result_df
@@ -751,7 +766,10 @@ class ExamCorrectionAPI:
             progress("Aplicando punto extra…")
             outputs["theory_grades"] = str(Path(out_dir) / "calificaciones_examen_teoria.xlsx")
             theory_df = TheoryBonusApplier(
-                integrated_df, attendance_quiz_df, theory_grade_col=cfg.theory_grade_col, cap_to_10=cfg.cap_to_10,
+                integrated_df,
+                attendance_quiz_df,
+                theory_grade_col=cfg.theory_grade_col,
+                cap_to_10=cfg.cap_to_10,
                 bonus_points=cfg.bonus_points,
             ).apply(outputs["theory_grades"])
             _attendance_report_df, quiz_report_df = TheoryTopicReporter(attendance_quiz_df).build()
@@ -778,8 +796,7 @@ class ExamCorrectionAPI:
         cfg = replace(cfg, source_paths=list(cfg.source_paths))  # iterated twice
         export_state = self._start_step_export(export_steps_dir, "merge_enrollment_sources")
         for i, source_path in enumerate(cfg.source_paths, start=1):
-            self._export_step_input(export_state, f"source_enrollment_{i}",
-                                    _read_excel_later(source_path, cfg.sheet))
+            self._export_step_input(export_state, f"source_enrollment_{i}", _read_excel_later(source_path, cfg.sheet))
 
         merged_df = build_merged_enrollment_from_sources(cfg.source_paths, sheet_name=cfg.sheet)
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
@@ -789,7 +806,9 @@ class ExamCorrectionAPI:
         self._finalize_step_export(export_state, {"output_path": output_path})
         self.results["merged_enrollment"] = merged_df
         self.session.record_workflow(
-            "merge_enrollment_sources", config=cfg, outputs={"output_path": output_path},
+            "merge_enrollment_sources",
+            config=cfg,
+            outputs={"output_path": output_path},
             summary={"rows": int(len(merged_df))},
         )
         return merged_df
@@ -807,7 +826,9 @@ class ExamCorrectionAPI:
             "attendance_input",
             lambda: pd.read_excel(cfg.attendance_xlsx_path, header=cfg.attendance_header_row),
         )
-        self._export_step_input(export_state, "justifications_input", lambda: pd.read_excel(cfg.justifications_xlsx_path))
+        self._export_step_input(
+            export_state, "justifications_input", lambda: pd.read_excel(cfg.justifications_xlsx_path)
+        )
         self._export_step_input(export_state, "enrollment_input", lambda: pd.read_excel(cfg.enrollment_xlsx_path))
 
         manager = AbsenceJustificationManager(
@@ -844,14 +865,20 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "attendance_overview", result.attendance_overview_df)
         self._export_step_dataframe(export_state, "justifications_vs_absences", result.sender_absence_check_df)
         self._export_step_dataframe(export_state, "attendance_with_quizzes", result.attendance_quiz_df)
-        self._export_step_dataframe(export_state, "extreme_mode_justified_absences", result.extreme_justified_absences_df)
+        self._export_step_dataframe(
+            export_state, "extreme_mode_justified_absences", result.extreme_justified_absences_df
+        )
         self._finalize_step_export(
             export_state,
             {
                 "summary_output": self._resolve_output_path(cfg.summary_output_path, cfg.output_dir),
                 "detailed_output": self._resolve_output_path(cfg.detailed_output_path, cfg.output_dir),
-                "attendance_overview_output": self._resolve_output_path(cfg.attendance_overview_output_path, cfg.output_dir),
-                "sender_absence_check_output": self._resolve_output_path(cfg.sender_absence_check_output_path, cfg.output_dir),
+                "attendance_overview_output": self._resolve_output_path(
+                    cfg.attendance_overview_output_path, cfg.output_dir
+                ),
+                "sender_absence_check_output": self._resolve_output_path(
+                    cfg.sender_absence_check_output_path, cfg.output_dir
+                ),
                 "attendance_quiz_output": self._resolve_output_path(cfg.attendance_quiz_output_path, cfg.output_dir),
                 "extreme_justified_absences_output": self._resolve_output_path(
                     cfg.extreme_justified_absences_output_path,
@@ -863,7 +890,8 @@ class ExamCorrectionAPI:
         self.results["justifications_detail"] = result.detailed_df
         self.results["attendance_with_quizzes"] = result.attendance_quiz_df
         self.session.record_workflow(
-            "process_absence_justifications", config=cfg,
+            "process_absence_justifications",
+            config=cfg,
             outputs={
                 "summary_output": self._resolve_output_path(cfg.summary_output_path, cfg.output_dir),
                 "detailed_output": self._resolve_output_path(cfg.detailed_output_path, cfg.output_dir),
@@ -881,7 +909,9 @@ class ExamCorrectionAPI:
 
         export_state = self._start_step_export(export_steps_dir, "apply_theory_bonus")
         self._export_step_input(export_state, "theory_input", lambda: pd.read_excel(cfg.theory_xlsx_path))
-        self._export_step_input(export_state, "attendance_quiz_input", lambda: pd.read_excel(cfg.attendance_quiz_xlsx_path))
+        self._export_step_input(
+            export_state, "attendance_quiz_input", lambda: pd.read_excel(cfg.attendance_quiz_xlsx_path)
+        )
 
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
         result_df = apply_theory_bonus_from_attendance_quiz(
@@ -897,7 +927,9 @@ class ExamCorrectionAPI:
         self._finalize_step_export(export_state, {"output_path": output_path})
         self.results["theory_with_bonus"] = result_df
         self.session.record_workflow(
-            "apply_theory_bonus", config=cfg, outputs={"output_path": output_path},
+            "apply_theory_bonus",
+            config=cfg,
+            outputs={"output_path": output_path},
             summary={"rows": int(len(result_df))},
         )
         return result_df
@@ -911,7 +943,9 @@ class ExamCorrectionAPI:
 
         output_dir = self._resolve_output_path(cfg.output_dir, None)
         export_state = self._start_step_export(export_steps_dir, "export_theory_topic_reports")
-        self._export_step_input(export_state, "attendance_quiz_input", lambda: pd.read_excel(cfg.attendance_quiz_xlsx_path))
+        self._export_step_input(
+            export_state, "attendance_quiz_input", lambda: pd.read_excel(cfg.attendance_quiz_xlsx_path)
+        )
 
         attendance_report_df, quiz_report_df = export_theory_topic_reports(
             attendance_quiz_xlsx_path=cfg.attendance_quiz_xlsx_path,
@@ -930,7 +964,9 @@ class ExamCorrectionAPI:
         self.results["topic_attendance_report"] = attendance_report_df
         self.results["topic_quiz_report"] = quiz_report_df
         self.session.record_workflow(
-            "export_theory_topic_reports", config=cfg, outputs={"output_dir": output_dir},
+            "export_theory_topic_reports",
+            config=cfg,
+            outputs={"output_dir": output_dir},
             summary={"rows": int(len(attendance_report_df))},
         )
         return attendance_report_df, quiz_report_df
@@ -977,12 +1013,16 @@ class ExamCorrectionAPI:
 
         export_state = self._start_step_export(export_steps_dir, "compare_results")
         comparator = ResultComparator(
-            id_col=cfg.id_col, first_name_col=cfg.first_name_col, last_name_col=cfg.last_name_col,
+            id_col=cfg.id_col,
+            first_name_col=cfg.first_name_col,
+            last_name_col=cfg.last_name_col,
         )
         result = comparator.compare(
-            existing_path=cfg.existing_path, new_path=cfg.new_path,
+            existing_path=cfg.existing_path,
+            new_path=cfg.new_path,
             value_cols=list(cfg.value_cols) or None,
-            overwrite=cfg.overwrite, add_new_rows=cfg.add_new_rows,
+            overwrite=cfg.overwrite,
+            add_new_rows=cfg.add_new_rows,
         )
 
         report_path = self._resolve_output_path(cfg.report_output_path, cfg.output_dir)
@@ -990,7 +1030,11 @@ class ExamCorrectionAPI:
         outputs: Dict[str, object] = {"report_output": report_path}
 
         if cfg.overwrite and result.merged_df is not None:
-            merged_path = cfg.existing_path if cfg.merged_in_place else self._resolve_output_path(cfg.merged_output_path, cfg.output_dir)
+            merged_path = (
+                cfg.existing_path
+                if cfg.merged_in_place
+                else self._resolve_output_path(cfg.merged_output_path, cfg.output_dir)
+            )
             if cfg.merged_in_place and Path(merged_path).exists():
                 # Overwriting the previous results in place: keep a timestamped copy first.
                 source = Path(merged_path)
@@ -1025,10 +1069,14 @@ class ExamCorrectionAPI:
         from pyexamgenerator.grading.attendance import PIRBonusCalculator
 
         export_state = self._start_step_export(export_steps_dir, "calculate_pir_bonus")
-        self._export_step_input(export_state, "attendance_input",
-                                lambda: pd.read_excel(cfg.attendance_path, header=cfg.attendance_header_row))
-        self._export_step_input(export_state, "schedule_input",
-                                lambda: pd.read_excel(cfg.schedule_path, sheet_name=cfg.schedule_sheet))
+        self._export_step_input(
+            export_state,
+            "attendance_input",
+            lambda: pd.read_excel(cfg.attendance_path, header=cfg.attendance_header_row),
+        )
+        self._export_step_input(
+            export_state, "schedule_input", lambda: pd.read_excel(cfg.schedule_path, sheet_name=cfg.schedule_sheet)
+        )
         self._export_step_input(export_state, "quizzes_input", lambda: pd.read_excel(cfg.quizzes_path))
 
         calculator = PIRBonusCalculator(
@@ -1070,7 +1118,8 @@ class ExamCorrectionAPI:
             },
         )
         self.session.record_workflow(
-            "calculate_pir_bonus", config=cfg,
+            "calculate_pir_bonus",
+            config=cfg,
             outputs={
                 "summary_output": self._resolve_output_path(cfg.summary_output_path, cfg.output_dir),
                 "incidents_output": self._resolve_output_path(cfg.incidents_output_path, cfg.output_dir),

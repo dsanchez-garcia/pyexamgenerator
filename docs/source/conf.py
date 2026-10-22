@@ -2,6 +2,7 @@
 
 import os
 import sys
+
 # Añade la ruta raíz del proyecto para que Sphinx pueda encontrar tus módulos
 sys.path.insert(0, os.path.abspath('../../'))
 
@@ -26,9 +27,9 @@ release = __version__
 
 # -- General configuration ---------------------------------------------------
 extensions = [
-    'sphinx.ext.autodoc',      # Importa la documentación desde los docstrings
-    'sphinx.ext.napoleon',     # Soporte para docstrings de estilo Google y NumPy
-    'sphinx.ext.viewcode',     # Añade enlaces al código fuente
+    'sphinx.ext.autodoc',  # Importa la documentación desde los docstrings
+    'sphinx.ext.napoleon',  # Soporte para docstrings de estilo Google y NumPy
+    'sphinx.ext.viewcode',  # Añade enlaces al código fuente
     'sphinx.ext.intersphinx',  # Enlaces a otra documentación
     'myst_parser',  # Construir markdown
 ]

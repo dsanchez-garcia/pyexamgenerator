@@ -22,18 +22,20 @@ from typing import Optional, List, Tuple
 
 from pyexamgenerator._text import strip_accents
 
+
 class QuestionBankManager:
     """
     Manages a question bank, allowing reading from DOCX files,
     saving to Excel, and adding new questions while avoiding duplicates.
     """
+
     # Paragraph markers of the review DOCX written by QuestionGenerator.save_questions_to_docx.
     # DOTALL: a paragraph may contain soft line breaks ('\n') added while reviewing in Word.
     _DOCX_QUESTION_HEADER = re.compile(r"^Pregunta\s+(\d+)\s*[:.)-]?\s*(.*)$", re.DOTALL)
     _DOCX_ANSWER_LINE = re.compile(r"^([ABCD])\)\s*(.*)$", re.DOTALL)
     _DOCX_SINGLE_LINE_FIELDS = (("Tema:", "Tema"), ("Estado:", "Estado"), ("Respuesta correcta:", "Respuesta correcta"))
 
-    #TODO: review how the transformation from revised docx to xlsx, etc. is used in the code.
+    # TODO: review how the transformation from revised docx to xlsx, etc. is used in the code.
     def read_questions_from_docx(self, docx_path: str) -> Optional[pd.DataFrame]:
         """
         Reads revised questions from a DOCX file and returns a pandas DataFrame.
@@ -79,12 +81,12 @@ class QuestionBankManager:
                     continue
                 if text.startswith("Texto relevante:"):
                     current_field = "Texto relevante"
-                    current_question[current_field] = text[len("Texto relevante:"):].strip()
+                    current_question[current_field] = text[len("Texto relevante:") :].strip()
                     continue
 
                 for prefix, field in self._DOCX_SINGLE_LINE_FIELDS:
                     if text.startswith(prefix):
-                        value = text[len(prefix):].strip()
+                        value = text[len(prefix) :].strip()
                         current_question[field] = value.upper() if field == "Respuesta correcta" else value
                         current_field = None  # One-line fields never continue.
                         break
@@ -98,7 +100,18 @@ class QuestionBankManager:
 
             df = pd.DataFrame(questions)
             # Ensure column order for consistency
-            expected_columns = ['Número de pregunta', 'Tema', 'Estado', 'Pregunta', 'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'Respuesta correcta', 'Texto relevante']
+            expected_columns = [
+                'Número de pregunta',
+                'Tema',
+                'Estado',
+                'Pregunta',
+                'Respuesta A',
+                'Respuesta B',
+                'Respuesta C',
+                'Respuesta D',
+                'Respuesta correcta',
+                'Texto relevante',
+            ]
             df = df.reindex(columns=expected_columns)
             return df
 
@@ -123,11 +136,17 @@ class QuestionBankManager:
             print("No hay preguntas revisadas para guardar.")
 
     def add_questions_without_duplicates(
-            self,
-            existing_bank_path: str,
-            reviewed_questions_path: str,
-            duplicate_check_columns: Optional[List[str]] = ['Pregunta', 'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D'],
-            add_only_acceptable: bool = False
+        self,
+        existing_bank_path: str,
+        reviewed_questions_path: str,
+        duplicate_check_columns: Optional[List[str]] = [
+            'Pregunta',
+            'Respuesta A',
+            'Respuesta B',
+            'Respuesta C',
+            'Respuesta D',
+        ],
+        add_only_acceptable: bool = False,
     ) -> Tuple[int, Optional[pd.DataFrame]]:
         """
         Adds questions from a reviewed Excel file to an existing bank, avoiding duplicates.
@@ -169,7 +188,9 @@ class QuestionBankManager:
                 if df_reviewed.empty:
                     print("No se encontraron preguntas con estado 'Aceptable' para añadir.")
             else:
-                print("Advertencia: La columna 'Estado' no se encontró en el archivo a añadir. No se pudo aplicar el filtro.")
+                print(
+                    "Advertencia: La columna 'Estado' no se encontró en el archivo a añadir. No se pudo aplicar el filtro."
+                )
 
         added_count = 0
 
@@ -182,13 +203,31 @@ class QuestionBankManager:
                 # Check all specified columns for a perfect match
                 for col in duplicate_check_columns:
                     # Logic to handle different scenarios of matching, including NaN values
-                    if col in row_reviewed and col in row_existing and pd.notna(row_reviewed[col]) and pd.notna(row_existing[col]) and row_reviewed[col] != row_existing[col]:
+                    if (
+                        col in row_reviewed
+                        and col in row_existing
+                        and pd.notna(row_reviewed[col])
+                        and pd.notna(row_existing[col])
+                        and row_reviewed[col] != row_existing[col]
+                    ):
                         match = False
                         break
-                    elif (col in row_reviewed and col not in row_existing) or \
-                            (col not in row_reviewed and col in row_existing) or \
-                            (col in row_reviewed and col in row_existing and pd.isna(row_reviewed[col]) and pd.notna(row_existing[col])) or \
-                            (col in row_reviewed and col in row_existing and pd.notna(row_reviewed[col]) and pd.isna(row_existing[col])):
+                    elif (
+                        (col in row_reviewed and col not in row_existing)
+                        or (col not in row_reviewed and col in row_existing)
+                        or (
+                            col in row_reviewed
+                            and col in row_existing
+                            and pd.isna(row_reviewed[col])
+                            and pd.notna(row_existing[col])
+                        )
+                        or (
+                            col in row_reviewed
+                            and col in row_existing
+                            and pd.notna(row_reviewed[col])
+                            and pd.isna(row_existing[col])
+                        )
+                    ):
                         match = False
                         break
                 if match:
@@ -235,6 +274,7 @@ class QuestionBankManager:
         Indices that fall outside ``[0, num_tokens)`` after resolution are dropped by the caller.
         Index ``0`` is invalid in 1-based numbering and is ignored.
         """
+
         def to_zero_based(n: int) -> Optional[int]:
             if n > 0:
                 return n - 1
@@ -279,11 +319,11 @@ class QuestionBankManager:
 
     @classmethod
     def label_from_filename(
-            cls,
-            path: str,
-            delimiter: Optional[str] = None,
-            parts=None,
-            join_with: str = '_',
+        cls,
+        path: str,
+        delimiter: Optional[str] = None,
+        parts=None,
+        join_with: str = '_',
     ) -> str:
         """Derives a label from a file name by splitting it and keeping selected parts.
 
@@ -311,11 +351,11 @@ class QuestionBankManager:
         return join_with.join(selected) if selected else base
 
     def _mark_exam_usage(
-            self,
-            df_bank: pd.DataFrame,
-            df_exam: pd.DataFrame,
-            usage_column_name: str,
-            match_columns: List[str],
+        self,
+        df_bank: pd.DataFrame,
+        df_exam: pd.DataFrame,
+        usage_column_name: str,
+        match_columns: List[str],
     ) -> Tuple[pd.DataFrame, int]:
         """Flags, in ``df_bank``, the rows used by ``df_exam`` under ``usage_column_name``.
 
@@ -388,13 +428,13 @@ class QuestionBankManager:
         return normalized
 
     def update_bank_with_exam(
-            self,
-            bank_path: str,
-            exam_path: str,
-            exam_label: Optional[str] = None,
-            match_columns: Optional[List[str]] = None,
-            label_delimiter: Optional[str] = None,
-            label_parts=None,
+        self,
+        bank_path: str,
+        exam_path: str,
+        exam_label: Optional[str] = None,
+        match_columns: Optional[List[str]] = None,
+        label_delimiter: Optional[str] = None,
+        label_parts=None,
     ) -> Tuple[int, Optional[pd.DataFrame]]:
         """Marks, in an existing question bank, the questions used in an already generated exam.
 
@@ -454,12 +494,12 @@ class QuestionBankManager:
         return matched_count, df_bank
 
     def update_bank_with_exams(
-            self,
-            bank_path: str,
-            exams,
-            match_columns: Optional[List[str]] = None,
-            label_delimiter: Optional[str] = None,
-            label_parts=None,
+        self,
+        bank_path: str,
+        exams,
+        match_columns: Optional[List[str]] = None,
+        label_delimiter: Optional[str] = None,
+        label_parts=None,
     ) -> Tuple[int, Optional[pd.DataFrame], dict]:
         """Registers the usage of **several** generated exams in a question bank in a single pass.
 
@@ -544,12 +584,14 @@ class QuestionBankManager:
             usage_column_name = self.usage_column_name(effective_label, exam_path)
             df_bank, matched = self._mark_exam_usage(df_bank, df_exam, usage_column_name, match_columns)
             total_matched += matched
-            stats["exams"].append({
-                "path": exam_path,
-                "label": effective_label,
-                "column": usage_column_name,
-                "matched": matched,
-            })
+            stats["exams"].append(
+                {
+                    "path": exam_path,
+                    "label": effective_label,
+                    "column": usage_column_name,
+                    "matched": matched,
+                }
+            )
 
         df_bank = self._recompute_usage_aggregate(df_bank)
         stats["total_matched"] = total_matched
@@ -564,11 +606,11 @@ class QuestionBankManager:
 
     @classmethod
     def _question_dedup_key(
-            cls,
-            row: pd.Series,
-            statement_only: bool,
-            statement_column: str,
-            answer_columns: List[str],
+        cls,
+        row: pd.Series,
+        statement_only: bool,
+        statement_column: str,
+        answer_columns: List[str],
     ):
         """Builds the duplicate key for a question row.
 
@@ -581,19 +623,20 @@ class QuestionBankManager:
         if statement_only:
             return statement
         answers = frozenset(
-            cls._normalize_text(row.get(col, "")) for col in answer_columns
+            cls._normalize_text(row.get(col, ""))
+            for col in answer_columns
             if cls._normalize_text(row.get(col, "")) != ""
         )
         return statement, answers
 
     def unify_question_banks(
-            self,
-            bank_paths: List[str],
-            output_path: Optional[str] = None,
-            duplicate_criterion: str = "enunciado_y_respuestas",
-            statement_column: str = "Pregunta",
-            answer_columns: Optional[List[str]] = None,
-            save: bool = True,
+        self,
+        bank_paths: List[str],
+        output_path: Optional[str] = None,
+        duplicate_criterion: str = "enunciado_y_respuestas",
+        statement_column: str = "Pregunta",
+        answer_columns: Optional[List[str]] = None,
+        save: bool = True,
     ) -> Tuple[Optional[pd.DataFrame], dict]:
         """Unifies several question banks into one, removing duplicates by the chosen criterion.
 
@@ -694,11 +737,7 @@ class QuestionBankManager:
         return unified_df, stats
 
     def save_dataframe_to_excel(
-            self,
-            df: pd.DataFrame,
-            filepath: str,
-            overwrite: bool = True,
-            new_suffix: str = '_actualizado'
+        self, df: pd.DataFrame, filepath: str, overwrite: bool = True, new_suffix: str = '_actualizado'
     ) -> Optional[str]:
         """
         Saves a pandas DataFrame to an Excel file.
@@ -729,10 +768,7 @@ class QuestionBankManager:
             return None
 
     def generate_excel_from_docx(
-            self,
-            docx_path: str,
-            excel_output_filename: str,
-            output_dir: Optional[str] = None
+        self, docx_path: str, excel_output_filename: str, output_dir: Optional[str] = None
     ) -> Optional[str]:
         """
         Generates an XLSX file from a revised DOCX file. This is a convenience
@@ -767,9 +803,7 @@ class QuestionBankManager:
         return None
 
     def add_reviewed_questions_to_existing_excel(
-            self,
-            existing_excel_path: str,
-            reviewed_excel_path: str
+        self, existing_excel_path: str, reviewed_excel_path: str
     ) -> Optional[str]:
         """
         Adds questions from a reviewed XLSX file to another existing XLSX file,
@@ -782,9 +816,7 @@ class QuestionBankManager:
         Returns:
             Optional[str]: The path to the updated XLSX file if the operation is successful, otherwise None.
         """
-        added_count, updated_df = self.add_questions_without_duplicates(
-            existing_excel_path, reviewed_excel_path
-        )
+        added_count, updated_df = self.add_questions_without_duplicates(existing_excel_path, reviewed_excel_path)
 
         if added_count >= 0:
             print(f"Se añadieron {added_count} preguntas sin duplicados.")
@@ -800,6 +832,7 @@ class QuestionBankManager:
         else:
             print("Ocurrió un error al añadir las preguntas.")
         return None
+
 
 ## Example of QuestionBankManager usage
 

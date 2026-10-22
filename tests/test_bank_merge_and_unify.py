@@ -24,7 +24,9 @@ def test_question_bank_manager_add_only_acceptable_is_case_insensitive(tmp_path)
     existing_path = tmp_path / "existing.xlsx"
     reviewed_path = tmp_path / "reviewed.xlsx"
 
-    pd.DataFrame([], columns=["Pregunta", "Respuesta A", "Respuesta B", "Respuesta C", "Respuesta D", "Estado"]).to_excel(existing_path, index=False)
+    pd.DataFrame(
+        [], columns=["Pregunta", "Respuesta A", "Respuesta B", "Respuesta C", "Respuesta D", "Estado"]
+    ).to_excel(existing_path, index=False)
     pd.DataFrame(
         [
             {
@@ -52,18 +54,18 @@ def test_question_bank_manager_add_only_acceptable_is_case_insensitive(tmp_path)
 
 def test_unify_banks_statement_only_dedups_by_statement(tmp_path):
     bank1 = pd.DataFrame([_q("¿Capital de Francia?", "París", "Londres", "Roma", "Berlín")])
-    bank2 = pd.DataFrame([
-        _q("¿Capital de Francia?", "Paris", "London", "Rome", "Madrid"),  # same statement, other answers
-        _q("¿Capital de Italia?", "Roma", "París", "Madrid", "Berlín"),
-    ])
+    bank2 = pd.DataFrame(
+        [
+            _q("¿Capital de Francia?", "Paris", "London", "Rome", "Madrid"),  # same statement, other answers
+            _q("¿Capital de Italia?", "Roma", "París", "Madrid", "Berlín"),
+        ]
+    )
     p1, p2, out = tmp_path / "b1.xlsx", tmp_path / "b2.xlsx", tmp_path / "unif.xlsx"
     bank1.to_excel(p1, index=False)
     bank2.to_excel(p2, index=False)
 
     manager = QuestionBankManager()
-    df, stats = manager.unify_question_banks(
-        [str(p1), str(p2)], str(out), duplicate_criterion="enunciado"
-    )
+    df, stats = manager.unify_question_banks([str(p1), str(p2)], str(out), duplicate_criterion="enunciado")
 
     assert len(df) == 2
     assert stats["duplicates_removed"] == 1
@@ -99,9 +101,7 @@ def test_unify_banks_answer_set_is_order_independent(tmp_path):
     bank2.to_excel(p2, index=False)
 
     manager = QuestionBankManager()
-    df, stats = manager.unify_question_banks(
-        [str(p1), str(p2)], duplicate_criterion="pregunta_respuestas", save=False
-    )
+    df, stats = manager.unify_question_banks([str(p1), str(p2)], duplicate_criterion="pregunta_respuestas", save=False)
     # Reordered identical options are treated as the same question.
     assert len(df) == 1
     assert stats["duplicates_removed"] == 1
@@ -118,9 +118,7 @@ def test_unify_three_banks_with_gui_alias_and_normalization(tmp_path):
         paths.append(str(p))
 
     manager = QuestionBankManager()
-    df, stats = manager.unify_question_banks(
-        paths, duplicate_criterion="pregunta_unica", save=False
-    )
+    df, stats = manager.unify_question_banks(paths, duplicate_criterion="pregunta_unica", save=False)
     # The case/whitespace variant of "Misma pregunta" is a duplicate -> 2 unique remain.
     assert len(df) == 2
     assert stats["duplicates_removed"] == 1

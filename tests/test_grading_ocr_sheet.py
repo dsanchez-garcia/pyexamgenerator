@@ -99,8 +99,18 @@ def _scan(path, sheets, answers, exam_type="A", first_name="Ana", last_name="Gil
 def _enrollment():
     return pd.DataFrame(
         [
-            {"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "45123456", "Dirección de correo": "ana@example.com"},
-            {"Apellido(s)": "Ruiz", "Nombre": "Leo", "Número de ID": "45654321", "Dirección de correo": "leo@example.com"},
+            {
+                "Apellido(s)": "Gil",
+                "Nombre": "Ana",
+                "Número de ID": "45123456",
+                "Dirección de correo": "ana@example.com",
+            },
+            {
+                "Apellido(s)": "Ruiz",
+                "Nombre": "Leo",
+                "Número de ID": "45654321",
+                "Dirección de correo": "leo@example.com",
+            },
         ]
     )
 
@@ -156,8 +166,7 @@ def _write_quiz_xml(path, correct):
     questions = []
     for number, right in enumerate(correct, start=1):
         answers = "".join(
-            f'<answer fraction="{100 if letter == right else -25}"><text>{letter}</text></answer>'
-            for letter in "abcd"
+            f'<answer fraction="{100 if letter == right else -25}"><text>{letter}</text></answer>' for letter in "abcd"
         )
         questions.append(
             f'<question type="multichoice"><name><text>Pregunta {number:02d}</text></name>{answers}</question>'
@@ -173,8 +182,13 @@ def test_synthetic_sheets_are_graded_end_to_end(ocr_sheets, tmp_path):
     _enrollment().to_excel(enrollment, index=False)
     ana = _scan(tmp_path / "hojas" / "ana.png", ocr_sheets, _ANA_ANSWERS)
     leo = _scan(
-        tmp_path / "hojas" / "leo.png", ocr_sheets, ["b"] * 9 + ["-"], exam_type="B",
-        first_name="Leo", last_name="Ruiz", rotation=cv2.ROTATE_90_CLOCKWISE,
+        tmp_path / "hojas" / "leo.png",
+        ocr_sheets,
+        ["b"] * 9 + ["-"],
+        exam_type="B",
+        first_name="Leo",
+        last_name="Ruiz",
+        rotation=cv2.ROTATE_90_CLOCKWISE,
     )
     grader = ImageExamGrader(xml_paths=[xml_a, xml_b], enrollment_path=str(enrollment))
 
@@ -201,6 +215,7 @@ def test_synthetic_sheets_are_graded_end_to_end(ocr_sheets, tmp_path):
 
     incidents = pd.read_excel(tmp_path / "salida" / "incidencias.xlsx")
     assert sorted(zip(incidents["Imagen"], incidents["Tipo"])) == [
-        (ana, "UNRESOLVED_ANSWERS"), (leo, "UNRESOLVED_ANSWERS"),
+        (ana, "UNRESOLVED_ANSWERS"),
+        (leo, "UNRESOLVED_ANSWERS"),
     ]
     assert (tmp_path / "salida" / "auditoria.xlsx").exists()

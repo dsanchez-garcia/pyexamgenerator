@@ -20,7 +20,10 @@ from tkinter import ttk, filedialog, scrolledtext, simpledialog
 from tkinter import messagebox as tkinter_messagebox
 import pandas as pd
 from pyexamgenerator.question_generator import (
-    QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
+    QuestionGenerator,
+    QuotaExceededError,
+    ServiceOverloadedError,
+    GeminiRequestError,
 )
 from pyexamgenerator import credentials, gui_logic, user_config
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
@@ -241,7 +244,7 @@ class ExamApp:
 
         # Añadimos variables para gestionar el tooltip de la tabla de modelos
         self.tree_tooltip = None
-        self.last_hovered_cell = (None, None) # Almacenará (row_id, col_id)
+        self.last_hovered_cell = (None, None)  # Almacenará (row_id, col_id)
 
         self.create_question_tab()
         self.create_manage_bank_tab()
@@ -334,7 +337,6 @@ class ExamApp:
             messagebox.showerror("Error", f"No se pudo abrir el enlace en el navegador.\n\nError: {e}")
             self.update_status("Error al intentar abrir el enlace de ayuda.")
 
-
     def load_prompt_types(self) -> Dict[str, str]:
         """
         Loads custom prompt types from a JSON file.
@@ -370,7 +372,7 @@ class ExamApp:
             \n1.  **Centrarse en leyes y reglamentos:** Las preguntas deben poder entenderse por sí mismas, haciendo referencia únicamente a leyes o reglamentos relevantes. No se puede poner: "Según el texto"
             \n2.  **Evita preguntas sobre números de artículos o códigos:** No incluyas preguntas que hagan referencia a números de artículos, códigos de leyes o reglamentos.
             """,
-            "PM": "Genera preguntas tipo test de opción múltiple enfocadas en Gestión de Proyectos."
+            "PM": "Genera preguntas tipo test de opción múltiple enfocadas en Gestión de Proyectos.",
         }
 
     def save_prompt_types(self) -> None:
@@ -407,8 +409,10 @@ class ExamApp:
         legacy = user_config.find_legacy_files()
         if not legacy:
             return
-        labels = {user_config.PROMPTS_FILE: "prompts personalizados",
-                  user_config.EXAM_TEMPLATE_FILE: "plantilla de exámenes"}
+        labels = {
+            user_config.PROMPTS_FILE: "prompts personalizados",
+            user_config.EXAM_TEMPLATE_FILE: "plantilla de exámenes",
+        }
         listed = "\n".join(f"- {path.name} ({labels[path.name]})" for path in legacy)
         question = (
             f"Hay ficheros de configuración de una versión anterior en la carpeta actual:\n{listed}\n\n"
@@ -426,8 +430,10 @@ class ExamApp:
         self.update_prompt_type_options()
         message = f"Configuración movida a:\n{user_config.config_dir()}"
         if moved.prompts_kept:
-            message += (f"\n\n{moved.prompts_kept} prompt(s) de la carpeta actual tenían el mismo nombre que otros "
-                        "que ya tenías: se han conservado los tuyos.")
+            message += (
+                f"\n\n{moved.prompts_kept} prompt(s) de la carpeta actual tenían el mismo nombre que otros "
+                "que ya tenías: se han conservado los tuyos."
+            )
         messagebox.showinfo("Configuración", message)
 
     def add_edit_prompt_type(self, existing_type: Optional[str] = None) -> None:
@@ -438,7 +444,9 @@ class ExamApp:
         title = "Editar Tipo de Prompt" if existing_type else "Añadir Nuevo Tipo de Prompt"
         add_window.title(title)
 
-        ttk.Label(add_window, text="Nombre del Tipo (ej. 'Historia'):").grid(row=0, column=0, padx=10, pady=5, sticky='w')
+        ttk.Label(add_window, text="Nombre del Tipo (ej. 'Historia'):").grid(
+            row=0, column=0, padx=10, pady=5, sticky='w'
+        )
         type_entry = ttk.Entry(add_window, width=40)
         type_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
 
@@ -457,11 +465,15 @@ class ExamApp:
             new_prompt = prompt_text_area.get("1.0", tk.END).strip()
 
             if not new_type or not new_prompt:
-                messagebox.showerror("Error", "El nombre del tipo y el texto del prompt no pueden estar vacíos.", parent=add_window)
+                messagebox.showerror(
+                    "Error", "El nombre del tipo y el texto del prompt no pueden estar vacíos.", parent=add_window
+                )
                 return
 
             if new_type != existing_type and new_type in self.prompt_types:
-                if not messagebox.askyesno("Sobrescribir", f"El tipo '{new_type}' ya existe. ¿Desea sobrescribirlo?", parent=add_window):
+                if not messagebox.askyesno(
+                    "Sobrescribir", f"El tipo '{new_type}' ya existe. ¿Desea sobrescribirlo?", parent=add_window
+                ):
                     return
 
             if existing_type and new_type != existing_type:
@@ -498,7 +510,10 @@ class ExamApp:
             messagebox.showerror("Error", "No se pueden eliminar los tipos de prompt predeterminados (PRL, PM).")
             return
 
-        if messagebox.askyesno("Confirmar Eliminación", f"¿Está seguro de que desea eliminar permanentemente el tipo de prompt '{selected_type}'?"):
+        if messagebox.askyesno(
+            "Confirmar Eliminación",
+            f"¿Está seguro de que desea eliminar permanentemente el tipo de prompt '{selected_type}'?",
+        ):
             del self.prompt_types[selected_type]
             self.save_prompt_types()
             self.update_prompt_type_options()
@@ -684,10 +699,12 @@ class ExamApp:
 
         intro = ttk.Label(
             inner,
-            text=("Corrige exámenes de teoría por pasos independientes: corregir (OCR de hojas\n"
-                  "manuscritas o desde respuestas Moodle), asistencia + justificaciones (opcional),\n"
-                  "integrar notas, punto extra y nota final ponderada. Cada sección tiene su botón.\n"
-                  "El OCR requiere el extra:  pip install pyexamgenerator[grading]"),
+            text=(
+                "Corrige exámenes de teoría por pasos independientes: corregir (OCR de hojas\n"
+                "manuscritas o desde respuestas Moodle), asistencia + justificaciones (opcional),\n"
+                "integrar notas, punto extra y nota final ponderada. Cada sección tiene su botón.\n"
+                "El OCR requiere el extra:  pip install pyexamgenerator[grading]"
+            ),
             justify='left',
         )
         intro.pack(anchor='w', padx=10, pady=8)
@@ -743,8 +760,9 @@ class ExamApp:
             lbl.pack(side='left')
             ToolTip(lbl, text=tip)
             ttk.Entry(rowf, textvariable=var).pack(side='left', fill='x', expand=True, padx=4)
-            ttk.Button(rowf, text="…", width=3,
-                       command=lambda: self._grad_pick(var, multiple, directory)).pack(side='left')
+            ttk.Button(rowf, text="…", width=3, command=lambda: self._grad_pick(var, multiple, directory)).pack(
+                side='left'
+            )
 
         def text_row(parent, label, var, tip, width=24):
             rowf = ttk.Frame(parent)
@@ -757,71 +775,147 @@ class ExamApp:
         # --- Section: common data + column mapping ---
         common = ttk.LabelFrame(inner, text="Datos comunes")
         common.pack(fill='x', padx=8, pady=6)
-        file_row(common, "Matriculados (1+):", self.grad_enrollment_var,
-                 "Listados de matrícula (GIM, GITI-GIE-GIEI…). Puedes elegir varios.", multiple=True)
-        file_row(common, "Plantillas Moodle XML (1+):", self.grad_xmls_var,
-                 "XML de Moodle con las respuestas correctas (tipos 1A, 1B…).", multiple=True)
-        file_row(common, "Carpeta de salida:", self.grad_out_var,
-                 "Carpeta donde se guardan los resultados de cada sección.", directory=True)
+        file_row(
+            common,
+            "Matriculados (1+):",
+            self.grad_enrollment_var,
+            "Listados de matrícula (GIM, GITI-GIE-GIEI…). Puedes elegir varios.",
+            multiple=True,
+        )
+        file_row(
+            common,
+            "Plantillas Moodle XML (1+):",
+            self.grad_xmls_var,
+            "XML de Moodle con las respuestas correctas (tipos 1A, 1B…).",
+            multiple=True,
+        )
+        file_row(
+            common,
+            "Carpeta de salida:",
+            self.grad_out_var,
+            "Carpeta donde se guardan los resultados de cada sección.",
+            directory=True,
+        )
 
         cols = ttk.LabelFrame(inner, text="Mapeo de columnas (nombres en tus xlsx)")
         cols.pack(fill='x', padx=8, pady=6)
-        ToolTip(cols, text="Define el nombre de las columnas de tus ficheros si no coinciden con los valores por defecto.")
+        ToolTip(
+            cols, text="Define el nombre de las columnas de tus ficheros si no coinciden con los valores por defecto."
+        )
         colgrid = ttk.Frame(cols)
         colgrid.pack(fill='x')
-        left_cols = ttk.Frame(colgrid); left_cols.pack(side='left', fill='x', expand=True)
-        right_cols = ttk.Frame(colgrid); right_cols.pack(side='left', fill='x', expand=True)
+        left_cols = ttk.Frame(colgrid)
+        left_cols.pack(side='left', fill='x', expand=True)
+        right_cols = ttk.Frame(colgrid)
+        right_cols.pack(side='left', fill='x', expand=True)
         text_row(left_cols, "Nº de ID:", self.grad_id_col_var, "Columna del identificador del alumno.")
         text_row(left_cols, "Nombre:", self.grad_first_col_var, "Columna del nombre.")
         text_row(left_cols, "Apellidos:", self.grad_last_col_var, "Columna de los apellidos.")
         text_row(left_cols, "Correo:", self.grad_email_col_var, "Columna del correo electrónico.")
         text_row(right_cols, "Nota total:", self.grad_total_col_var, "Columna de la calificación total (Moodle).")
-        text_row(right_cols, "Remitente (justif.):", self.grad_sender_col_var, "Columna del remitente en justificaciones.")
+        text_row(
+            right_cols, "Remitente (justif.):", self.grad_sender_col_var, "Columna del remitente en justificaciones."
+        )
         text_row(right_cols, "Asunto (justif.):", self.grad_subject_col_var, "Columna del asunto del correo.")
         text_row(right_cols, "Mensaje (justif.):", self.grad_message_col_var, "Columna del cuerpo del correo.")
 
         # --- Section: grade exams ---
         grade_sec = ttk.LabelFrame(inner, text="1. Corregir examen(es)")
         grade_sec.pack(fill='x', padx=8, pady=6)
-        file_row(grade_sec, "Imágenes manuscritas (1+):", self.grad_images_var,
-                 "Fotos/escaneos de las hojas de respuestas (para OCR).", multiple=True)
-        file_row(grade_sec, "Tipos forzados (opcional):", self.grad_forced_var,
-                 "Forzar el tipo por imagen si el OCR no lo detecta. Formato: imagen.jpg=1A, otra.jpg=1B")
+        file_row(
+            grade_sec,
+            "Imágenes manuscritas (1+):",
+            self.grad_images_var,
+            "Fotos/escaneos de las hojas de respuestas (para OCR).",
+            multiple=True,
+        )
+        file_row(
+            grade_sec,
+            "Tipos forzados (opcional):",
+            self.grad_forced_var,
+            "Forzar el tipo por imagen si el OCR no lo detecta. Formato: imagen.jpg=1A, otra.jpg=1B",
+        )
         forced_table_row = ttk.Frame(grade_sec)
         forced_table_row.pack(fill='x', padx=4, pady=(0, 2))
         ttk.Label(forced_table_row, text="", width=28, anchor='w').pack(side='left')
-        ttk.Button(forced_table_row, text="Asignar tipos en tabla...", command=self._grad_open_forced_type_table).pack(side='left')
+        ttk.Button(forced_table_row, text="Asignar tipos en tabla...", command=self._grad_open_forced_type_table).pack(
+            side='left'
+        )
         ttk.Label(forced_table_row, text="(Imagen | Tipo | Ruta)").pack(side='left', padx=8)
-        file_row(grade_sec, "Carpeta temp OCR (fallback):", self.grad_ocr_temp_dir_var,
-                 "Ultimo recurso de lectura: copia temporal de imágenes (se limpia al terminar).", directory=True)
-        file_row(grade_sec, "Respuestas Moodle (xlsx):", self.grad_answers_var,
-                 "Alternativa al OCR: respuestas ya digitalizadas en un xlsx (corrección desde Excel).")
+        file_row(
+            grade_sec,
+            "Carpeta temp OCR (fallback):",
+            self.grad_ocr_temp_dir_var,
+            "Ultimo recurso de lectura: copia temporal de imágenes (se limpia al terminar).",
+            directory=True,
+        )
+        file_row(
+            grade_sec,
+            "Respuestas Moodle (xlsx):",
+            self.grad_answers_var,
+            "Alternativa al OCR: respuestas ya digitalizadas en un xlsx (corrección desde Excel).",
+        )
         btns_grade = ttk.Frame(grade_sec)
         btns_grade.pack(fill='x', pady=4)
-        ttk.Button(btns_grade, text="Corregir desde imágenes (OCR)", command=self.grade_exams_from_images).pack(side='left', padx=4)
-        ttk.Button(btns_grade, text="Corregir desde respuestas (xlsx)", command=self.grade_exams_from_answers).pack(side='left', padx=4)
+        ttk.Button(btns_grade, text="Corregir desde imágenes (OCR)", command=self.grade_exams_from_images).pack(
+            side='left', padx=4
+        )
+        ttk.Button(btns_grade, text="Corregir desde respuestas (xlsx)", command=self.grade_exams_from_answers).pack(
+            side='left', padx=4
+        )
 
         # --- Section: attendance + justifications (optional) ---
         att_sec = ttk.LabelFrame(inner, text="2. Asistencia + justificaciones (opcional)")
         att_sec.pack(fill='x', padx=8, pady=6)
-        ToolTip(att_sec, text="Paso independiente: la asistencia se computa aparte y solo se usa para cruzar/descartar. No es obligatorio.")
+        ToolTip(
+            att_sec,
+            text="Paso independiente: la asistencia se computa aparte y solo se usa para cruzar/descartar. No es obligatorio.",
+        )
         file_row(att_sec, "Asistencias:", self.grad_attendance_var, "Excel de asistencias de Moodle.")
         file_row(att_sec, "Horario:", self.grad_schedule_var, "Excel de horario para cruzar fechas/temas (opcional).")
-        file_row(att_sec, "Justificaciones de faltas:", self.grad_justif_var,
-                 "Excel con las justificaciones (columna del remitente arriba).")
-        file_row(att_sec, "Cuestionarios de clase:", self.grad_quizzes_var,
-                 "Excel de calificaciones de cuestionarios de clase (opcional).")
-        text_row(att_sec, "Hoja del horario:", self.grad_sched_sheet_var, "Nombre de la hoja del horario, o índice (0 = primera).")
-        text_row(att_sec, "Fila de cabecera asist.:", self.grad_att_header_var, "Fila (0-based) con los encabezados en el Excel de asistencias.")
-        ttk.Button(att_sec, text="Analizar asistencia / justificaciones", command=self.run_attendance_analysis).pack(pady=4)
+        file_row(
+            att_sec,
+            "Justificaciones de faltas:",
+            self.grad_justif_var,
+            "Excel con las justificaciones (columna del remitente arriba).",
+        )
+        file_row(
+            att_sec,
+            "Cuestionarios de clase:",
+            self.grad_quizzes_var,
+            "Excel de calificaciones de cuestionarios de clase (opcional).",
+        )
+        text_row(
+            att_sec,
+            "Hoja del horario:",
+            self.grad_sched_sheet_var,
+            "Nombre de la hoja del horario, o índice (0 = primera).",
+        )
+        text_row(
+            att_sec,
+            "Fila de cabecera asist.:",
+            self.grad_att_header_var,
+            "Fila (0-based) con los encabezados en el Excel de asistencias.",
+        )
+        ttk.Button(att_sec, text="Analizar asistencia / justificaciones", command=self.run_attendance_analysis).pack(
+            pady=4
+        )
 
         # --- Section: integrate grades ---
         integ_sec = ttk.LabelFrame(inner, text="3. Integrar notas (Moodle + OCR)")
         integ_sec.pack(fill='x', padx=8, pady=6)
-        file_row(integ_sec, "Notas de teoría (Moodle):", self.grad_theory_var,
-                 "Excel de calificaciones de teoría exportado de Moodle.")
-        file_row(integ_sec, "Notas OCR (xlsx):", self.grad_ocr_grades_var,
-                 "Notas manuscritas a integrar. Vacío = '<salida>/calificaciones_manuscritos.xlsx'.")
+        file_row(
+            integ_sec,
+            "Notas de teoría (Moodle):",
+            self.grad_theory_var,
+            "Excel de calificaciones de teoría exportado de Moodle.",
+        )
+        file_row(
+            integ_sec,
+            "Notas OCR (xlsx):",
+            self.grad_ocr_grades_var,
+            "Notas manuscritas a integrar. Vacío = '<salida>/calificaciones_manuscritos.xlsx'.",
+        )
         append_unmatched_chk = ttk.Checkbutton(
             integ_sec,
             text="Añadir alumnos OCR que no estén en teoría (modo unión)",
@@ -840,29 +934,53 @@ class ExamApp:
         # --- Section: theory bonus ---
         bonus_sec = ttk.LabelFrame(inner, text="4. Punto extra / teoría")
         bonus_sec.pack(fill='x', padx=8, pady=6)
-        file_row(bonus_sec, "Teoría integrada (xlsx):", self.grad_integrated_var,
-                 "Notas de teoría ya integradas. Vacío = '<salida>/teoria_integrada.xlsx'.")
-        file_row(bonus_sec, "Asistencia+cuestionarios:", self.grad_attquiz_var,
-                 "Tabla asistencia+cuestionarios. Vacío = '<salida>/asistencias_con_cuestionarios.xlsx'.")
+        file_row(
+            bonus_sec,
+            "Teoría integrada (xlsx):",
+            self.grad_integrated_var,
+            "Notas de teoría ya integradas. Vacío = '<salida>/teoria_integrada.xlsx'.",
+        )
+        file_row(
+            bonus_sec,
+            "Asistencia+cuestionarios:",
+            self.grad_attquiz_var,
+            "Tabla asistencia+cuestionarios. Vacío = '<salida>/asistencias_con_cuestionarios.xlsx'.",
+        )
         ttk.Button(bonus_sec, text="Aplicar punto extra", command=self.run_apply_bonus).pack(pady=4)
 
         # --- Section: weighted final grade ---
         final_sec = ttk.LabelFrame(inner, text="5. Nota final ponderada")
         final_sec.pack(fill='x', padx=8, pady=6)
-        mode_row = ttk.Frame(final_sec); mode_row.pack(fill='x', padx=4, pady=2)
+        mode_row = ttk.Frame(final_sec)
+        mode_row.pack(fill='x', padx=4, pady=2)
         ttk.Label(mode_row, text="Modo:", width=28, anchor='w').pack(side='left')
-        ttk.Radiobutton(mode_row, text="Por fichero", variable=self.grad_final_mode_var, value="by_file").pack(side='left', padx=4)
-        ttk.Radiobutton(mode_row, text="Por columnas", variable=self.grad_final_mode_var, value="by_column").pack(side='left', padx=4)
+        ttk.Radiobutton(mode_row, text="Por fichero", variable=self.grad_final_mode_var, value="by_file").pack(
+            side='left', padx=4
+        )
+        ttk.Radiobutton(mode_row, text="Por columnas", variable=self.grad_final_mode_var, value="by_column").pack(
+            side='left', padx=4
+        )
         ttk.Checkbutton(mode_row, text="Tope 10", variable=self.grad_final_cap_var).pack(side='left', padx=12)
-        files_row = ttk.Frame(final_sec); files_row.pack(fill='x', padx=4, pady=2)
-        lbl_ff = ttk.Label(files_row, text="Ficheros|peso[|etiqueta]:", width=28, anchor='w'); lbl_ff.pack(side='left')
-        ToolTip(lbl_ff, text="Modo por fichero. Separa con ';' y usa '|'. Ej: C:/teoria.xlsx|0.6|Teoria ; C:/practicas.xlsx|0.4|Practicas")
+        files_row = ttk.Frame(final_sec)
+        files_row.pack(fill='x', padx=4, pady=2)
+        lbl_ff = ttk.Label(files_row, text="Ficheros|peso[|etiqueta]:", width=28, anchor='w')
+        lbl_ff.pack(side='left')
+        ToolTip(
+            lbl_ff,
+            text="Modo por fichero. Separa con ';' y usa '|'. Ej: C:/teoria.xlsx|0.6|Teoria ; C:/practicas.xlsx|0.4|Practicas",
+        )
         ttk.Entry(files_row, textvariable=self.grad_final_files_var).pack(side='left', fill='x', expand=True, padx=4)
         ttk.Button(files_row, text="+", width=3, command=self._grad_add_final_file).pack(side='left')
-        file_row(final_sec, "Fichero (por columnas):", self.grad_final_source_var,
-                 "Modo por columnas: xlsx único cuyas columnas se ponderan.")
-        wrow = ttk.Frame(final_sec); wrow.pack(fill='x', padx=4, pady=2)
-        lbl_w = ttk.Label(wrow, text="Columnas|peso:", width=28, anchor='w'); lbl_w.pack(side='left')
+        file_row(
+            final_sec,
+            "Fichero (por columnas):",
+            self.grad_final_source_var,
+            "Modo por columnas: xlsx único cuyas columnas se ponderan.",
+        )
+        wrow = ttk.Frame(final_sec)
+        wrow.pack(fill='x', padx=4, pady=2)
+        lbl_w = ttk.Label(wrow, text="Columnas|peso:", width=28, anchor='w')
+        lbl_w.pack(side='left')
         ToolTip(lbl_w, text="Modo por columnas. Separa con ';' y usa '|'. Ej: Teoria|0.6 ; Practicas|0.4")
         ttk.Entry(wrow, textvariable=self.grad_final_weights_var).pack(side='left', fill='x', expand=True, padx=4)
         ttk.Button(final_sec, text="Calcular nota final", command=self.run_final_grade).pack(pady=4)
@@ -870,26 +988,57 @@ class ExamApp:
         # --- Section: compare / overwrite results ---
         cmp_sec = ttk.LabelFrame(inner, text="6. Comparar / sobrescribir resultados")
         cmp_sec.pack(fill='x', padx=8, pady=6)
-        ToolTip(cmp_sec, text="Compara unas calificaciones o asistencias con una versión previa y, opcionalmente, combina sobrescribiendo con los valores nuevos.")
-        file_row(cmp_sec, "Fichero existente (xlsx):", self.grad_cmp_existing_var,
-                 "Resultados previos (calificaciones o asistencias) con los que comparar.")
-        file_row(cmp_sec, "Fichero nuevo (xlsx):", self.grad_cmp_new_var,
-                 "Resultados recién calculados que se comparan con los previos.")
-        text_row(cmp_sec, "Columnas a comparar:", self.grad_cmp_value_cols_var,
-                 "Opcional: columnas separadas por coma. Vacío = todas las columnas comunes (no identificativas).", width=36)
-        cmp_opts = ttk.Frame(cmp_sec); cmp_opts.pack(fill='x', padx=4, pady=2)
-        ttk.Checkbutton(cmp_opts, text="Añadir alumnos nuevos al combinar", variable=self.grad_cmp_addnew_var).pack(side='left', padx=4)
-        ttk.Checkbutton(cmp_opts, text="Reemplazar el fichero existente", variable=self.grad_cmp_inplace_var).pack(side='left', padx=12)
-        cmp_btns = ttk.Frame(cmp_sec); cmp_btns.pack(fill='x', pady=4)
-        ttk.Button(cmp_btns, text="Comparar (solo informe)", command=lambda: self.run_compare_results(False)).pack(side='left', padx=4)
-        ttk.Button(cmp_btns, text="Comparar y combinar (sobrescribir)", command=lambda: self.run_compare_results(True)).pack(side='left', padx=4)
+        ToolTip(
+            cmp_sec,
+            text="Compara unas calificaciones o asistencias con una versión previa y, opcionalmente, combina sobrescribiendo con los valores nuevos.",
+        )
+        file_row(
+            cmp_sec,
+            "Fichero existente (xlsx):",
+            self.grad_cmp_existing_var,
+            "Resultados previos (calificaciones o asistencias) con los que comparar.",
+        )
+        file_row(
+            cmp_sec,
+            "Fichero nuevo (xlsx):",
+            self.grad_cmp_new_var,
+            "Resultados recién calculados que se comparan con los previos.",
+        )
+        text_row(
+            cmp_sec,
+            "Columnas a comparar:",
+            self.grad_cmp_value_cols_var,
+            "Opcional: columnas separadas por coma. Vacío = todas las columnas comunes (no identificativas).",
+            width=36,
+        )
+        cmp_opts = ttk.Frame(cmp_sec)
+        cmp_opts.pack(fill='x', padx=4, pady=2)
+        ttk.Checkbutton(cmp_opts, text="Añadir alumnos nuevos al combinar", variable=self.grad_cmp_addnew_var).pack(
+            side='left', padx=4
+        )
+        ttk.Checkbutton(cmp_opts, text="Reemplazar el fichero existente", variable=self.grad_cmp_inplace_var).pack(
+            side='left', padx=12
+        )
+        cmp_btns = ttk.Frame(cmp_sec)
+        cmp_btns.pack(fill='x', pady=4)
+        ttk.Button(cmp_btns, text="Comparar (solo informe)", command=lambda: self.run_compare_results(False)).pack(
+            side='left', padx=4
+        )
+        ttk.Button(
+            cmp_btns, text="Comparar y combinar (sobrescribir)", command=lambda: self.run_compare_results(True)
+        ).pack(side='left', padx=4)
 
         # --- Section: session ---
         sess_sec = ttk.LabelFrame(inner, text="Sesión (retomar más tarde)")
         sess_sec.pack(fill='x', padx=8, pady=6)
-        file_row(sess_sec, "Archivo de sesión:", self.grad_session_path_var,
-                 "Ruta base de la sesión (.pkl/.json). Cargar rellena rutas y columnas.")
-        sess_btns = ttk.Frame(sess_sec); sess_btns.pack(fill='x', pady=4)
+        file_row(
+            sess_sec,
+            "Archivo de sesión:",
+            self.grad_session_path_var,
+            "Ruta base de la sesión (.pkl/.json). Cargar rellena rutas y columnas.",
+        )
+        sess_btns = ttk.Frame(sess_sec)
+        sess_btns.pack(fill='x', pady=4)
         ttk.Button(sess_btns, text="Guardar sesión", command=self.save_grading_session).pack(side='left', padx=4)
         ttk.Button(sess_btns, text="Cargar sesión", command=self.load_grading_session).pack(side='left', padx=4)
 
@@ -966,8 +1115,9 @@ class ExamApp:
         them deletes while the other is still using it.
         """
         if getattr(self, "_grad_job_running", False):
-            messagebox.showwarning("Corrección en curso",
-                                   "Ya hay una tarea de corrección en marcha. Espera a que termine.")
+            messagebox.showwarning(
+                "Corrección en curso", "Ya hay una tarea de corrección en marcha. Espera a que termine."
+            )
             return False
         self._grad_job_running = True
         return True
@@ -978,6 +1128,7 @@ class ExamApp:
     @staticmethod
     def _grad_api(out_dir: Optional[str]):
         from pyexamgenerator.grading import ExamCorrectionAPI
+
         return ExamCorrectionAPI(default_output_dir=(out_dir or "").strip() or None)
 
     def _grad_enrollment_list(self):
@@ -990,6 +1141,7 @@ class ExamApp:
         Called from worker threads, so it receives the paths instead of reading the Tk variables.
         """
         from pyexamgenerator.grading import EnrollmentMerger
+
         if not enrollment_paths:
             raise ValueError("Selecciona al menos un fichero de matriculados.")
         os.makedirs(out_dir, exist_ok=True)
@@ -1182,16 +1334,21 @@ class ExamApp:
     def grade_exams_from_images(self) -> None:
         """Section 1a: OCR of handwritten answer sheets into a grades XLSX."""
         from pyexamgenerator.grading import HAS_OCR, ImageGradingConfig
+
         # Every Tk variable is read here, in the main thread: work() runs in another thread.
         enrollment = self._grad_enrollment_list()
         xmls = [p for p in self.grad_xmls_var.get().split(";") if p.strip()]
         images = [p for p in self.grad_images_var.get().split(";") if p.strip()]
         out = self.grad_out_var.get().strip()
         if not (enrollment and xmls and images and out):
-            messagebox.showerror("Faltan datos", "Necesitas matriculados, plantillas XML, imágenes y carpeta de salida.")
+            messagebox.showerror(
+                "Faltan datos", "Necesitas matriculados, plantillas XML, imágenes y carpeta de salida."
+            )
             return
         if not HAS_OCR:
-            messagebox.showerror("OCR no disponible", "El OCR requiere el extra:\n\npip install pyexamgenerator[grading]")
+            messagebox.showerror(
+                "OCR no disponible", "El OCR requiere el extra:\n\npip install pyexamgenerator[grading]"
+            )
             return
         cols = self._grad_columns()
         forced = self._grad_parse_forced()
@@ -1200,15 +1357,25 @@ class ExamApp:
         def work():
             matric = self._grad_merged_enrollment(enrollment, out)
             cfg = ImageGradingConfig(
-                xml_paths=xmls, image_paths=images, enrollment_path=matric,
+                xml_paths=xmls,
+                image_paths=images,
+                enrollment_path=matric,
                 enrollment_paths=enrollment,
-                output_answers="respuestas.xlsx", output_grades="calificaciones_manuscritos.xlsx",
-                output_incidents="incidencias.xlsx", output_dir=out,
-                forced_type_by_image=forced, prompt_missing_type=False, interactive_review=False,
-                aggressive_recovery=True, aggressive_min_ratio=0.10,
-                aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
-                id_col=cols["id_col"], first_name_col=cols["first_name_col"],
-                last_name_col=cols["last_name_col"], email_col=cols["email_col"],
+                output_answers="respuestas.xlsx",
+                output_grades="calificaciones_manuscritos.xlsx",
+                output_incidents="incidencias.xlsx",
+                output_dir=out,
+                forced_type_by_image=forced,
+                prompt_missing_type=False,
+                interactive_review=False,
+                aggressive_recovery=True,
+                aggressive_min_ratio=0.10,
+                aggressive_min_gap_ratio=0.22,
+                aggressive_min_top_vs_second=1.08,
+                id_col=cols["id_col"],
+                first_name_col=cols["first_name_col"],
+                last_name_col=cols["last_name_col"],
+                email_col=cols["email_col"],
                 temp_image_dir=temp_image_dir,
             )
             api = self._grad_api(out)
@@ -1233,22 +1400,30 @@ class ExamApp:
     def grade_exams_from_answers(self) -> None:
         """Section 1b: grade from an already-digitized Moodle answers XLSX."""
         from pyexamgenerator.grading import ExcelGradingConfig
+
         enrollment = self._grad_enrollment_list()
         xmls = [p for p in self.grad_xmls_var.get().split(";") if p.strip()]
         answers = self.grad_answers_var.get().strip()
         out = self.grad_out_var.get().strip()
         if not (enrollment and xmls and answers and out):
-            messagebox.showerror("Faltan datos", "Necesitas matriculados, una plantilla XML, el xlsx de respuestas y carpeta de salida.")
+            messagebox.showerror(
+                "Faltan datos", "Necesitas matriculados, una plantilla XML, el xlsx de respuestas y carpeta de salida."
+            )
             return
         cols = self._grad_columns()
 
         def work():
             matric = self._grad_merged_enrollment(enrollment, out)
             cfg = ExcelGradingConfig(
-                exam_xml_path=xmls[0], answers_xlsx_path=answers, enrollment_xlsx_path=matric,
-                output_path="calificaciones_desde_respuestas.xlsx", output_dir=out,
-                last_name_col=cols["last_name_col"], first_name_col=cols["first_name_col"],
-                id_col=cols["id_col"], email_col=cols["email_col"],
+                exam_xml_path=xmls[0],
+                answers_xlsx_path=answers,
+                enrollment_xlsx_path=matric,
+                output_path="calificaciones_desde_respuestas.xlsx",
+                output_dir=out,
+                last_name_col=cols["last_name_col"],
+                first_name_col=cols["first_name_col"],
+                id_col=cols["id_col"],
+                email_col=cols["email_col"],
             )
             api = self._grad_api(out)
             api.grade_from_excel(cfg)
@@ -1266,12 +1441,15 @@ class ExamApp:
     def run_attendance_analysis(self) -> None:
         """Section 2: attendance + justifications cross-check (optional, independent step)."""
         from pyexamgenerator.grading import AbsenceJustificationConfig
+
         enrollment = self._grad_enrollment_list()
         attendance = self.grad_attendance_var.get().strip()
         justif = self.grad_justif_var.get().strip()
         out = self.grad_out_var.get().strip()
         if not (enrollment and attendance and justif and out):
-            messagebox.showerror("Faltan datos", "Necesitas matriculados, asistencias, justificaciones y carpeta de salida.")
+            messagebox.showerror(
+                "Faltan datos", "Necesitas matriculados, asistencias, justificaciones y carpeta de salida."
+            )
             return
         cols = self._grad_columns()
         schedule = self.grad_schedule_var.get().strip() or None
@@ -1284,13 +1462,21 @@ class ExamApp:
         def work():
             matric = self._grad_merged_enrollment(enrollment, out)
             cfg = AbsenceJustificationConfig(
-                attendance_xlsx_path=attendance, justifications_xlsx_path=justif,
-                enrollment_xlsx_path=matric, schedule_xlsx_path=schedule,
-                schedule_sheet=schedule_sheet, quizzes_xlsx_path=quizzes,
-                output_dir=out, attendance_header_row=header_row,
-                sender_col=cols["sender_col"], subject_col=cols["subject_col"], message_col=cols["message_col"],
-                first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
-                id_col=cols["id_col"], email_col=cols["email_col"],
+                attendance_xlsx_path=attendance,
+                justifications_xlsx_path=justif,
+                enrollment_xlsx_path=matric,
+                schedule_xlsx_path=schedule,
+                schedule_sheet=schedule_sheet,
+                quizzes_xlsx_path=quizzes,
+                output_dir=out,
+                attendance_header_row=header_row,
+                sender_col=cols["sender_col"],
+                subject_col=cols["subject_col"],
+                message_col=cols["message_col"],
+                first_name_col=cols["first_name_col"],
+                last_name_col=cols["last_name_col"],
+                id_col=cols["id_col"],
+                email_col=cols["email_col"],
             )
             summary_df, _detail = self._grad_api(out).process_absence_justifications(cfg)
             summary_path = os.path.join(out, "justificaciones_resumen.xlsx")
@@ -1307,6 +1493,7 @@ class ExamApp:
     def run_integrate_grades(self) -> None:
         """Section 3: overlay OCR grades on the Moodle theory workbook."""
         from pyexamgenerator.grading import OCRIntegrationConfig
+
         theory = self.grad_theory_var.get().strip()
         out = self.grad_out_var.get().strip()
         if not (theory and out):
@@ -1318,16 +1505,20 @@ class ExamApp:
 
         def work():
             cfg = OCRIntegrationConfig(
-                general_xlsx_path=theory, ocr_xlsx_path=ocr_grades,
-                output_path="teoria_integrada.xlsx", output_dir=out,
+                general_xlsx_path=theory,
+                ocr_xlsx_path=ocr_grades,
+                output_path="teoria_integrada.xlsx",
+                output_dir=out,
                 enrollment_paths=enrollment,
                 append_unmatched_students=append_unmatched_students,
             )
             api = self._grad_api(out)
             api.integrate_ocr_grades(cfg)
 
-            incidents_path = str(api.results.get("ocr_integration_incidents_path")
-                                 or os.path.join(out, "incidencias_integracion_ocr.xlsx"))
+            incidents_path = str(
+                api.results.get("ocr_integration_incidents_path")
+                or os.path.join(out, "incidencias_integracion_ocr.xlsx")
+            )
             warning_msgs = gui_logic.integration_warnings(api.results.get("ocr_integration_summary"), incidents_path)
 
             ocr_incidents_path = os.path.join(out, "incidencias.xlsx")
@@ -1353,6 +1544,7 @@ class ExamApp:
     def run_apply_bonus(self) -> None:
         """Section 4: apply the theory bonus point from attendance + quizzes."""
         from pyexamgenerator.grading import TheoryBonusConfig
+
         out = self.grad_out_var.get().strip()
         if not out:
             messagebox.showerror("Faltan datos", "Necesitas la carpeta de salida.")
@@ -1363,9 +1555,12 @@ class ExamApp:
 
         def work():
             cfg = TheoryBonusConfig(
-                theory_xlsx_path=integrated, attendance_quiz_xlsx_path=attquiz,
-                output_path="calificaciones_examen_teoria.xlsx", output_dir=out,
-                theory_grade_col=theory_grade_col, cap_to_10=True,
+                theory_xlsx_path=integrated,
+                attendance_quiz_xlsx_path=attquiz,
+                output_path="calificaciones_examen_teoria.xlsx",
+                output_dir=out,
+                theory_grade_col=theory_grade_col,
+                cap_to_10=True,
             )
             self._grad_api(out).apply_theory_bonus(cfg)
             return f"Punto extra aplicado. Resultados en:\n{out}"
@@ -1375,6 +1570,7 @@ class ExamApp:
     def run_final_grade(self) -> None:
         """Section 5: weighted final grade (by file or by column)."""
         from pyexamgenerator.grading import FinalGradeConfig
+
         out = self.grad_out_var.get().strip()
         if not out:
             messagebox.showerror("Faltan datos", "Necesitas la carpeta de salida.")
@@ -1393,8 +1589,14 @@ class ExamApp:
             if not source or not weights:
                 messagebox.showerror("Faltan datos", "Indica el fichero y las columnas con su peso (Columna|peso ; …).")
                 return
-            cfg = FinalGradeConfig(mode="by_column", source_path=source, weights=weights,
-                                   output_path="calificaciones_finales_ponderadas.xlsx", output_dir=out, cap_to_10=cap)
+            cfg = FinalGradeConfig(
+                mode="by_column",
+                source_path=source,
+                weights=weights,
+                output_path="calificaciones_finales_ponderadas.xlsx",
+                output_dir=out,
+                cap_to_10=cap,
+            )
         else:
             try:
                 sources = self._grad_parse_final_files()
@@ -1404,9 +1606,16 @@ class ExamApp:
             if not sources:
                 messagebox.showerror("Faltan datos", "Añade al menos un examen (Fichero|peso ; …).")
                 return
-            cfg = FinalGradeConfig(mode="by_file", sources=sources, output_path="calificaciones_finales_ponderadas.xlsx",
-                                   output_dir=out, cap_to_10=cap, id_col=cols["id_col"],
-                                   first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"])
+            cfg = FinalGradeConfig(
+                mode="by_file",
+                sources=sources,
+                output_path="calificaciones_finales_ponderadas.xlsx",
+                output_dir=out,
+                cap_to_10=cap,
+                id_col=cols["id_col"],
+                first_name_col=cols["first_name_col"],
+                last_name_col=cols["last_name_col"],
+            )
 
         def work():
             self._grad_api(out).compute_final_grade(cfg)
@@ -1417,11 +1626,14 @@ class ExamApp:
     def run_compare_results(self, overwrite: bool) -> None:
         """Section 6: compare results against a previous version, optionally writing a merged file."""
         from pyexamgenerator.grading import ComparisonConfig
+
         existing = self.grad_cmp_existing_var.get().strip()
         new = self.grad_cmp_new_var.get().strip()
         out = self.grad_out_var.get().strip()
         if not (existing and new and out):
-            messagebox.showerror("Faltan datos", "Necesitas el fichero existente, el fichero nuevo y la carpeta de salida.")
+            messagebox.showerror(
+                "Faltan datos", "Necesitas el fichero existente, el fichero nuevo y la carpeta de salida."
+            )
             return
         value_cols = [c.strip() for c in self.grad_cmp_value_cols_var.get().split(",") if c.strip()]
         cols = self._grad_columns()
@@ -1436,16 +1648,25 @@ class ExamApp:
 
         def work():
             cfg = ComparisonConfig(
-                existing_path=existing, new_path=new, value_cols=value_cols,
-                overwrite=overwrite, add_new_rows=add_new, merged_in_place=in_place,
+                existing_path=existing,
+                new_path=new,
+                value_cols=value_cols,
+                overwrite=overwrite,
+                add_new_rows=add_new,
+                merged_in_place=in_place,
                 report_output_path="comparacion_resultados.xlsx",
-                merged_output_path="resultados_combinados.xlsx", output_dir=out,
-                id_col=cols["id_col"], first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
+                merged_output_path="resultados_combinados.xlsx",
+                output_dir=out,
+                id_col=cols["id_col"],
+                first_name_col=cols["first_name_col"],
+                last_name_col=cols["last_name_col"],
             )
             result = self._grad_api(out).compare_results(cfg)
             s = result.summary
-            message = (f"Comparación: {s['changed_cells']} celdas cambiadas en {s['changed_students']} alumno(s), "
-                       f"{s['added']} nuevo(s), {s['removed']} ausente(s).\nInforme en: {out}")
+            message = (
+                f"Comparación: {s['changed_cells']} celdas cambiadas en {s['changed_students']} alumno(s), "
+                f"{s['added']} nuevo(s), {s['removed']} ausente(s).\nInforme en: {out}"
+            )
             if overwrite:
                 target = existing if in_place else os.path.join(out, "resultados_combinados.xlsx")
                 message += f"\nFichero combinado: {target}"
@@ -1483,11 +1704,15 @@ class ExamApp:
     def save_grading_session(self) -> None:
         """Saves the current grading inputs/columns to a resumable session (.pkl + .json)."""
         from pyexamgenerator.grading import GradingSession
+
         path = self.grad_session_path_var.get().strip()
         if not path:
             path = filedialog.asksaveasfilename(
-                title="Guardar sesión de corrección", defaultextension=".json",
-                initialfile="sesion_correccion.json", filetypes=[("Sesión", "*.json *.pkl")])
+                title="Guardar sesión de corrección",
+                defaultextension=".json",
+                initialfile="sesion_correccion.json",
+                filetypes=[("Sesión", "*.json *.pkl")],
+            )
         if not path:
             return
         try:
@@ -1502,11 +1727,13 @@ class ExamApp:
     def load_grading_session(self) -> None:
         """Loads a session and fills the grading inputs/columns (incl. generated exam XML paths)."""
         from pyexamgenerator.grading import GradingSession
+
         path = self.grad_session_path_var.get().strip()
         if not path:
             path = filedialog.askopenfilename(
                 title="Cargar sesión de corrección",
-                filetypes=[("Sesión JSON", "*.json"), ("Sesión pickle (solo propias)", "*.pkl"), ("Todos", "*.*")])
+                filetypes=[("Sesión JSON", "*.json"), ("Sesión pickle (solo propias)", "*.pkl"), ("Todos", "*.*")],
+            )
         if not path:
             return
         try:
@@ -1514,10 +1741,11 @@ class ExamApp:
         except ValueError:
             # Only a pickle exists: unpickling can run code, so ask before trusting the file.
             if not messagebox.askyesno(
-                    "Sesión en formato pickle",
-                    "Solo se ha encontrado la sesión en formato .pkl (sin su .json).\n\n"
-                    "Abrir un .pkl puede ejecutar código. Continúa solo si este archivo lo has "
-                    "creado tú en este equipo.\n\n¿Cargarlo de todos modos?"):
+                "Sesión en formato pickle",
+                "Solo se ha encontrado la sesión en formato .pkl (sin su .json).\n\n"
+                "Abrir un .pkl puede ejecutar código. Continúa solo si este archivo lo has "
+                "creado tú en este equipo.\n\n¿Cargarlo de todos modos?",
+            ):
                 return
             try:
                 session = GradingSession.load(path, allow_pickle=True)
@@ -1575,9 +1803,15 @@ class ExamApp:
         out_dir = self.grad_out_var.get().strip()
 
         required = {
-            "Matriculados": enrollment, "Plantillas XML": xmls, "Imágenes": images,
-            "Notas de teoría": theory, "Asistencias": attendance, "Horario": schedule,
-            "Justificaciones": justif, "Cuestionarios": quizzes, "Carpeta de salida": out_dir,
+            "Matriculados": enrollment,
+            "Plantillas XML": xmls,
+            "Imágenes": images,
+            "Notas de teoría": theory,
+            "Asistencias": attendance,
+            "Horario": schedule,
+            "Justificaciones": justif,
+            "Cuestionarios": quizzes,
+            "Carpeta de salida": out_dir,
         }
         missing = [name for name, value in required.items() if not value]
         if missing:
@@ -1594,18 +1828,28 @@ class ExamApp:
         header_raw = self.grad_att_header_var.get().strip()
         cols = self._grad_columns()
         cfg = FullPipelineConfig(
-            enrollment_paths=enrollment, xml_paths=xmls, image_paths=images,
-            theory_xlsx_path=theory, attendance_xlsx_path=attendance, schedule_xlsx_path=schedule,
-            justifications_xlsx_path=justif, quizzes_xlsx_path=quizzes, output_dir=out_dir,
+            enrollment_paths=enrollment,
+            xml_paths=xmls,
+            image_paths=images,
+            theory_xlsx_path=theory,
+            attendance_xlsx_path=attendance,
+            schedule_xlsx_path=schedule,
+            justifications_xlsx_path=justif,
+            quizzes_xlsx_path=quizzes,
+            output_dir=out_dir,
             schedule_sheet=int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0),
             attendance_header_row=int(header_raw) if header_raw.lstrip("-").isdigit() else 3,
             forced_type_by_image=self._grad_parse_forced(),
             temp_image_dir=self.grad_ocr_temp_dir_var.get().strip() or None,
             append_unmatched_students=bool(self.grad_append_unmatched_var.get()),
             justification_mode="extremo",
-            sender_col=cols["sender_col"], subject_col=cols["subject_col"], message_col=cols["message_col"],
-            first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
-            id_col=cols["id_col"], email_col=cols["email_col"],
+            sender_col=cols["sender_col"],
+            subject_col=cols["subject_col"],
+            message_col=cols["message_col"],
+            first_name_col=cols["first_name_col"],
+            last_name_col=cols["last_name_col"],
+            id_col=cols["id_col"],
+            email_col=cols["email_col"],
         )
 
         def work():
@@ -1635,17 +1879,19 @@ class ExamApp:
                     "Para ver cuáles, usa «Analizar asistencia / justificaciones» (sección 2).",
                 )
 
-            msg = ("Corrección completada. Tablas generadas en:\n" + out_dir +
-                   "\n\n- incidencias_identificacion_respuestas.xlsx"
-                   "\n- cuestionarios_clase_y_punto_extra.xlsx"
-                   "\n- calificaciones_examen_teoria.xlsx")
+            msg = (
+                "Corrección completada. Tablas generadas en:\n"
+                + out_dir
+                + "\n\n- incidencias_identificacion_respuestas.xlsx"
+                "\n- cuestionarios_clase_y_punto_extra.xlsx"
+                "\n- calificaciones_examen_teoria.xlsx"
+            )
             if integration_incidents_path:
                 msg += "\n- incidencias_integracion_ocr.xlsx"
             self._open_folder(out_dir)
             return {"info": msg, "warnings": warning_msgs}
 
-        self._grad_run_async("Corrigiendo… (pipeline completo, puede tardar)", work,
-                             done_msg="Corrección completada.")
+        self._grad_run_async("Corrigiendo… (pipeline completo, puede tardar)", work, done_msg="Corrección completada.")
 
     def toggle_pages_per_chunk_entry(self):
         """
@@ -1674,7 +1920,9 @@ class ExamApp:
         prompt_type_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
         ToolTip(prompt_type_label, "Seleccione el prompt base para la generación de preguntas.")
         prompt_type_names = list(self.prompt_types.keys())
-        self.prompt_type_combo = ttk.Combobox(prompt_type_frame, textvariable=self.selected_prompt_type, values=prompt_type_names, state='readonly')
+        self.prompt_type_combo = ttk.Combobox(
+            prompt_type_frame, textvariable=self.selected_prompt_type, values=prompt_type_names, state='readonly'
+        )
         self.prompt_type_combo.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         self.prompt_type_combo.bind("<<ComboboxSelected>>", self.update_custom_prompt_display)
         if prompt_type_names:
@@ -1689,13 +1937,19 @@ class ExamApp:
         add_prompt_button.pack(side='left', padx=2)
         ToolTip(add_prompt_button, "Añadir un nuevo tipo de prompt personalizado.")
 
-        edit_prompt_button = ttk.Button(prompt_buttons_frame, text="Editar", command=lambda: self.add_edit_prompt_type(existing_type=self.selected_prompt_type.get()))
+        edit_prompt_button = ttk.Button(
+            prompt_buttons_frame,
+            text="Editar",
+            command=lambda: self.add_edit_prompt_type(existing_type=self.selected_prompt_type.get()),
+        )
         edit_prompt_button.pack(side='left', padx=2)
         ToolTip(edit_prompt_button, "Editar el tipo de prompt seleccionado actualmente.")
 
         delete_prompt_button = ttk.Button(prompt_buttons_frame, text="Eliminar", command=self.delete_prompt_type)
         delete_prompt_button.pack(side='left', padx=2)
-        ToolTip(delete_prompt_button, "Eliminar el tipo de prompt seleccionado (no se pueden eliminar los predeterminados).")
+        ToolTip(
+            delete_prompt_button, "Eliminar el tipo de prompt seleccionado (no se pueden eliminar los predeterminados)."
+        )
 
         prompt_type_frame.columnconfigure(1, weight=1)
 
@@ -1713,20 +1967,22 @@ class ExamApp:
         ToolTip(pdf_label, "Seleccione PDFs o imágenes desde los cuales se generarán las preguntas.")
         self.pdf_entry = ttk.Entry(pdf_frame, width=50, textvariable=self.pdf_files_var)
         self.pdf_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-        ToolTip(self.pdf_entry, "Rutas de los archivos seleccionados, separadas por ';' (un nombre de archivo puede contener comas).")
+        ToolTip(
+            self.pdf_entry,
+            "Rutas de los archivos seleccionados, separadas por ';' (un nombre de archivo puede contener comas).",
+        )
         select_pdf_button = ttk.Button(pdf_frame, text="Seleccionar Archivos", command=self.select_pdf_files)
         select_pdf_button.grid(row=0, column=2, padx=5, pady=5)
         ToolTip(select_pdf_button, "Abre un diálogo para seleccionar uno o más PDFs o imágenes.")
 
         input_mode_label = ttk.Label(pdf_frame, text="Modo de entrada:")
         input_mode_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(input_mode_label, "text: extrae texto del PDF; image: analiza contenido visual (imágenes o páginas renderizadas).")
+        ToolTip(
+            input_mode_label,
+            "text: extrae texto del PDF; image: analiza contenido visual (imágenes o páginas renderizadas).",
+        )
         input_mode_combo = ttk.Combobox(
-            pdf_frame,
-            textvariable=self.input_mode_var,
-            values=["text", "image"],
-            state='readonly',
-            width=12
+            pdf_frame, textvariable=self.input_mode_var, values=["text", "image"], state='readonly', width=12
         )
         input_mode_combo.grid(row=1, column=1, padx=5, pady=5, sticky='w')
         ToolTip(input_mode_combo, "Selecciona cómo Gemini debe interpretar los archivos fuente.")
@@ -1739,7 +1995,9 @@ class ExamApp:
         # Row 0: Target questions per PDF/chunk
         num_questions_label = ttk.Label(config_frame, text="Preguntas objetivo por PDF/fragmento:")
         num_questions_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(num_questions_label, "El número de preguntas que la aplicación intentará generar para cada PDF o fragmento.")
+        ToolTip(
+            num_questions_label, "El número de preguntas que la aplicación intentará generar para cada PDF o fragmento."
+        )
         num_questions_entry = ttk.Entry(config_frame, width=10, textvariable=self.num_questions_var)
         num_questions_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
         ToolTip(num_questions_entry, "Introduzca el número deseado de preguntas.")
@@ -1755,20 +2013,32 @@ class ExamApp:
         # Row 2: Processing Mode
         processing_frame = ttk.LabelFrame(config_frame, text="Modo de Procesamiento")
         processing_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
-        process_by_pages_check = ttk.Checkbutton(processing_frame, text="Procesar PDF por fragmentos", variable=self.process_by_pages_var, command=self.toggle_pages_per_chunk_entry)
+        process_by_pages_check = ttk.Checkbutton(
+            processing_frame,
+            text="Procesar PDF por fragmentos",
+            variable=self.process_by_pages_var,
+            command=self.toggle_pages_per_chunk_entry,
+        )
         process_by_pages_check.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(process_by_pages_check, "Si se marca, el PDF se dividirá en fragmentos más pequeños para la generación. Útil para documentos grandes.")
+        ToolTip(
+            process_by_pages_check,
+            "Si se marca, el PDF se dividirá en fragmentos más pequeños para la generación. Útil para documentos grandes.",
+        )
         pages_per_chunk_label = ttk.Label(processing_frame, text="Páginas por fragmento:")
         pages_per_chunk_label.grid(row=0, column=1, padx=5, pady=5, sticky='w')
         ToolTip(pages_per_chunk_label, "Número de páginas a incluir en cada fragmento de procesamiento.")
-        self.pages_per_chunk_entry = ttk.Entry(processing_frame, width=5, textvariable=self.pages_per_chunk_var, state='disabled')
+        self.pages_per_chunk_entry = ttk.Entry(
+            processing_frame, width=5, textvariable=self.pages_per_chunk_var, state='disabled'
+        )
         self.pages_per_chunk_entry.grid(row=0, column=2, padx=5, pady=5, sticky='w')
         ToolTip(self.pages_per_chunk_entry, "Introduzca el número de páginas para cada fragmento.")
 
         total_chunks_label = ttk.Label(processing_frame, text="Fragmentos totales (opcional):")
         total_chunks_label.grid(row=0, column=3, padx=5, pady=5, sticky='w')
         ToolTip(total_chunks_label, "Si se indica, divide cada PDF en ese número total de fragmentos.")
-        self.total_chunks_entry = ttk.Entry(processing_frame, width=6, textvariable=self.total_chunks_var, state='disabled')
+        self.total_chunks_entry = ttk.Entry(
+            processing_frame, width=6, textvariable=self.total_chunks_var, state='disabled'
+        )
         self.total_chunks_entry.grid(row=0, column=4, padx=5, pady=5, sticky='w')
 
         chunking_mode_label = ttk.Label(processing_frame, text="Modo:")
@@ -1778,7 +2048,7 @@ class ExamApp:
             textvariable=self.chunking_mode_var,
             values=["pages", "text_length"],
             state='disabled',
-            width=12
+            width=12,
         )
         self.chunking_mode_combo.grid(row=0, column=6, padx=5, pady=5, sticky='w')
         ToolTip(self.chunking_mode_combo, "pages: divide por páginas; text_length: divide por longitud de texto.")
@@ -1786,82 +2056,132 @@ class ExamApp:
         # Row 3: Max attempts per chunk
         max_attempts_label = ttk.Label(config_frame, text="Máx. intentos por fragmento:")
         max_attempts_label.grid(row=3, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(max_attempts_label, "Número máximo de veces que se llamará a la API para un único fragmento si no se alcanza el objetivo de preguntas.")
+        ToolTip(
+            max_attempts_label,
+            "Número máximo de veces que se llamará a la API para un único fragmento si no se alcanza el objetivo de preguntas.",
+        )
         max_attempts_entry = ttk.Entry(config_frame, width=5, textvariable=self.max_attempts_var)
         max_attempts_entry.grid(row=3, column=1, padx=5, pady=5, sticky='w')
-        ToolTip(max_attempts_entry, "Número máximo de intentos de generación por fragmento si no se alcanza el objetivo (Recomendado: 3).\nAfecta al uso de la API de Gemini (más intentos = más uso y posible límite diario).")
+        ToolTip(
+            max_attempts_entry,
+            "Número máximo de intentos de generación por fragmento si no se alcanza el objetivo (Recomendado: 3).\nAfecta al uso de la API de Gemini (más intentos = más uso y posible límite diario).",
+        )
 
         # Row 4: Duplicate Filter
         similarity_filter_frame = ttk.LabelFrame(config_frame, text="Filtro de Duplicados")
         similarity_filter_frame.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
-        ToolTip(similarity_filter_frame, "Compara cada pregunta generada con un banco existente y descarta las que sean muy parecidas (basado solo en el enunciado).")
+        ToolTip(
+            similarity_filter_frame,
+            "Compara cada pregunta generada con un banco existente y descarta las que sean muy parecidas (basado solo en el enunciado).",
+        )
 
         existing_bank_label = ttk.Label(similarity_filter_frame, text="Banco Existente a Consultar:")
         existing_bank_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(existing_bank_label, "Seleccione un archivo Excel con preguntas existentes para evitar generar duplicados.")
+        ToolTip(
+            existing_bank_label, "Seleccione un archivo Excel con preguntas existentes para evitar generar duplicados."
+        )
         existing_bank_entry = ttk.Entry(similarity_filter_frame, textvariable=self.existing_bank_for_gen_path)
         existing_bank_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(existing_bank_entry, "Ruta al archivo del banco de preguntas existente.")
-        select_existing_button = ttk.Button(similarity_filter_frame, text="Seleccionar", command=self.select_existing_bank_for_gen_file)
+        select_existing_button = ttk.Button(
+            similarity_filter_frame, text="Seleccionar", command=self.select_existing_bank_for_gen_file
+        )
         select_existing_button.grid(row=0, column=2, padx=5, pady=5)
         ToolTip(select_existing_button, "Abre un diálogo para seleccionar el archivo del banco de preguntas.")
         similarity_filter_frame.columnconfigure(1, weight=1)
 
-        use_similarity_check = ttk.Checkbutton(similarity_filter_frame, text="Activar filtro de similitud", variable=self.use_similarity_filter_var)
+        use_similarity_check = ttk.Checkbutton(
+            similarity_filter_frame, text="Activar filtro de similitud", variable=self.use_similarity_filter_var
+        )
         use_similarity_check.grid(row=1, column=0, padx=5, pady=2, sticky='w')
-        ToolTip(use_similarity_check, "Si se marca, las preguntas generadas se compararán con el banco existente y se descartarán si son demasiado similares.")
+        ToolTip(
+            use_similarity_check,
+            "Si se marca, las preguntas generadas se compararán con el banco existente y se descartarán si son demasiado similares.",
+        )
 
         threshold_label = ttk.Label(similarity_filter_frame, text="Umbral de similitud:")
         threshold_label.grid(row=1, column=1, padx=5, pady=2, sticky='w')
-        ToolTip(threshold_label, "Valor entre 0.0 y 1.0. Un valor más alto significa que las preguntas deben ser más idénticas para ser descartadas (0.8 es un buen punto de partida).")
+        ToolTip(
+            threshold_label,
+            "Valor entre 0.0 y 1.0. Un valor más alto significa que las preguntas deben ser más idénticas para ser descartadas (0.8 es un buen punto de partida).",
+        )
 
-        threshold_spinbox = ttk.Spinbox(similarity_filter_frame, from_=0.0, to=1.0, increment=0.05, width=6, textvariable=self.similarity_threshold_var)
+        threshold_spinbox = ttk.Spinbox(
+            similarity_filter_frame,
+            from_=0.0,
+            to=1.0,
+            increment=0.05,
+            width=6,
+            textvariable=self.similarity_threshold_var,
+        )
         threshold_spinbox.grid(row=1, column=2, padx=5, pady=2, sticky='w')
         ToolTip(threshold_spinbox, "Ajuste el umbral de similitud. 1.0 significa una coincidencia exacta.")
 
         # Row 5: Bank Inclusion in Prompt
-        prompt_inclusion_frame = ttk.LabelFrame(config_frame, text="Inclusión de Banco en Prompt (si se selecciona banco)")
+        prompt_inclusion_frame = ttk.LabelFrame(
+            config_frame, text="Inclusión de Banco en Prompt (si se selecciona banco)"
+        )
         prompt_inclusion_frame.grid(row=5, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
-        ToolTip(prompt_inclusion_frame, "Define qué preguntas del banco y qué contenido de ellas se incluye en el prompt para guiar la generación.")
+        ToolTip(
+            prompt_inclusion_frame,
+            "Define qué preguntas del banco y qué contenido de ellas se incluye en el prompt para guiar la generación.",
+        )
 
-        scope_frame = ttk.LabelFrame(prompt_inclusion_frame, text="Alcance de Preguntas de para evitar similares en Prompt")
+        scope_frame = ttk.LabelFrame(
+            prompt_inclusion_frame, text="Alcance de Preguntas de para evitar similares en Prompt"
+        )
         scope_frame.pack(fill='x', padx=5, pady=(5, 0))
 
-        same_topic_radio = ttk.Radiobutton(scope_frame,
-                                           text="Usar preguntas del mismo tema",
-                                           variable=self.bank_in_prompt_scope_var,
-                                           value="mismo_tema")
+        same_topic_radio = ttk.Radiobutton(
+            scope_frame,
+            text="Usar preguntas del mismo tema",
+            variable=self.bank_in_prompt_scope_var,
+            value="mismo_tema",
+        )
         same_topic_radio.pack(anchor='w', padx=10, pady=2)
-        ToolTip(same_topic_radio, "Se usarán como ejemplo preguntas del banco que coincidan con el tema del PDF actual.")
+        ToolTip(
+            same_topic_radio, "Se usarán como ejemplo preguntas del banco que coincidan con el tema del PDF actual."
+        )
 
-        all_topics_radio = ttk.Radiobutton(scope_frame,
-                                           text="Usar todas las preguntas del banco",
-                                           variable=self.bank_in_prompt_scope_var,
-                                           value="todos_los_temas")
+        all_topics_radio = ttk.Radiobutton(
+            scope_frame,
+            text="Usar todas las preguntas del banco",
+            variable=self.bank_in_prompt_scope_var,
+            value="todos_los_temas",
+        )
         all_topics_radio.pack(anchor='w', padx=10, pady=2)
         ToolTip(all_topics_radio, "Se usarán como ejemplo todas las preguntas del banco, independientemente del tema.")
 
-        content_frame = ttk.LabelFrame(prompt_inclusion_frame, text="Contenido de Preguntas de para evitar similares en Prompt")
+        content_frame = ttk.LabelFrame(
+            prompt_inclusion_frame, text="Contenido de Preguntas de para evitar similares en Prompt"
+        )
         content_frame.pack(fill='x', padx=5, pady=5)
 
-        enunciados_radio = ttk.Radiobutton(content_frame,
-                                           text="Incluir solo enunciados (recomendado)",
-                                           variable=self.prompt_example_content_var,
-                                           value="solo_enunciados")
+        enunciados_radio = ttk.Radiobutton(
+            content_frame,
+            text="Incluir solo enunciados (recomendado)",
+            variable=self.prompt_example_content_var,
+            value="solo_enunciados",
+        )
         enunciados_radio.pack(anchor='w', padx=10, pady=2)
         ToolTip(enunciados_radio, "En el prompt, las preguntas de ejemplo solo mostrarán su enunciado.")
 
-        enunciados_resp_radio = ttk.Radiobutton(content_frame,
-                                                text="Incluir enunciados y respuestas",
-                                                variable=self.prompt_example_content_var,
-                                                value="enunciados_y_respuestas")
+        enunciados_resp_radio = ttk.Radiobutton(
+            content_frame,
+            text="Incluir enunciados y respuestas",
+            variable=self.prompt_example_content_var,
+            value="enunciados_y_respuestas",
+        )
         enunciados_resp_radio.pack(anchor='w', padx=10, pady=2)
-        ToolTip(enunciados_resp_radio, "En el prompt, las preguntas de ejemplo mostrarán su enunciado y sus opciones de respuesta.")
+        ToolTip(
+            enunciados_resp_radio,
+            "En el prompt, las preguntas de ejemplo mostrarán su enunciado y sus opciones de respuesta.",
+        )
 
         include_similar_check = ttk.Checkbutton(
             prompt_inclusion_frame,
             text="Incluir preguntas similares a evitar en prompt",
-            variable=self.include_similar_questions_in_prompt_var
+            variable=self.include_similar_questions_in_prompt_var,
         )
         include_similar_check.pack(anchor='w', padx=10, pady=(0, 5))
         ToolTip(include_similar_check, "Desmarcar para no incluir ejemplos del banco existente dentro del prompt.")
@@ -1883,14 +2203,21 @@ class ExamApp:
 
         save_api_key_button = ttk.Button(api_buttons_frame, text="Guardar Clave", command=self.save_current_api_key)
         save_api_key_button.pack(side='left', padx=2)
-        ToolTip(save_api_key_button, text="Guarda la clave cifrada en el almacén de credenciales del sistema "
-                                          "(en Windows, el Administrador de credenciales).")
+        ToolTip(
+            save_api_key_button,
+            text="Guarda la clave cifrada en el almacén de credenciales del sistema "
+            "(en Windows, el Administrador de credenciales).",
+        )
 
         delete_api_key_button = ttk.Button(api_buttons_frame, text="Borrar Clave", command=self.delete_saved_api_key)
         delete_api_key_button.pack(side='left', padx=2)
-        ToolTip(delete_api_key_button, text="Borra de este equipo la clave guardada (p. ej. en un ordenador compartido).")
+        ToolTip(
+            delete_api_key_button, text="Borra de este equipo la clave guardada (p. ej. en un ordenador compartido)."
+        )
 
-        self.load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
+        self.load_models_button = ttk.Button(
+            api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table
+        )
         self.load_models_button.pack(side='left', padx=2)
         ToolTip(self.load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
 
@@ -1915,7 +2242,9 @@ class ExamApp:
         self.models_tree.column('name', width=180, stretch=tk.NO)
         self.models_tree.column('display_name', width=150, stretch=tk.NO)
         self.models_tree.column('version', width=60, stretch=tk.NO, anchor='center')
-        self.models_tree.column('input_tokens', width=100, stretch=tk.NO, anchor='e')  # 'e' para alinear a la derecha (este)
+        self.models_tree.column(
+            'input_tokens', width=100, stretch=tk.NO, anchor='e'
+        )  # 'e' para alinear a la derecha (este)
         self.models_tree.column('output_tokens', width=100, stretch=tk.NO, anchor='e')
         self.models_tree.column('methods', width=200)
         self.models_tree.column('description', width=400)
@@ -1945,27 +2274,43 @@ class ExamApp:
         debug_options_frame = ttk.Frame(config_frame)
         debug_options_frame.grid(row=7, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
 
-        print_raw_check = ttk.Checkbutton(debug_options_frame, text="Imprimir respuesta cruda de Gemini (depuración)", variable=self.print_raw_gemini_answer_var)
+        print_raw_check = ttk.Checkbutton(
+            debug_options_frame,
+            text="Imprimir respuesta cruda de Gemini (depuración)",
+            variable=self.print_raw_gemini_answer_var,
+        )
         print_raw_check.pack(anchor='w', padx=5)
-        ToolTip(print_raw_check, "Si se marca, la respuesta completa de la API de Gemini se imprimirá en la consola. Útil para depuración.")
+        ToolTip(
+            print_raw_check,
+            "Si se marca, la respuesta completa de la API de Gemini se imprimirá en la consola. Útil para depuración.",
+        )
 
         # Row 8: Output Directory
         output_dir_frame = ttk.LabelFrame(config_frame, text="Directorio de Salida")
         output_dir_frame.grid(row=8, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
-        ToolTip(output_dir_frame, "Carpeta donde se guardarán los archivos generados. Si se deja en blanco, se usará la carpeta actual.")
+        ToolTip(
+            output_dir_frame,
+            "Carpeta donde se guardarán los archivos generados. Si se deja en blanco, se usará la carpeta actual.",
+        )
 
         output_dir_entry = ttk.Entry(output_dir_frame, textvariable=self.gen_questions_output_dir_var)
         output_dir_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
         ToolTip(output_dir_entry, "Ruta al directorio de salida.")
 
-        output_dir_button = ttk.Button(output_dir_frame, text="Seleccionar...", command=self.select_gen_questions_output_dir)
+        output_dir_button = ttk.Button(
+            output_dir_frame, text="Seleccionar...", command=self.select_gen_questions_output_dir
+        )
         output_dir_button.pack(side='left', padx=5, pady=5)
         ToolTip(output_dir_button, "Abrir diálogo para seleccionar el directorio de salida.")
 
         # Row 9: Generate Button
-        self.generate_questions_button = ttk.Button(config_frame, text="Generar Preguntas", command=self.generate_questions)
+        self.generate_questions_button = ttk.Button(
+            config_frame, text="Generar Preguntas", command=self.generate_questions
+        )
         self.generate_questions_button.grid(row=9, column=0, columnspan=3, pady=10)
-        ToolTip(self.generate_questions_button, "Iniciar el proceso de generación de preguntas con la configuración actual.")
+        ToolTip(
+            self.generate_questions_button, "Iniciar el proceso de generación de preguntas con la configuración actual."
+        )
 
         config_frame.columnconfigure(1, weight=1)
         inner_frame_question.columnconfigure(0, weight=1)
@@ -1981,7 +2326,9 @@ class ExamApp:
         """
         api_key = self.api_key_var.get()
         if not api_key or api_key == credentials.PLACEHOLDER:
-            messagebox.showerror("Error", "Por favor, introduce una clave API de Gemini válida antes de cargar los modelos.")
+            messagebox.showerror(
+                "Error", "Por favor, introduce una clave API de Gemini válida antes de cargar los modelos."
+            )
             return
 
         # Limpiar la tabla antes de llenarla
@@ -2022,15 +2369,7 @@ class ExamApp:
                 description = getattr(model, 'description', '') or ""
                 description = description.replace('\n', ' ')
 
-                rows.append((
-                    model_name,
-                    display_name,
-                    version,
-                    input_tokens,
-                    output_tokens,
-                    methods_str,
-                    description
-                ))
+                rows.append((model_name, display_name, version, input_tokens, output_tokens, methods_str, description))
             return rows
 
         def on_success(rows):
@@ -2044,13 +2383,17 @@ class ExamApp:
             self.update_status(f"Se cargaron {len(rows)} modelos. Por favor, seleccione uno de la tabla.")
 
         def on_error(e):
-            messagebox.showerror("Error de API", f"No se pudo obtener la lista de modelos. Verifica tu clave API y conexión a internet.\n\nError: {e}")
+            messagebox.showerror(
+                "Error de API",
+                f"No se pudo obtener la lista de modelos. Verifica tu clave API y conexión a internet.\n\nError: {e}",
+            )
             self.update_status("Error al cargar modelos.")
             # Imprimimos el error completo en consola para depuración si es necesario
             print(f"Error detallado al cargar modelos: {e}")
 
-        self._run_in_background("Cargando lista de modelos...", work, on_success, on_error,
-                                widgets=[self.load_models_button])
+        self._run_in_background(
+            "Cargando lista de modelos...", work, on_success, on_error, widgets=[self.load_models_button]
+        )
 
     # Nueva función para manejar la selección en la tabla
     def on_model_select(self, event=None):
@@ -2095,7 +2438,8 @@ class ExamApp:
         try:
             # Convertir el identificador de columna (ej. '#3') a un índice numérico (ej. 2)
             col_index = int(col_id.replace('#', '')) - 1
-            if col_index < 0: return
+            if col_index < 0:
+                return
 
             # Obtener el texto completo de la celda
             cell_text = self.models_tree.item(row_id, 'values')[col_index]
@@ -2106,6 +2450,7 @@ class ExamApp:
             ### CAMBIO ###
             # Usamos la fuente por defecto de la aplicación para medir el ancho del texto
             from tkinter import font
+
             f = font.Font()  # Obtiene la fuente por defecto de la aplicación
             text_width = f.measure(str(cell_text))
 
@@ -2121,9 +2466,15 @@ class ExamApp:
                 tw.wm_geometry(f"+{x}+{y}")
 
                 # Añadir una etiqueta con el texto completo
-                label = ttk.Label(tw, text=cell_text, justify='left',
-                                  background="#FFFFE0", relief='solid', borderwidth=1,
-                                  wraplength=500)  # wraplength para descripciones muy largas
+                label = ttk.Label(
+                    tw,
+                    text=cell_text,
+                    justify='left',
+                    background="#FFFFE0",
+                    relief='solid',
+                    borderwidth=1,
+                    wraplength=500,
+                )  # wraplength para descripciones muy largas
                 label.pack(ipadx=2, ipady=2)
 
         except (ValueError, IndexError):
@@ -2143,11 +2494,15 @@ class ExamApp:
         if saved.encrypted:
             message = f"La clave de API se ha guardado cifrada en el {saved.location}."
         else:
-            message = ("Este sistema no tiene un almacén de credenciales: la clave de API se ha guardado "
-                       f"sin cifrar en\n{saved.location}\n(solo tu usuario puede leer ese fichero).")
+            message = (
+                "Este sistema no tiene un almacén de credenciales: la clave de API se ha guardado "
+                f"sin cifrar en\n{saved.location}\n(solo tu usuario puede leer ese fichero)."
+            )
         if os.getenv(credentials.ENV_VAR, "").strip():
-            message += ("\n\nLa variable de entorno GEMINI_API_KEY está definida y tiene prioridad: "
-                        "la aplicación la usará mientras exista.")
+            message += (
+                "\n\nLa variable de entorno GEMINI_API_KEY está definida y tiene prioridad: "
+                "la aplicación la usará mientras exista."
+            )
         return message
 
     def save_current_api_key(self) -> None:
@@ -2193,11 +2548,10 @@ class ExamApp:
             return
         path, legacy_key = legacy
         already_saved = credentials.get_saved_api_key() is not None
-        question = (
-            f"Hay una clave de API guardada sin cifrar, por una versión anterior, en:\n{path}\n\n"
-            + ("Ya tienes una clave guardada en el almacén de credenciales. ¿Borrar esa copia sin cifrar?"
-               if already_saved else
-               "¿Moverla al almacén de credenciales del sistema (cifrada) y borrar ese fichero?")
+        question = f"Hay una clave de API guardada sin cifrar, por una versión anterior, en:\n{path}\n\n" + (
+            "Ya tienes una clave guardada en el almacén de credenciales. ¿Borrar esa copia sin cifrar?"
+            if already_saved
+            else "¿Moverla al almacén de credenciales del sistema (cifrada) y borrar ese fichero?"
         )
         if not messagebox.askyesno("Clave de API sin cifrar", question):
             if not self.api_key:
@@ -2230,7 +2584,7 @@ class ExamApp:
                 ("Archivos PDF", "*.pdf"),
                 ("Imágenes", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff"),
                 ("Todos los archivos", "*.*"),
-            )
+            ),
         )
         if not file_paths:
             return  # Dialog cancelled: keep the current list.
@@ -2247,8 +2601,7 @@ class ExamApp:
         The path of the selected file is saved in the `self.existing_bank_for_gen_path` variable.
         """
         filepath = filedialog.askopenfilename(
-            title="Seleccionar Banco de Preguntas Existente (Opcional)",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            title="Seleccionar Banco de Preguntas Existente (Opcional)", filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
         )
         if filepath:
             self.existing_bank_for_gen_path.set(filepath)
@@ -2386,7 +2739,7 @@ class ExamApp:
                 total_chunks=total_chunks_value,
                 chunking_mode=chunking_mode_value,
                 include_similar_questions_in_prompt=include_similar_questions_value,
-                input_mode=input_mode_value
+                input_mode=input_mode_value,
             )
 
         def on_success(questions_df):
@@ -2396,7 +2749,10 @@ class ExamApp:
             else:
                 # This message may appear if, after all attempts and filters, no questions are left.
                 self.update_status("No se generaron preguntas o ninguna pasó los filtros.")
-                messagebox.showinfo("Resultado", "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, errores de API). Revisa la consola para más detalles.")
+                messagebox.showinfo(
+                    "Resultado",
+                    "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, errores de API). Revisa la consola para más detalles.",
+                )
 
         def on_error(e):
             if isinstance(e, QuotaExceededError):
@@ -2410,7 +2766,7 @@ class ExamApp:
             elif isinstance(e, ServiceOverloadedError):
                 title = "Servidores de Google Saturados"
                 self.update_status("Error: Modelo de IA saturado.")
-                messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
+                messagebox.showwarning(title, str(e))  # Usamos warning porque es temporal
                 print(f"ERROR: {title}\n{e}")
             elif isinstance(e, GeminiRequestError):
                 # Invalid key or retired model: the message says what to change.
@@ -2420,10 +2776,12 @@ class ExamApp:
                 self.update_status(f"Error durante la generación de preguntas: {e}")
                 messagebox.showerror("Error", f"Error: {e}")
                 import traceback
+
                 print("".join(traceback.format_exception(type(e), e, e.__traceback__)))
 
-        self._run_in_background("Generando preguntas...", work, on_success, on_error,
-                                widgets=[self.generate_questions_button])
+        self._run_in_background(
+            "Generando preguntas...", work, on_success, on_error, widgets=[self.generate_questions_button]
+        )
 
     def create_exam_tab(self):
         """
@@ -2478,7 +2836,10 @@ class ExamApp:
 
         exam_names_label = ttk.Label(exam_data_frame, text="Nombres de los Exámenes (separados por coma):")
         exam_names_label.grid(row=3, column=0, columnspan=1, padx=5, pady=5, sticky='w')
-        ToolTip(exam_names_label, text="Opcional: Ingrese nombres específicos para cada examen, separados por coma (ej. Tipo A,Tipo B). Si se deja vacío, se usarán nombres genéricos.")
+        ToolTip(
+            exam_names_label,
+            text="Opcional: Ingrese nombres específicos para cada examen, separados por coma (ej. Tipo A,Tipo B). Si se deja vacío, se usarán nombres genéricos.",
+        )
         exam_names_entry = ttk.Entry(exam_data_frame, width=50, textvariable=self.exam_names)
         exam_names_entry.grid(row=3, column=1, columnspan=2, padx=5, pady=5, sticky='ew')
         ToolTip(exam_names_entry, text="Nombres específicos para los exámenes (opcional).")
@@ -2489,9 +2850,18 @@ class ExamApp:
         questions_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
         row_interno_questions = 0  # Initialize a row counter for this frame
 
-        select_by_theme_radio = ttk.Radiobutton(questions_frame, text="Seleccionar cantidad por tema:", variable=self.selection_method_var, value="por_tema", command=self.update_theme_display)
+        select_by_theme_radio = ttk.Radiobutton(
+            questions_frame,
+            text="Seleccionar cantidad por tema:",
+            variable=self.selection_method_var,
+            value="por_tema",
+            command=self.update_theme_display,
+        )
         select_by_theme_radio.grid(row=row_interno_questions, column=0, columnspan=2, sticky='w', pady=5)
-        ToolTip(select_by_theme_radio, text="Permite especificar la cantidad de preguntas a seleccionar para cada tema individualmente.")
+        ToolTip(
+            select_by_theme_radio,
+            text="Permite especificar la cantidad de preguntas a seleccionar para cada tema individualmente.",
+        )
         row_interno_questions += 1
 
         by_theme_labelframe = ttk.LabelFrame(questions_frame, text="Cantidad por Tema")
@@ -2516,24 +2886,47 @@ class ExamApp:
         self.theme_quantity_widgets_inner = self.by_theme_frame
         self.theme_quantity_widgets = {}
 
-        same_number_radio = ttk.Radiobutton(questions_frame, text="Mismo número de preguntas por tema:", variable=self.selection_method_var, value="mismo_numero")
+        same_number_radio = ttk.Radiobutton(
+            questions_frame,
+            text="Mismo número de preguntas por tema:",
+            variable=self.selection_method_var,
+            value="mismo_numero",
+        )
         same_number_radio.grid(row=row_interno_questions + 1, column=0, sticky='w')
-        ToolTip(same_number_radio, text="Seleccione esta opción para usar la misma cantidad de preguntas para todos los temas.")
-        self.num_preguntas_por_tema_entry = ttk.Entry(questions_frame, width=5, textvariable=self.num_questions_same_topic)
+        ToolTip(
+            same_number_radio,
+            text="Seleccione esta opción para usar la misma cantidad de preguntas para todos los temas.",
+        )
+        self.num_preguntas_por_tema_entry = ttk.Entry(
+            questions_frame, width=5, textvariable=self.num_questions_same_topic
+        )
         self.num_preguntas_por_tema_entry.grid(row=row_interno_questions + 1, column=1, padx=5, sticky='ew')
         ToolTip(self.num_preguntas_por_tema_entry, text="Ingrese el número de preguntas a seleccionar de cada tema.")
         row_interno_questions += 2
 
-        dictionary_radio = ttk.Radiobutton(questions_frame, text="Diccionario de preguntas por tema (Tema01:2,Tema02:3):", variable=self.selection_method_var, value="diccionario")
+        dictionary_radio = ttk.Radiobutton(
+            questions_frame,
+            text="Diccionario de preguntas por tema (Tema01:2,Tema02:3):",
+            variable=self.selection_method_var,
+            value="diccionario",
+        )
         dictionary_radio.grid(row=row_interno_questions + 1, column=0, sticky='w')
-        ToolTip(dictionary_radio, text="Ingrese un diccionario especificando la cantidad de preguntas por tema (ej. TemaA:3,TemaB:2).")
+        ToolTip(
+            dictionary_radio,
+            text="Ingrese un diccionario especificando la cantidad de preguntas por tema (ej. TemaA:3,TemaB:2).",
+        )
         questions_per_topic_entry = ttk.Entry(questions_frame, textvariable=self.questions_per_topic)
         questions_per_topic_entry.grid(row=row_interno_questions + 1, column=1, padx=5, sticky='ew')
         ToolTip(questions_per_topic_entry, text="Diccionario con el formato Tema:Cantidad.")
 
-        total_radio = ttk.Radiobutton(questions_frame, text="Número total de preguntas:", variable=self.selection_method_var, value="total")
+        total_radio = ttk.Radiobutton(
+            questions_frame, text="Número total de preguntas:", variable=self.selection_method_var, value="total"
+        )
         total_radio.grid(row=row_interno_questions + 2, column=0, sticky='w')
-        ToolTip(total_radio, text="Selecciona un número total de preguntas del banco y reparte ese total según el modo elegido.")
+        ToolTip(
+            total_radio,
+            text="Selecciona un número total de preguntas del banco y reparte ese total según el modo elegido.",
+        )
         total_questions_entry = ttk.Entry(questions_frame, width=6, textvariable=self.total_questions_var)
         total_questions_entry.grid(row=row_interno_questions + 2, column=1, padx=5, sticky='w')
         ToolTip(total_questions_entry, text="Número total de preguntas que tendrá el examen.")
@@ -2541,9 +2934,18 @@ class ExamApp:
         total_distribution_label = ttk.Label(questions_frame, text="Reparto del total:")
         total_distribution_label.grid(row=row_interno_questions + 3, column=0, sticky='e', padx=5)
         ToolTip(total_distribution_label, text="Cómo se reparte el número total de preguntas entre los temas.")
-        total_distribution_combo = ttk.Combobox(questions_frame, textvariable=self.total_distribution_var, values=["equitativo", "azar"], state='readonly', width=12)
+        total_distribution_combo = ttk.Combobox(
+            questions_frame,
+            textvariable=self.total_distribution_var,
+            values=["equitativo", "azar"],
+            state='readonly',
+            width=12,
+        )
         total_distribution_combo.grid(row=row_interno_questions + 3, column=1, padx=5, sticky='w')
-        ToolTip(total_distribution_combo, text="equitativo: mismo número de preguntas por tema en la medida de lo posible (los primeros temas reciben una más si el total no es divisible). azar: se eligen del banco completo sin tener en cuenta el tema.")
+        ToolTip(
+            total_distribution_combo,
+            text="equitativo: mismo número de preguntas por tema en la medida de lo posible (los primeros temas reciben una más si el total no es divisible). azar: se eligen del banco completo sin tener en cuenta el tema.",
+        )
         row += 1  # Increment the row for the next LabelFrame
 
         # 4. Selection method (spans 3 columns)
@@ -2552,10 +2954,17 @@ class ExamApp:
         method_label = ttk.Label(method_frame, text="Método:")
         method_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
         ToolTip(method_label, text="Seleccione el método para elegir las preguntas dentro de cada tema.")
-        method_combo = ttk.Combobox(method_frame, textvariable=self.selection_method, values=["azar", "primeras", "menos usadas"], state='readonly')
+        method_combo = ttk.Combobox(
+            method_frame,
+            textvariable=self.selection_method,
+            values=["azar", "primeras", "menos usadas"],
+            state='readonly',
+        )
         method_combo.grid(row=0, column=1, columnspan=2, padx=5, pady=5, sticky='ew')
-        ToolTip(method_combo,
-                text="azar: selecciona preguntas aleatoriamente. primeras: selecciona las primeras preguntas encontradas para el tema. menos usadas: selecciona las preguntas menos usadas.")
+        ToolTip(
+            method_combo,
+            text="azar: selecciona preguntas aleatoriamente. primeras: selecciona las primeras preguntas encontradas para el tema. menos usadas: selecciona las preguntas menos usadas.",
+        )
         row += 1  # Increment the row for the next LabelFrame
 
         usage_alert_frame = ttk.LabelFrame(inner_frame_exam, text="Alerta de uso de preguntas")
@@ -2563,13 +2972,19 @@ class ExamApp:
         usage_alert_check = ttk.Checkbutton(
             usage_alert_frame,
             text="Avisar si alguna pregunta supera este numero de usos:",
-            variable=self.usage_alert_enabled_var
+            variable=self.usage_alert_enabled_var,
         )
         usage_alert_check.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(usage_alert_check, text="Si esta activado, se mostrara una alerta antes de generar cuando alguna pregunta seleccionada tenga mas usos que el umbral indicado.")
+        ToolTip(
+            usage_alert_check,
+            text="Si esta activado, se mostrara una alerta antes de generar cuando alguna pregunta seleccionada tenga mas usos que el umbral indicado.",
+        )
         usage_alert_entry = ttk.Entry(usage_alert_frame, width=5, textvariable=self.usage_alert_threshold_var)
         usage_alert_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
-        ToolTip(usage_alert_entry, text="Umbral de usos. Por defecto 3; se avisa solo cuando el valor de 'Veces usada en examen' es mayor que este numero.")
+        ToolTip(
+            usage_alert_entry,
+            text="Umbral de usos. Por defecto 3; se avisa solo cuando el valor de 'Veces usada en examen' es mayor que este numero.",
+        )
         row += 1
 
         # 5. Docx style (spans 3 columns)
@@ -2621,17 +3036,26 @@ class ExamApp:
         moodle_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
         export_moodle_check = ttk.Checkbutton(moodle_frame, text="Exportar a Moodle XML", variable=self.export_moodle)
         export_moodle_check.grid(row=0, column=0, columnspan=3, pady=5, sticky='w')
-        ToolTip(export_moodle_check, text="Marque para generar un archivo XML compatible con la importación de preguntas en Moodle.")
+        ToolTip(
+            export_moodle_check,
+            text="Marque para generar un archivo XML compatible con la importación de preguntas en Moodle.",
+        )
 
         penalty_label = ttk.Label(moodle_frame, text="Penalización (-%):")
         penalty_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(penalty_label, text="Ingrese el porcentaje de penalización por respuesta incorrecta para la importación en Moodle (ej. -25).")
+        ToolTip(
+            penalty_label,
+            text="Ingrese el porcentaje de penalización por respuesta incorrecta para la importación en Moodle (ej. -25).",
+        )
         penalty_entry = ttk.Entry(moodle_frame, width=5, textvariable=self.penalty)
         penalty_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(penalty_entry, text="Porcentaje de penalización para Moodle.")
         xml_cat_text_label = ttk.Label(moodle_frame, text="Texto Adicional Moodle XML:")
         xml_cat_text_label.grid(row=2, column=0, columnspan=1, padx=5, pady=5, sticky='w')
-        ToolTip(xml_cat_text_label, text="Opcional: Ingrese texto adicional para la categoría de las preguntas en el archivo XML de Moodle.")
+        ToolTip(
+            xml_cat_text_label,
+            text="Opcional: Ingrese texto adicional para la categoría de las preguntas en el archivo XML de Moodle.",
+        )
         xml_cat_text_entry = ttk.Entry(moodle_frame, width=50, textvariable=self.xml_cat_additional_text)
         xml_cat_text_entry.grid(row=2, column=1, columnspan=2, padx=5, pady=5, sticky='ew')
         ToolTip(xml_cat_text_entry, text="Texto adicional para la categoría Moodle XML (opcional).")
@@ -2639,50 +3063,76 @@ class ExamApp:
         xml_non_blank_check = ttk.Checkbutton(
             moodle_frame,
             text="XML no blanco (usar enunciado y respuestas completas)",
-            variable=self.xml_use_answer_text_var
+            variable=self.xml_use_answer_text_var,
         )
         xml_non_blank_check.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky='w')
-        ToolTip(xml_non_blank_check, text="Si se marca, el XML incluye enunciado y texto de respuestas en lugar de a/b/c/d.")
+        ToolTip(
+            xml_non_blank_check, text="Si se marca, el XML incluye enunciado y texto de respuestas en lugar de a/b/c/d."
+        )
 
-        suggest_moodle_button = ttk.Button(moodle_frame, text="Sugerir nombres Moodle", command=self.show_moodle_suggestions)
+        suggest_moodle_button = ttk.Button(
+            moodle_frame, text="Sugerir nombres Moodle", command=self.show_moodle_suggestions
+        )
         suggest_moodle_button.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='w')
-        ToolTip(suggest_moodle_button, text="Muestra nombres de cuestionario y columnas recomendados para que el xlsx exportado de Moodle sea identificable por el corrector.")
+        ToolTip(
+            suggest_moodle_button,
+            text="Muestra nombres de cuestionario y columnas recomendados para que el xlsx exportado de Moodle sea identificable por el corrector.",
+        )
         row += 1
 
         # 7. Generate Moodle XML from an existing generated exam XLSX (spans 3 columns)
         existing_xlsx_xml_frame = ttk.LabelFrame(inner_frame_exam, text="Generar Moodle XML desde XLSX de Examen")
         existing_xlsx_xml_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
-        ToolTip(existing_xlsx_xml_frame, text="Convierte un archivo de examen ya generado (normalmente '*_completo.xlsx') en un XML de Moodle sin volver a generar el examen.")
+        ToolTip(
+            existing_xlsx_xml_frame,
+            text="Convierte un archivo de examen ya generado (normalmente '*_completo.xlsx') en un XML de Moodle sin volver a generar el examen.",
+        )
 
         xml_source_label = ttk.Label(existing_xlsx_xml_frame, text="XLSX del Examen:")
         xml_source_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(xml_source_label, text="Seleccione el archivo XLSX del examen (preferiblemente el que termina en '_completo.xlsx').")
+        ToolTip(
+            xml_source_label,
+            text="Seleccione el archivo XLSX del examen (preferiblemente el que termina en '_completo.xlsx').",
+        )
 
-        xml_source_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xlsx_for_xml_var)
+        xml_source_entry = ttk.Entry(
+            existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xlsx_for_xml_var
+        )
         xml_source_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(xml_source_entry, text="Ruta del XLSX de examen desde el que se generará el XML.")
 
-        xml_source_button = ttk.Button(existing_xlsx_xml_frame, text="Seleccionar XLSX", command=self.select_existing_exam_xlsx_for_xml)
+        xml_source_button = ttk.Button(
+            existing_xlsx_xml_frame, text="Seleccionar XLSX", command=self.select_existing_exam_xlsx_for_xml
+        )
         xml_source_button.grid(row=0, column=2, padx=5, pady=5)
         ToolTip(xml_source_button, text="Abre un diálogo para seleccionar el XLSX del examen.")
 
         xml_output_label = ttk.Label(existing_xlsx_xml_frame, text="XML de Salida (opcional):")
         xml_output_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(xml_output_label, text="Ruta del XML de salida. Si se deja vacía, se usará el mismo nombre base del XLSX.")
+        ToolTip(
+            xml_output_label, text="Ruta del XML de salida. Si se deja vacía, se usará el mismo nombre base del XLSX."
+        )
 
         xml_output_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xml_output_var)
         xml_output_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(xml_output_entry, text="Ruta de salida para el XML de Moodle.")
 
-        xml_output_button = ttk.Button(existing_xlsx_xml_frame, text="Seleccionar XML", command=self.select_existing_exam_xml_output)
+        xml_output_button = ttk.Button(
+            existing_xlsx_xml_frame, text="Seleccionar XML", command=self.select_existing_exam_xml_output
+        )
         xml_output_button.grid(row=1, column=2, padx=5, pady=5)
         ToolTip(xml_output_button, text="Elegir dónde guardar el XML generado.")
 
         xml_penalty_label = ttk.Label(existing_xlsx_xml_frame, text="Penalización (-%):")
         xml_penalty_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(xml_penalty_label, text="Penalización por respuesta incorrecta. Admite decimales (ej. -33.333333 para 4 opciones).")
+        ToolTip(
+            xml_penalty_label,
+            text="Penalización por respuesta incorrecta. Admite decimales (ej. -33.333333 para 4 opciones).",
+        )
 
-        xml_penalty_entry = ttk.Entry(existing_xlsx_xml_frame, width=10, textvariable=self.existing_exam_xml_penalty_var)
+        xml_penalty_entry = ttk.Entry(
+            existing_xlsx_xml_frame, width=10, textvariable=self.existing_exam_xml_penalty_var
+        )
         xml_penalty_entry.grid(row=2, column=1, padx=5, pady=5, sticky='w')
         ToolTip(xml_penalty_entry, text="Porcentaje de penalización para respuestas incorrectas en Moodle.")
 
@@ -2690,22 +3140,27 @@ class ExamApp:
         xml_cat_extra_label.grid(row=3, column=0, padx=5, pady=5, sticky='w')
         ToolTip(xml_cat_extra_label, text="Texto opcional que se añadirá al nombre de categoría en Moodle.")
 
-        xml_cat_extra_entry = ttk.Entry(existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xml_cat_text_var)
+        xml_cat_extra_entry = ttk.Entry(
+            existing_xlsx_xml_frame, width=50, textvariable=self.existing_exam_xml_cat_text_var
+        )
         xml_cat_extra_entry.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(xml_cat_extra_entry, text="Texto adicional para la categoría Moodle (opcional).")
 
         xml_full_text_check = ttk.Checkbutton(
             existing_xlsx_xml_frame,
             text="XML no blanco (usar enunciado y respuestas completas)",
-            variable=self.existing_exam_xml_use_answer_text_var
+            variable=self.existing_exam_xml_use_answer_text_var,
         )
         xml_full_text_check.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='w')
-        ToolTip(xml_full_text_check, text="Si se marca, el XML incluirá enunciados y respuestas completas en lugar de a/b/c/d.")
+        ToolTip(
+            xml_full_text_check,
+            text="Si se marca, el XML incluirá enunciados y respuestas completas en lugar de a/b/c/d.",
+        )
 
         generate_xml_button = ttk.Button(
             existing_xlsx_xml_frame,
             text="Generar XML Moodle desde XLSX",
-            command=self.generate_moodle_xml_from_existing_xlsx_action
+            command=self.generate_moodle_xml_from_existing_xlsx_action,
         )
         generate_xml_button.grid(row=5, column=0, columnspan=3, pady=10)
         ToolTip(generate_xml_button, text="Genera el XML de Moodle a partir del XLSX seleccionado.")
@@ -2716,14 +3171,23 @@ class ExamApp:
         # 8. Update excel file with usage (spans 3 columns)
         update_excel_frame = ttk.Frame(inner_frame_exam)
         update_excel_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
-        update_excel_check = ttk.Checkbutton(update_excel_frame, text="Actualizar Archivo Excel con Uso", variable=self.update_excel)
+        update_excel_check = ttk.Checkbutton(
+            update_excel_frame, text="Actualizar Archivo Excel con Uso", variable=self.update_excel
+        )
         update_excel_check.pack(side='left', padx=5)
-        ToolTip(update_excel_check, text="Marque para actualizar el archivo Excel indicando qué preguntas se han utilizado en el examen.")
+        ToolTip(
+            update_excel_check,
+            text="Marque para actualizar el archivo Excel indicando qué preguntas se han utilizado en el examen.",
+        )
 
         exam_template_buttons = ttk.Frame(update_excel_frame)
         exam_template_buttons.pack(side='right', padx=5)
-        ttk.Button(exam_template_buttons, text="Guardar Plantilla", command=self.save_exam_tab_template).pack(side='left', padx=2)
-        ttk.Button(exam_template_buttons, text="Cargar Plantilla", command=self.load_exam_tab_template).pack(side='left', padx=2)
+        ttk.Button(exam_template_buttons, text="Guardar Plantilla", command=self.save_exam_tab_template).pack(
+            side='left', padx=2
+        )
+        ttk.Button(exam_template_buttons, text="Cargar Plantilla", command=self.load_exam_tab_template).pack(
+            side='left', padx=2
+        )
         ToolTip(exam_template_buttons, text="Guardar o cargar la configuración de la pestaña Generar Exámenes.")
         row += 1
 
@@ -2731,8 +3195,13 @@ class ExamApp:
         template_docx_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
         template_docx_entry = ttk.Entry(template_docx_frame, textvariable=self.template_docx_path_var)
         template_docx_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
-        ToolTip(template_docx_entry, "Ruta del archivo DOCX de plantilla. Placeholders soportados: {{subject}}, {{exam}}, {{course}}, {{exam_type}}")
-        template_docx_button = ttk.Button(template_docx_frame, text="Seleccionar Plantilla", command=self.select_template_docx_file)
+        ToolTip(
+            template_docx_entry,
+            "Ruta del archivo DOCX de plantilla. Placeholders soportados: {{subject}}, {{exam}}, {{course}}, {{exam_type}}",
+        )
+        template_docx_button = ttk.Button(
+            template_docx_frame, text="Seleccionar Plantilla", command=self.select_template_docx_file
+        )
         template_docx_button.pack(side='left', padx=5, pady=5)
         ToolTip(template_docx_button, "Seleccionar una plantilla DOCX base para el examen.")
         row += 1
@@ -2740,13 +3209,18 @@ class ExamApp:
         # Output path
         exam_output_dir_frame = ttk.LabelFrame(inner_frame_exam, text="Directorio de Salida para Exámenes")
         exam_output_dir_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=10, sticky='ew')
-        ToolTip(exam_output_dir_frame, "Carpeta donde se guardarán los exámenes generados. Si se deja en blanco, se usará la misma carpeta que el banco de preguntas.")
+        ToolTip(
+            exam_output_dir_frame,
+            "Carpeta donde se guardarán los exámenes generados. Si se deja en blanco, se usará la misma carpeta que el banco de preguntas.",
+        )
 
         exam_output_dir_entry = ttk.Entry(exam_output_dir_frame, textvariable=self.gen_exams_output_dir_var)
         exam_output_dir_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
         ToolTip(exam_output_dir_entry, "Ruta al directorio de salida para los exámenes.")
 
-        exam_output_dir_button = ttk.Button(exam_output_dir_frame, text="Seleccionar...", command=self.select_gen_exams_output_dir)
+        exam_output_dir_button = ttk.Button(
+            exam_output_dir_frame, text="Seleccionar...", command=self.select_gen_exams_output_dir
+        )
         exam_output_dir_button.pack(side='left', padx=5, pady=5)
         ToolTip(exam_output_dir_button, "Abrir diálogo para seleccionar el directorio de salida.")
         row += 1
@@ -2754,7 +3228,10 @@ class ExamApp:
         # Resumable grading session (optional)
         session_frame = ttk.LabelFrame(inner_frame_exam, text="Sesión de corrección (opcional)")
         session_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
-        ToolTip(session_frame, "Si indicas una ruta, se guardará una sesión (.pkl + .json) con las rutas de los exámenes generados para retomar la corrección sin volver a indicarlas.")
+        ToolTip(
+            session_frame,
+            "Si indicas una ruta, se guardará una sesión (.pkl + .json) con las rutas de los exámenes generados para retomar la corrección sin volver a indicarlas.",
+        )
         session_entry = ttk.Entry(session_frame, textvariable=self.gen_session_output_var)
         session_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
         ToolTip(session_entry, "Ruta base de la sesión (sin extensión, o con .json/.pkl).")
@@ -2766,7 +3243,10 @@ class ExamApp:
         # Generate Exams Button (spans the width)
         self.generate_exams_button = ttk.Button(inner_frame_exam, text="Generar Exámenes", command=self.generate_exams)
         self.generate_exams_button.grid(row=row, column=0, columnspan=3, pady=20)
-        ToolTip(self.generate_exams_button, "Genera los archivos de examen (docx y opcionalmente xml) con la configuración actual.")
+        ToolTip(
+            self.generate_exams_button,
+            "Genera los archivos de examen (docx y opcionalmente xml) con la configuración actual.",
+        )
 
         inner_frame_exam.columnconfigure(0, weight=1)
         inner_frame_exam.columnconfigure(1, weight=1)
@@ -2800,30 +3280,39 @@ class ExamApp:
         # CAMBIO: Se añade el campo para el directorio de salida en la fila 1.
         xlsx_output_dir_label = ttk.Label(docx_xlsx_group, text="Directorio de Salida (XLSX):")
         xlsx_output_dir_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(xlsx_output_dir_label, "Carpeta donde se guardará el nuevo archivo XLSX. Si se deja en blanco, se usará la misma carpeta que el DOCX de entrada.")
+        ToolTip(
+            xlsx_output_dir_label,
+            "Carpeta donde se guardará el nuevo archivo XLSX. Si se deja en blanco, se usará la misma carpeta que el DOCX de entrada.",
+        )
 
         xlsx_output_dir_entry = ttk.Entry(docx_xlsx_group, width=50, textvariable=self.revised_xlsx_output_dir_var)
         xlsx_output_dir_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(xlsx_output_dir_entry, "Ruta al directorio de salida para el archivo XLSX.")
 
-        xlsx_output_dir_button = ttk.Button(docx_xlsx_group, text="Seleccionar...", command=self.select_revised_xlsx_output_dir)
+        xlsx_output_dir_button = ttk.Button(
+            docx_xlsx_group, text="Seleccionar...", command=self.select_revised_xlsx_output_dir
+        )
         xlsx_output_dir_button.grid(row=1, column=2, padx=5, pady=5)
         ToolTip(xlsx_output_dir_button, "Abrir diálogo para seleccionar el directorio de salida.")
 
         # CAMBIO: Se ajusta la fila del nombre del archivo a la 2.
         xlsx_label = ttk.Label(docx_xlsx_group, text="Nombre del Nuevo Archivo XLSX:")
         xlsx_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(xlsx_label, text="Ingrese el nombre para el nuevo archivo XLSX donde se guardarán las preguntas revisadas. Si se deja vacío, se usará el nombre del DOCX.")
+        ToolTip(
+            xlsx_label,
+            text="Ingrese el nombre para el nuevo archivo XLSX donde se guardarán las preguntas revisadas. Si se deja vacío, se usará el nombre del DOCX.",
+        )
 
         new_xlsx_entry = ttk.Entry(docx_xlsx_group, width=50, textvariable=self.new_xlsx_filename_var)
         new_xlsx_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(new_xlsx_entry, text="Nombre del archivo XLSX de salida.")
-        xlsx_button = ttk.Button(docx_xlsx_group, text="Guardar XLSX Revisado", command=self.save_revised_questions_to_xlsx)
+        xlsx_button = ttk.Button(
+            docx_xlsx_group, text="Guardar XLSX Revisado", command=self.save_revised_questions_to_xlsx
+        )
         xlsx_button.grid(row=2, column=2, padx=5, pady=5)
         ToolTip(xlsx_button, text="Guarda las preguntas revisadas en un nuevo archivo XLSX.")
 
         docx_xlsx_group.columnconfigure(1, weight=1)
-
 
         # --- Section to add questions from another bank ---
         add_from_bank_frame = ttk.LabelFrame(inner_frame_manage, text="Añadir Preguntas Existentes")
@@ -2831,79 +3320,144 @@ class ExamApp:
 
         existing_bank_label = ttk.Label(add_from_bank_frame, text="Banco Existente:")
         existing_bank_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(existing_bank_label, text="Seleccione el archivo XLSX del banco de preguntas existente al que se añadirán las nuevas preguntas.")
+        ToolTip(
+            existing_bank_label,
+            text="Seleccione el archivo XLSX del banco de preguntas existente al que se añadirán las nuevas preguntas.",
+        )
 
         existing_bank_entry = ttk.Entry(add_from_bank_frame, width=40, textvariable=self.existing_bank_path)
         existing_bank_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(existing_bank_entry, text="Ruta del archivo XLSX del banco de preguntas existente.")
 
-        select_existing_button = ttk.Button(add_from_bank_frame, text="Seleccionar", command=self.select_existing_bank_file)
+        select_existing_button = ttk.Button(
+            add_from_bank_frame, text="Seleccionar", command=self.select_existing_bank_file
+        )
         select_existing_button.grid(row=0, column=2, padx=5, pady=5)
-        ToolTip(select_existing_button, text="Abre un diálogo para seleccionar el archivo XLSX del banco de preguntas existente.")
+        ToolTip(
+            select_existing_button,
+            text="Abre un diálogo para seleccionar el archivo XLSX del banco de preguntas existente.",
+        )
 
         reviewed_add_label = ttk.Label(add_from_bank_frame, text="Archivo a Añadir:")
         reviewed_add_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(reviewed_add_label, text="Seleccione el archivo XLSX que contiene las preguntas que desea añadir al banco existente.")
+        ToolTip(
+            reviewed_add_label,
+            text="Seleccione el archivo XLSX que contiene las preguntas que desea añadir al banco existente.",
+        )
 
         reviewed_add_entry = ttk.Entry(add_from_bank_frame, width=40, textvariable=self.reviewed_add_path)
         reviewed_add_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(reviewed_add_entry, text="Ruta del archivo XLSX con las preguntas a añadir.")
 
-        select_add_button = ttk.Button(add_from_bank_frame, text="Seleccionar", command=self.select_reviewed_file_to_add)
+        select_add_button = ttk.Button(
+            add_from_bank_frame, text="Seleccionar", command=self.select_reviewed_file_to_add
+        )
         select_add_button.grid(row=1, column=2, padx=5, pady=5)
         ToolTip(select_add_button, text="Abre un diálogo para seleccionar el archivo XLSX con las preguntas a añadir.")
 
         duplicate_criteria_frame = ttk.LabelFrame(add_from_bank_frame, text="Criterio de Duplicado")
         duplicate_criteria_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
-        ToolTip(duplicate_criteria_frame, text="Seleccione el criterio para determinar si una pregunta ya existe en el banco de preguntas.")
+        ToolTip(
+            duplicate_criteria_frame,
+            text="Seleccione el criterio para determinar si una pregunta ya existe en el banco de preguntas.",
+        )
 
-        check_pregunta_unica = ttk.Radiobutton(duplicate_criteria_frame, text="Pregunta Única (ignorar respuestas)", variable=self.duplicate_check_var, value="pregunta_unica")
+        check_pregunta_unica = ttk.Radiobutton(
+            duplicate_criteria_frame,
+            text="Pregunta Única (ignorar respuestas)",
+            variable=self.duplicate_check_var,
+            value="pregunta_unica",
+        )
         check_pregunta_unica.pack(side='left', padx=10)
-        ToolTip(check_pregunta_unica, text="Solo se compara el texto de la pregunta para detectar duplicados. Las respuestas no se tienen en cuenta. Solo se añade si la pregunta es diferente.")
+        ToolTip(
+            check_pregunta_unica,
+            text="Solo se compara el texto de la pregunta para detectar duplicados. Las respuestas no se tienen en cuenta. Solo se añade si la pregunta es diferente.",
+        )
 
-        check_pregunta_respuestas = ttk.Radiobutton(duplicate_criteria_frame, text="Pregunta y Respuestas Iguales", variable=self.duplicate_check_var, value="pregunta_respuestas")
+        check_pregunta_respuestas = ttk.Radiobutton(
+            duplicate_criteria_frame,
+            text="Pregunta y Respuestas Iguales",
+            variable=self.duplicate_check_var,
+            value="pregunta_respuestas",
+        )
         check_pregunta_respuestas.pack(side='left', padx=10)
-        ToolTip(check_pregunta_respuestas,
-                text="Se compara el texto de la pregunta y todas las opciones de respuesta para detectar duplicados. Solo se añade si la pregunta o alguna de sus respuestas son diferentes.")
+        ToolTip(
+            check_pregunta_respuestas,
+            text="Se compara el texto de la pregunta y todas las opciones de respuesta para detectar duplicados. Solo se añade si la pregunta o alguna de sus respuestas son diferentes.",
+        )
 
         filter_state_frame = ttk.LabelFrame(add_from_bank_frame, text="Filtro de Estado")
         filter_state_frame.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
-        ToolTip(filter_state_frame, text="Elija si desea añadir todas las preguntas del archivo o solo las que están marcadas como 'Aceptable'.")
+        ToolTip(
+            filter_state_frame,
+            text="Elija si desea añadir todas las preguntas del archivo o solo las que están marcadas como 'Aceptable'.",
+        )
 
-        add_all_radio = ttk.Radiobutton(filter_state_frame, text="Añadir todas las preguntas", variable=self.add_questions_filter_var, value="todas")
+        add_all_radio = ttk.Radiobutton(
+            filter_state_frame, text="Añadir todas las preguntas", variable=self.add_questions_filter_var, value="todas"
+        )
         add_all_radio.pack(side='left', padx=10)
-        ToolTip(add_all_radio, text="Se intentarán añadir todas las preguntas del archivo de origen, sin importar su estado.")
+        ToolTip(
+            add_all_radio,
+            text="Se intentarán añadir todas las preguntas del archivo de origen, sin importar su estado.",
+        )
 
-        add_acceptable_radio = ttk.Radiobutton(filter_state_frame, text="Añadir solo con estado 'Aceptable'", variable=self.add_questions_filter_var, value="aceptable")
+        add_acceptable_radio = ttk.Radiobutton(
+            filter_state_frame,
+            text="Añadir solo con estado 'Aceptable'",
+            variable=self.add_questions_filter_var,
+            value="aceptable",
+        )
         add_acceptable_radio.pack(side='left', padx=10)
-        ToolTip(add_acceptable_radio, text="Solo se añadirán las preguntas del archivo de origen que tengan 'Aceptable' en la columna 'Estado'.")
+        ToolTip(
+            add_acceptable_radio,
+            text="Solo se añadirán las preguntas del archivo de origen que tengan 'Aceptable' en la columna 'Estado'.",
+        )
 
-        add_button = ttk.Button(add_from_bank_frame, text="Añadir Preguntas sin Duplicados", command=self.add_reviewed_questions_to_bank)
+        add_button = ttk.Button(
+            add_from_bank_frame, text="Añadir Preguntas sin Duplicados", command=self.add_reviewed_questions_to_bank
+        )
         add_button.grid(row=4, column=0, columnspan=3, pady=10)
-        ToolTip(add_button, text="Inicia el proceso de añadir las preguntas del archivo seleccionado al banco existente, evitando duplicados según el criterio elegido.")
+        ToolTip(
+            add_button,
+            text="Inicia el proceso de añadir las preguntas del archivo seleccionado al banco existente, evitando duplicados según el criterio elegido.",
+        )
 
         add_from_bank_frame.columnconfigure(1, weight=1)
 
         # --- Section to update the bank usage statistics from one or more already generated exams ---
         update_with_exam_frame = ttk.LabelFrame(inner_frame_manage, text="Actualizar Banco con Exámenes Existentes")
         update_with_exam_frame.pack(padx=5, pady=10, fill='x')
-        ToolTip(update_with_exam_frame, text="Marca como usadas en el banco las preguntas que aparecen en uno o varios exámenes ya generados (cada uno con su etiqueta) y recalcula 'Veces usada en examen'.")
+        ToolTip(
+            update_with_exam_frame,
+            text="Marca como usadas en el banco las preguntas que aparecen en uno o varios exámenes ya generados (cada uno con su etiqueta) y recalcula 'Veces usada en examen'.",
+        )
 
         update_bank_label = ttk.Label(update_with_exam_frame, text="Banco a Actualizar:")
         update_bank_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        ToolTip(update_bank_label, text="Seleccione el archivo XLSX del banco de preguntas cuyas estadísticas de uso se actualizarán.")
+        ToolTip(
+            update_bank_label,
+            text="Seleccione el archivo XLSX del banco de preguntas cuyas estadísticas de uso se actualizarán.",
+        )
 
         update_bank_entry = ttk.Entry(update_with_exam_frame, width=40, textvariable=self.update_bank_path_var)
         update_bank_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(update_bank_entry, text="Ruta del archivo XLSX del banco de preguntas.")
 
-        select_update_bank_button = ttk.Button(update_with_exam_frame, text="Seleccionar", command=self.select_update_bank_file)
+        select_update_bank_button = ttk.Button(
+            update_with_exam_frame, text="Seleccionar", command=self.select_update_bank_file
+        )
         select_update_bank_button.grid(row=0, column=2, padx=5, pady=5)
-        ToolTip(select_update_bank_button, text="Abre un diálogo para seleccionar el archivo XLSX del banco de preguntas.")
+        ToolTip(
+            select_update_bank_button, text="Abre un diálogo para seleccionar el archivo XLSX del banco de preguntas."
+        )
 
         update_exams_label = ttk.Label(update_with_exam_frame, text="Exámenes a registrar:")
         update_exams_label.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
-        ToolTip(update_exams_label, text="Lista de exámenes ya generados (normalmente los archivos '..._completo.xlsx'). Cada uno se registra con su propia etiqueta en una columna '<etiqueta>_uso'.")
+        ToolTip(
+            update_exams_label,
+            text="Lista de exámenes ya generados (normalmente los archivos '..._completo.xlsx'). Cada uno se registra con su propia etiqueta en una columna '<etiqueta>_uso'.",
+        )
 
         # Tabla con los exámenes seleccionados, su etiqueta y la columna de uso resultante.
         exams_tree_frame = ttk.Frame(update_with_exam_frame)
@@ -2924,14 +3478,20 @@ class ExamApp:
         exams_tree_frame.columnconfigure(0, weight=1)
         # Doble clic sobre una fila para editar su etiqueta.
         self.update_exams_tree.bind('<Double-1>', self._on_update_exam_double_click)
-        ToolTip(self.update_exams_tree, text="Exámenes seleccionados, su etiqueta y la columna que se escribirá en el XLSX (sin tildes ni caracteres especiales). Haga doble clic en una fila para editar la etiqueta.")
+        ToolTip(
+            self.update_exams_tree,
+            text="Exámenes seleccionados, su etiqueta y la columna que se escribirá en el XLSX (sin tildes ni caracteres especiales). Haga doble clic en una fila para editar la etiqueta.",
+        )
 
         exams_buttons_frame = ttk.Frame(update_with_exam_frame)
         exams_buttons_frame.grid(row=1, column=2, padx=5, pady=5, sticky='n')
 
         add_exam_button = ttk.Button(exams_buttons_frame, text="Añadir...", command=self.select_update_exam_files)
         add_exam_button.pack(fill='x', pady=2)
-        ToolTip(add_exam_button, text="Abre un diálogo para añadir uno o varios archivos XLSX de examen. La etiqueta inicial se deriva del nombre del archivo según la configuración de 'Etiqueta automática'.")
+        ToolTip(
+            add_exam_button,
+            text="Abre un diálogo para añadir uno o varios archivos XLSX de examen. La etiqueta inicial se deriva del nombre del archivo según la configuración de 'Etiqueta automática'.",
+        )
 
         edit_label_button = ttk.Button(exams_buttons_frame, text="Editar etiqueta", command=self.edit_update_exam_label)
         edit_label_button.pack(fill='x', pady=2)
@@ -2946,9 +3506,14 @@ class ExamApp:
         ToolTip(clear_exams_button, text="Vacía la lista de exámenes.")
 
         # --- Sub-sección: etiqueta automática derivada del nombre del archivo ---
-        auto_label_frame = ttk.LabelFrame(update_with_exam_frame, text="Etiqueta automática (desde el nombre del archivo)")
+        auto_label_frame = ttk.LabelFrame(
+            update_with_exam_frame, text="Etiqueta automática (desde el nombre del archivo)"
+        )
         auto_label_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
-        ToolTip(auto_label_frame, text="Deriva la etiqueta partiendo el nombre del archivo por un delimitador y quedándote con las partes elegidas. Las tildes se eliminan al escribir la columna.")
+        ToolTip(
+            auto_label_frame,
+            text="Deriva la etiqueta partiendo el nombre del archivo por un delimitador y quedándote con las partes elegidas. Las tildes se eliminan al escribir la columna.",
+        )
 
         delimiter_label = ttk.Label(auto_label_frame, text="Delimitador:")
         delimiter_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
@@ -2960,34 +3525,50 @@ class ExamApp:
         parts_label.grid(row=0, column=2, padx=5, pady=5, sticky='w')
         parts_entry = ttk.Entry(auto_label_frame, width=20, textvariable=self.update_label_parts_var)
         parts_entry.grid(row=0, column=3, padx=5, pady=5, sticky='ew')
-        ToolTip(parts_entry, text=(
-            "Índices (1 = primera parte) separados por comas; admite rangos 'a:b' (inclusive) e índices "
-            "negativos contados desde el final (-1 = última). Ejemplo: '2:3, -4:-2'. "
-            "Vacío = se usa el nombre completo del archivo."
-        ))
+        ToolTip(
+            parts_entry,
+            text=(
+                "Índices (1 = primera parte) separados por comas; admite rangos 'a:b' (inclusive) e índices "
+                "negativos contados desde el final (-1 = última). Ejemplo: '2:3, -4:-2'. "
+                "Vacío = se usa el nombre completo del archivo."
+            ),
+        )
 
         apply_label_button = ttk.Button(auto_label_frame, text="Aplicar a la lista", command=self.apply_auto_labels)
         apply_label_button.grid(row=0, column=4, padx=5, pady=5, sticky='e')
-        ToolTip(apply_label_button, text="Recalcula la etiqueta de todos los exámenes de la lista con el delimitador y las partes indicados.")
+        ToolTip(
+            apply_label_button,
+            text="Recalcula la etiqueta de todos los exámenes de la lista con el delimitador y las partes indicados.",
+        )
 
         auto_label_frame.columnconfigure(3, weight=1)
 
-        update_bank_button = ttk.Button(update_with_exam_frame, text="Actualizar Banco con Exámenes", command=self.update_bank_with_exams_action)
+        update_bank_button = ttk.Button(
+            update_with_exam_frame, text="Actualizar Banco con Exámenes", command=self.update_bank_with_exams_action
+        )
         update_bank_button.grid(row=3, column=0, columnspan=3, pady=10)
-        ToolTip(update_bank_button, text="Empareja por enunciado las preguntas de cada examen con el banco, marca su uso en una columna por etiqueta y recalcula 'Veces usada en examen'.")
+        ToolTip(
+            update_bank_button,
+            text="Empareja por enunciado las preguntas de cada examen con el banco, marca su uso en una columna por etiqueta y recalcula 'Veces usada en examen'.",
+        )
 
         update_with_exam_frame.columnconfigure(1, weight=1)
 
         # --- Section to unify several banks into one definitive bank ---
         unify_frame = ttk.LabelFrame(inner_frame_manage, text="Unificar Bancos de Preguntas")
         unify_frame.pack(padx=5, pady=10, fill='x')
-        ToolTip(unify_frame, text="Combina varios bancos en uno solo, eliminando duplicados según el criterio elegido. El primer banco tiene prioridad cuando una pregunta aparece en varios.")
+        ToolTip(
+            unify_frame,
+            text="Combina varios bancos en uno solo, eliminando duplicados según el criterio elegido. El primer banco tiene prioridad cuando una pregunta aparece en varios.",
+        )
 
         unify_banks_label = ttk.Label(unify_frame, text="Bancos a Unificar:")
         unify_banks_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
         ToolTip(unify_banks_label, text="Seleccione dos o más archivos XLSX de bancos de preguntas a combinar.")
 
-        unify_banks_entry = ttk.Entry(unify_frame, width=40, textvariable=self.unify_banks_display_var, state='readonly')
+        unify_banks_entry = ttk.Entry(
+            unify_frame, width=40, textvariable=self.unify_banks_display_var, state='readonly'
+        )
         unify_banks_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
         ToolTip(unify_banks_entry, text="Archivos de bancos seleccionados (en orden de prioridad).")
 
@@ -2999,17 +3580,32 @@ class ExamApp:
         unify_criteria_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
         ToolTip(unify_criteria_frame, text="Seleccione cómo decidir si dos preguntas de bancos distintos son la misma.")
 
-        unify_statement_radio = ttk.Radiobutton(unify_criteria_frame, text="Solo enunciado", variable=self.unify_duplicate_check_var, value="pregunta_unica")
+        unify_statement_radio = ttk.Radiobutton(
+            unify_criteria_frame, text="Solo enunciado", variable=self.unify_duplicate_check_var, value="pregunta_unica"
+        )
         unify_statement_radio.pack(side='left', padx=10)
-        ToolTip(unify_statement_radio, text="Si el enunciado coincide se considera la misma pregunta (se conserva una). Las respuestas no se tienen en cuenta.")
+        ToolTip(
+            unify_statement_radio,
+            text="Si el enunciado coincide se considera la misma pregunta (se conserva una). Las respuestas no se tienen en cuenta.",
+        )
 
-        unify_full_radio = ttk.Radiobutton(unify_criteria_frame, text="Enunciado y respuestas", variable=self.unify_duplicate_check_var, value="pregunta_respuestas")
+        unify_full_radio = ttk.Radiobutton(
+            unify_criteria_frame,
+            text="Enunciado y respuestas",
+            variable=self.unify_duplicate_check_var,
+            value="pregunta_respuestas",
+        )
         unify_full_radio.pack(side='left', padx=10)
-        ToolTip(unify_full_radio, text="Solo es duplicado si coinciden el enunciado y el conjunto de respuestas (sin importar el orden). Mismo enunciado con respuestas distintas se conservan como preguntas diferentes.")
+        ToolTip(
+            unify_full_radio,
+            text="Solo es duplicado si coinciden el enunciado y el conjunto de respuestas (sin importar el orden). Mismo enunciado con respuestas distintas se conservan como preguntas diferentes.",
+        )
 
         unify_button = ttk.Button(unify_frame, text="Unificar Bancos", command=self.unify_question_banks_action)
         unify_button.grid(row=2, column=0, columnspan=3, pady=10)
-        ToolTip(unify_button, text="Combina los bancos seleccionados en uno solo sin duplicados y pregunta dónde guardarlo.")
+        ToolTip(
+            unify_button, text="Combina los bancos seleccionados en uno solo sin duplicados y pregunta dónde guardarlo."
+        )
 
         unify_frame.columnconfigure(1, weight=1)
 
@@ -3020,8 +3616,7 @@ class ExamApp:
     def select_unify_bank_files(self) -> None:
         """Opens a dialog to select several question bank XLSX files to unify."""
         filepaths = filedialog.askopenfilenames(
-            title="Seleccionar Bancos de Preguntas a Unificar",
-            filetypes=[("Archivos Excel", "*.xlsx")]
+            title="Seleccionar Bancos de Preguntas a Unificar", filetypes=[("Archivos Excel", "*.xlsx")]
         )
         if filepaths:
             self.unify_bank_paths = list(filepaths)
@@ -3055,7 +3650,7 @@ class ExamApp:
             defaultextension=".xlsx",
             initialdir=os.path.dirname(self.unify_bank_paths[0]),
             initialfile="banco_unificado.xlsx",
-            filetypes=[("Archivos Excel", "*.xlsx")]
+            filetypes=[("Archivos Excel", "*.xlsx")],
         )
         if not save_path:
             return
@@ -3069,7 +3664,7 @@ class ExamApp:
                 f"Banco unificado guardado en: {filepath}\n"
                 f"Preguntas únicas: {stats['unified']}\n"
                 f"Duplicados eliminados: {stats['duplicates_removed']} "
-                f"(de {stats['total_read']} leídas){extra}"
+                f"(de {stats['total_read']} leídas){extra}",
             )
         else:
             messagebox.showerror("Error al guardar", "Error al guardar el banco unificado.")
@@ -3080,8 +3675,7 @@ class ExamApp:
         The path of the selected file is saved in the `self.revised_docx_path_var` variable.
         """
         filepath = filedialog.askopenfilename(
-            title="Seleccionar Archivo DOCX Revisado",
-            filetypes=[("Archivos Word", "*.docx")]
+            title="Seleccionar Archivo DOCX Revisado", filetypes=[("Archivos Word", "*.docx")]
         )
         if filepath:
             self.revised_docx_path_var.set(filepath)
@@ -3108,28 +3702,27 @@ class ExamApp:
             new_xlsx_filename += ".xlsx"
 
         saved_path = question_bank_manager.generate_excel_from_docx(
-            docx_path=revised_docx_path,
-            excel_output_filename=new_xlsx_filename,
-            output_dir=output_dir_value
+            docx_path=revised_docx_path, excel_output_filename=new_xlsx_filename, output_dir=output_dir_value
         )
 
         if saved_path:
             messagebox.showinfo("Guardado", f"Las preguntas revisadas se han guardado en: {saved_path}")
         else:
-            messagebox.showerror("Error al Guardar", "Ocurrió un error al generar el archivo XLSX. Revise la consola para más detalles.")
+            messagebox.showerror(
+                "Error al Guardar", "Ocurrió un error al generar el archivo XLSX. Revise la consola para más detalles."
+            )
 
     def select_existing_exam_xlsx_for_xml(self) -> None:
         """Opens a dialog to select an already generated exam XLSX file for XML export."""
         filepath = filedialog.askopenfilename(
-            title="Seleccionar Examen XLSX",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            title="Seleccionar Examen XLSX", filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
         )
         if filepath:
             self.existing_exam_xlsx_for_xml_var.set(filepath)
             if not self.existing_exam_xml_output_var.get().strip():
                 xml_base = os.path.splitext(filepath)[0]
                 if xml_base.lower().endswith("_completo"):
-                    xml_base = xml_base[:-len("_completo")]
+                    xml_base = xml_base[: -len("_completo")]
                 self.existing_exam_xml_output_var.set(f"{xml_base}.xml")
 
     def select_existing_exam_xml_output(self) -> None:
@@ -3140,7 +3733,7 @@ class ExamApp:
         if source_xlsx:
             xml_base = os.path.splitext(os.path.basename(source_xlsx))[0]
             if xml_base.lower().endswith("_completo"):
-                xml_base = xml_base[:-len("_completo")]
+                xml_base = xml_base[: -len("_completo")]
             initial_file = f"{xml_base}.xml"
 
         filepath = filedialog.asksaveasfilename(
@@ -3148,7 +3741,7 @@ class ExamApp:
             defaultextension=".xml",
             initialdir=initial_dir,
             initialfile=initial_file,
-            filetypes=[("Archivos XML", "*.xml")]
+            filetypes=[("Archivos XML", "*.xml")],
         )
         if filepath:
             self.existing_exam_xml_output_var.set(filepath)
@@ -3222,7 +3815,9 @@ class ExamApp:
                     topics = [t for t in df['Tema'].dropna().unique() if str(t).strip()]
                     unique_themes = sorted(topics, key=str)
         if problem:
-            ttk.Label(self.by_theme_frame, text=problem, wraplength=500).grid(row=0, column=0, padx=5, pady=2, sticky='w')
+            ttk.Label(self.by_theme_frame, text=problem, wraplength=500).grid(
+                row=0, column=0, padx=5, pady=2, sticky='w'
+            )
             self.update_status(problem)
             return
 
@@ -3276,7 +3871,7 @@ class ExamApp:
         filepath = filedialog.askopenfilename(
             initialdir=".",
             title="Seleccionar archivo Excel",
-            filetypes=(("Archivos Excel", "*.xlsx *.xls"), ("Todos los archivos", "*.*"))
+            filetypes=(("Archivos Excel", "*.xlsx *.xls"), ("Todos los archivos", "*.*")),
         )
         if filepath:
             self.excel_filepath.set(filepath)
@@ -3347,7 +3942,10 @@ class ExamApp:
             if usage_alert_threshold < 0:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Error", "Por favor, introduce valores numericos validos para los margenes, tamano de fuente, numero de examenes, penalizacion (admite decimales) y umbral de alerta.")
+            messagebox.showerror(
+                "Error",
+                "Por favor, introduce valores numericos validos para los margenes, tamano de fuente, numero de examenes, penalizacion (admite decimales) y umbral de alerta.",
+            )
             return
 
         exam_name_list = gui_logic.parse_exam_names(exam_names_str)
@@ -3361,7 +3959,9 @@ class ExamApp:
             try:
                 total_questions = int(total_questions_str)
             except ValueError:
-                messagebox.showerror("Error", "Por favor, introduce un número entero válido para el 'Número total de preguntas'.")
+                messagebox.showerror(
+                    "Error", "Por favor, introduce un número entero válido para el 'Número total de preguntas'."
+                )
                 return
             if total_questions <= 0:
                 messagebox.showerror("Error", "El 'Número total de preguntas' debe ser mayor que 0.")
@@ -3370,7 +3970,10 @@ class ExamApp:
             try:
                 questions_per_topic = gui_logic.parse_questions_per_topic(self.questions_per_topic.get())
             except ValueError:
-                messagebox.showerror("Error", "Formato incorrecto para 'Diccionario de preguntas por tema'. Debe ser 'Tema 01:2, Tema 02:3', etc.")
+                messagebox.showerror(
+                    "Error",
+                    "Formato incorrecto para 'Diccionario de preguntas por tema'. Debe ser 'Tema 01:2, Tema 02:3', etc.",
+                )
                 return
         elif selection_method_var == "mismo_numero":
             num_preguntas_str = self.num_preguntas_por_tema_entry.get()
@@ -3378,7 +3981,10 @@ class ExamApp:
                 try:
                     num_preguntas = int(num_preguntas_str)
                 except ValueError:
-                    messagebox.showerror("Error", "Por favor, introduce un número entero válido para 'Mismo número de preguntas por tema'.")
+                    messagebox.showerror(
+                        "Error",
+                        "Por favor, introduce un número entero válido para 'Mismo número de preguntas por tema'.",
+                    )
                     return
                 df_temp = self._read_bank_with_topics(excel_path)
                 if df_temp is None:
@@ -3402,7 +4008,10 @@ class ExamApp:
                             if quantity > 0:  # Only include themes with quantity greater than 0.
                                 questions_per_topic[theme] = quantity
                         except ValueError:
-                            messagebox.showerror("Error", f"Por favor, introduce un número entero válido para la cantidad de preguntas del tema '{theme}'.")
+                            messagebox.showerror(
+                                "Error",
+                                f"Por favor, introduce un número entero válido para la cantidad de preguntas del tema '{theme}'.",
+                            )
                             return
             else:
                 messagebox.showerror("Error", "La columna 'Tema' no se encontró en el archivo Excel.")
@@ -3416,10 +4025,11 @@ class ExamApp:
 
         def confirm_usage_warning(_warning_df: pd.DataFrame, _threshold: int, message: str) -> bool:
             # Called from the worker thread: the dialog is shown in the main thread.
-            return self._call_in_main_thread(lambda: messagebox.askyesno(
-                "Alerta de uso de preguntas",
-                f"{message}\n\nDeseas continuar con la generacion?"
-            ))
+            return self._call_in_main_thread(
+                lambda: messagebox.askyesno(
+                    "Alerta de uso de preguntas", f"{message}\n\nDeseas continuar con la generacion?"
+                )
+            )
 
         def work():
             generator.generate_exam_from_excel(
@@ -3449,9 +4059,11 @@ class ExamApp:
                 session_output_path=session_output_path,
                 usage_warning_enabled=usage_alert_enabled,
                 usage_warning_threshold=usage_alert_threshold,
-                usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None
+                usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None,
             )
-            return bool(getattr(generator, "generation_cancelled", False)), getattr(generator, "bank_update_error", None)
+            return bool(getattr(generator, "generation_cancelled", False)), getattr(
+                generator, "bank_update_error", None
+            )
 
         def on_success(outcome):
             cancelled, bank_update_error = outcome
@@ -3490,8 +4102,9 @@ class ExamApp:
                 self.update_status(f"Error al generar exámenes: {e}")
                 messagebox.showerror("Error", f"Ocurrió un error inesperado al generar los exámenes: {e}")
 
-        self._run_in_background("Generando exámenes...", work, on_success, on_error,
-                                widgets=[self.generate_exams_button])
+        self._run_in_background(
+            "Generando exámenes...", work, on_success, on_error, widgets=[self.generate_exams_button]
+        )
 
     def show_moodle_suggestions(self) -> None:
         """Shows recommended Moodle quiz names / columns so the exported xlsx is identifiable."""
@@ -3522,8 +4135,7 @@ class ExamApp:
         The path of the selected file is saved in the `self.existing_bank_path` variable.
         """
         filepath = filedialog.askopenfilename(
-            title="Seleccionar Archivo Excel Existente",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            title="Seleccionar Archivo Excel Existente", filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
         )
         if filepath:
             self.existing_bank_path.set(filepath)
@@ -3535,8 +4147,7 @@ class ExamApp:
         The path of the selected file is saved in the `self.reviewed_add_path` variable.
         """
         filepath = filedialog.askopenfilename(
-            title="Seleccionar Archivo Excel Revisado",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            title="Seleccionar Archivo Excel Revisado", filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
         )
         if filepath:
             self.reviewed_add_path.set(filepath)
@@ -3559,14 +4170,14 @@ class ExamApp:
             return
 
         # Determine the boolean value from user selection.
-        only_acceptable = (self.add_questions_filter_var.get() == "aceptable")
+        only_acceptable = self.add_questions_filter_var.get() == "aceptable"
 
         # Pass the new boolean argument to the backend method.
         added_count, df_updated = self.question_bank_manager.add_questions_without_duplicates(
             existing_bank_path,
             reviewed_add_path,
             duplicate_check_columns=duplicate_check_columns,
-            add_only_acceptable=only_acceptable
+            add_only_acceptable=only_acceptable,
         )
 
         if added_count == -1:
@@ -3574,13 +4185,19 @@ class ExamApp:
             return
 
         if added_count > 0:
-            response = messagebox.askyesnocancel("Guardar Cambios",
-                                                 f"Se añadieron {added_count} preguntas nuevas. ¿Desea guardar los cambios en el archivo existente?",
-                                                 default='yes')
+            response = messagebox.askyesnocancel(
+                "Guardar Cambios",
+                f"Se añadieron {added_count} preguntas nuevas. ¿Desea guardar los cambios en el archivo existente?",
+                default='yes',
+            )
             if response is True:
-                filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, existing_bank_path, overwrite=True)
+                filepath = self.question_bank_manager.save_dataframe_to_excel(
+                    df_updated, existing_bank_path, overwrite=True
+                )
                 if filepath:
-                    messagebox.showinfo("Éxito", f"Se añadieron {added_count} preguntas al archivo existente: {filepath}")
+                    messagebox.showinfo(
+                        "Éxito", f"Se añadieron {added_count} preguntas al archivo existente: {filepath}"
+                    )
                 else:
                     messagebox.showerror("Error al guardar", "Error al guardar el archivo existente.")
             elif response is False:
@@ -3588,10 +4205,12 @@ class ExamApp:
                     title="Guardar Banco de Preguntas Actualizado Como...",
                     defaultextension=".xlsx",
                     initialdir=os.path.dirname(existing_bank_path),
-                    initialfile=f"{os.path.splitext(os.path.basename(existing_bank_path))[0]}_actualizado.xlsx"
+                    initialfile=f"{os.path.splitext(os.path.basename(existing_bank_path))[0]}_actualizado.xlsx",
                 )
                 if new_filepath:
-                    filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, new_filepath, overwrite=True)
+                    filepath = self.question_bank_manager.save_dataframe_to_excel(
+                        df_updated, new_filepath, overwrite=True
+                    )
                     if filepath:
                         messagebox.showinfo("Éxito", f"Se guardaron {added_count} preguntas en: {filepath}")
                     else:
@@ -3602,8 +4221,7 @@ class ExamApp:
     def select_update_bank_file(self) -> None:
         """Opens a dialog to select the question bank XLSX whose usage will be updated."""
         filepath = filedialog.askopenfilename(
-            title="Seleccionar Banco de Preguntas a Actualizar",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            title="Seleccionar Banco de Preguntas a Actualizar", filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
         )
         if filepath:
             self.update_bank_path_var.set(filepath)
@@ -3632,8 +4250,7 @@ class ExamApp:
         for index, spec in enumerate(self.update_exam_specs):
             column_name = self.question_bank_manager.usage_column_name(spec["label"], spec["path"])
             self.update_exams_tree.insert(
-                "", "end", iid=str(index),
-                values=(os.path.basename(spec["path"]), spec["label"], column_name)
+                "", "end", iid=str(index), values=(os.path.basename(spec["path"]), spec["label"], column_name)
             )
 
     def apply_auto_labels(self) -> None:
@@ -3652,8 +4269,7 @@ class ExamApp:
         Files already present in the list are not added twice.
         """
         filepaths = filedialog.askopenfilenames(
-            title="Seleccionar Exámenes Generados (XLSX)",
-            filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
+            title="Seleccionar Exámenes Generados (XLSX)", filetypes=[("Archivos Excel", "*.xlsx;*.xls")]
         )
         if not filepaths:
             return
@@ -3687,7 +4303,7 @@ class ExamApp:
             f"Etiqueta para '{os.path.basename(spec['path'])}'\n"
             f"(se usará como nombre de la columna de uso '<etiqueta>_uso'):",
             initialvalue=spec["label"],
-            parent=self.root
+            parent=self.root,
         )
         if new_label is None:
             return
@@ -3730,9 +4346,7 @@ class ExamApp:
             return
 
         exams = [{"path": spec["path"], "label": spec["label"]} for spec in self.update_exam_specs]
-        total_matched, df_updated, stats = self.question_bank_manager.update_bank_with_exams(
-            bank_path, exams
-        )
+        total_matched, df_updated, stats = self.question_bank_manager.update_bank_with_exams(bank_path, exams)
 
         if total_matched == -1:
             messagebox.showerror("Error", "Error al procesar los archivos. Revise la consola para más detalles.")
@@ -3751,8 +4365,7 @@ class ExamApp:
         if total_matched == 0:
             messagebox.showinfo(
                 "Información",
-                f"No se emparejó ninguna pregunta de los exámenes con el banco. "
-                f"No se realizaron cambios.\n\n{summary}"
+                f"No se emparejó ninguna pregunta de los exámenes con el banco. No se realizaron cambios.\n\n{summary}",
             )
             return
 
@@ -3760,7 +4373,7 @@ class ExamApp:
             "Guardar Cambios",
             f"Se registraron {total_matched} usos de preguntas en el banco:\n\n{summary}\n\n"
             f"¿Desea guardar los cambios en el banco existente?",
-            default='yes'
+            default='yes',
         )
         if response is True:
             filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, bank_path, overwrite=True)
@@ -3773,7 +4386,7 @@ class ExamApp:
                 title="Guardar Banco Actualizado Como...",
                 defaultextension=".xlsx",
                 initialdir=os.path.dirname(bank_path),
-                initialfile=f"{os.path.splitext(os.path.basename(bank_path))[0]}_actualizado.xlsx"
+                initialfile=f"{os.path.splitext(os.path.basename(bank_path))[0]}_actualizado.xlsx",
             )
             if new_filepath:
                 filepath = self.question_bank_manager.save_dataframe_to_excel(df_updated, new_filepath, overwrite=True)
@@ -3829,8 +4442,7 @@ class ExamApp:
     def select_template_docx_file(self) -> None:
         """Opens a dialog to select a DOCX template for exam generation."""
         filepath = filedialog.askopenfilename(
-            title="Seleccionar Plantilla DOCX",
-            filetypes=[("Archivos Word", "*.docx")]
+            title="Seleccionar Plantilla DOCX", filetypes=[("Archivos Word", "*.docx")]
         )
         if filepath:
             self.template_docx_path_var.set(filepath)
@@ -3892,6 +4504,7 @@ class ExamApp:
                 var.set(config[key])
 
         self.update_status(f"Plantilla cargada desde: {loaded_path}")
+
 
 def main():
     root = tk.Tk()

@@ -168,12 +168,7 @@ def test_student_docx_has_identification_blanks_in_repeated_header(tmp_path):
     document = _generate_student_docx(tmp_path, exam="HeaderFields", num_questions=12)
     header = document.sections[0].header
     assert header.tables, "La cabecera del alumno debe incluir una tabla de identificacion."
-    header_cells_text = "\n".join(
-        cell.text
-        for table in header.tables
-        for row in table.rows
-        for cell in row.cells
-    )
+    header_cells_text = "\n".join(cell.text for table in header.tables for row in table.rows for cell in row.cells)
     for label in ["Nombre", "Apellidos", "DNI/NIE", "Firma"]:
         assert label in header_cells_text
     assert len(document.sections) >= 2
