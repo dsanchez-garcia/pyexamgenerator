@@ -1,8 +1,9 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 import json
 from pathlib import Path
 import re
+import shutil
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
@@ -419,6 +420,11 @@ class ExamCorrectionAPI:
         self.results["image_answers"] = answers_df
         self.results["image_grades"] = grades_df
         self.results["image_audit"] = audit_df
+        self.session.record_workflow(
+            "grade_from_images", config=cfg,
+            outputs={"output_answers": out_answers, "output_grades": out_grades, "output_incidents": out_incidents},
+            summary={"rows": int(len(grades_df)), "skipped_sheets": len(getattr(grader, "skipped_sheets", []))},
+        )
         # Always expose the incidents (including sheets that could not be graded), even when no
         # incidents file was requested.
         incidents_df = getattr(grader, "last_incidents_df", None)
@@ -526,15 +532,16 @@ class ExamCorrectionAPI:
         export_steps_dir: Optional[str] = None,
     ) -> pd.DataFrame:
         export_state = self._start_step_export(export_steps_dir, "run_moodle_plus_ocr_pipeline")
+        # Work on copies: the caller's config objects must not change as a side effect.
         if self.default_output_dir:
             if not moodle_cfg.output_dir:
-                moodle_cfg.output_dir = self.default_output_dir
+                moodle_cfg = replace(moodle_cfg, output_dir=self.default_output_dir)
             if not ocr_cfg.output_dir:
-                ocr_cfg.output_dir = self.default_output_dir
+                ocr_cfg = replace(ocr_cfg, output_dir=self.default_output_dir)
         moodle_df = self.integrate_moodle_grades(moodle_cfg)
         self._export_step_dataframe(export_state, "moodle_integrated", moodle_df)
         moodle_output_path = self._resolve_output_path(moodle_cfg.output_path, moodle_cfg.output_dir)
-        ocr_cfg.general_xlsx_path = moodle_output_path
+        ocr_cfg = replace(ocr_cfg, general_xlsx_path=moodle_output_path)
         final_df = self.integrate_ocr_grades(ocr_cfg)
         self._export_step_dataframe(export_state, "ocr_overlay_applied", final_df)
         self._finalize_step_export(
@@ -563,6 +570,10 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "enrollment_merged", merged_df)
         self._finalize_step_export(export_state, {"output_path": output_path})
         self.results["merged_enrollment"] = merged_df
+        self.session.record_workflow(
+            "merge_enrollment_sources", config=cfg, outputs={"output_path": output_path},
+            summary={"rows": int(len(merged_df))},
+        )
         return merged_df
 
     def process_absence_justifications(
@@ -698,6 +709,10 @@ class ExamCorrectionAPI:
         )
         self.results["topic_attendance_report"] = attendance_report_df
         self.results["topic_quiz_report"] = quiz_report_df
+        self.session.record_workflow(
+            "export_theory_topic_reports", config=cfg, outputs={"output_dir": output_dir},
+            summary={"rows": int(len(attendance_report_df))},
+        )
         return attendance_report_df, quiz_report_df
 
     def compute_final_grade(self, cfg: FinalGradeConfig, export_steps_dir: Optional[str] = None) -> pd.DataFrame:
@@ -756,6 +771,14 @@ class ExamCorrectionAPI:
 
         if cfg.overwrite and result.merged_df is not None:
             merged_path = cfg.existing_path if cfg.merged_in_place else self._resolve_output_path(cfg.merged_output_path, cfg.output_dir)
+            if cfg.merged_in_place and Path(merged_path).exists():
+                # Overwriting the previous results in place: keep a timestamped copy first.
+                source = Path(merged_path)
+                backup_path = source.with_name(
+                    f"{source.stem}_copia_{datetime.now().strftime('%Y%m%d-%H%M%S')}{source.suffix}"
+                )
+                shutil.copy2(str(source), str(backup_path))
+                outputs["backup_of_existing"] = str(backup_path)
             comparator.export_merged(result, merged_path)
             outputs["merged_output"] = merged_path
 
@@ -823,6 +846,14 @@ class ExamCorrectionAPI:
                 else None,
                 "warnings": warnings,
             },
+        )
+        self.session.record_workflow(
+            "calculate_pir_bonus", config=cfg,
+            outputs={
+                "summary_output": self._resolve_output_path(cfg.summary_output_path, cfg.output_dir),
+                "incidents_output": self._resolve_output_path(cfg.incidents_output_path, cfg.output_dir),
+            },
+            summary={"rows": int(len(summary_df)), "incidents": int(len(incidents_df)), "warnings": len(warnings)},
         )
 
         return summary_df, incidents_df, warnings, theory_df

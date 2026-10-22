@@ -208,10 +208,14 @@ class ResultComparator:
             for col in value_columns:
                 if col not in merged_df.columns:
                     merged_df[col] = pd.NA
+                # A column read as int64 rejects values like 6.5 (an error in newer pandas): use
+                # object dtype so the new values keep their own type.
+                merged_df[col] = merged_df[col].astype(object)
             for key in common:
                 new_row = new.loc[new_index[key]]
                 for col in value_columns:
-                    if col in new.columns:
+                    # An empty cell in the new file means "no value", not "delete the previous one".
+                    if col in new.columns and _clean(new_row.get(col)) != "":
                         merged_df.at[existing_index[key], col] = new_row.get(col)
             if add_new_rows and only_new:
                 extra = new.loc[[new_index[k] for k in sorted(only_new)]]
