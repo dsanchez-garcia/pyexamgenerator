@@ -11,12 +11,13 @@ Requisitos: Python 3.10+ (desarrollo habitual en 3.14 sobre Windows) y git.
 ```bash
 python -m venv venv
 venv/Scripts/python.exe -m pip install --upgrade pip
-venv/Scripts/python.exe -m pip install -e ".[grading]"
-venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+venv/Scripts/python.exe -m pip install -e ".[dev,docs,grading]"
 ```
 
 - `-e` instala en modo editable: los cambios en `pyexamgenerator/` se usan sin reinstalar.
-- El extra `[grading]` instala el OCR. Sin él, el paquete funciona y los tests de OCR se saltan.
+- Extras (definidos en `pyproject.toml`): `[dev]` tests y empaquetado (pytest, tox, build, twine),
+  `[docs]` Sphinx y `[grading]` el OCR. Sin `[grading]`, el paquete funciona y los tests de OCR se
+  saltan.
 - En Linux/macOS usa `venv/bin/python`. La GUI necesita Tk (`python3-tk` en Debian/Ubuntu).
 
 ## Tests
