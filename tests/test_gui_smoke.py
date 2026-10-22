@@ -302,9 +302,13 @@ def grading_backend(app, tmp_path, monkeypatch):
         return method
 
     summary = {"changed_cells": 0, "changed_students": 0, "added": 0, "removed": 0}
-    for name in ("grade_from_images", "grade_from_excel", "process_absence_justifications",
+    for name in ("grade_from_images", "grade_from_excel",
                  "integrate_ocr_grades", "apply_theory_bonus", "compute_final_grade", "run_full_pipeline"):
         monkeypatch.setattr(ExamCorrectionAPI, name, fake(name))
+    import pandas as pd
+
+    monkeypatch.setattr(ExamCorrectionAPI, "process_absence_justifications",
+                        fake("process_absence_justifications", (pd.DataFrame(), pd.DataFrame())))
     monkeypatch.setattr(ExamCorrectionAPI, "compare_results",
                         fake("compare_results", SimpleNamespace(summary=summary)))
     monkeypatch.setattr(EnrollmentMerger, "export", lambda self, path: calls.setdefault("merged", path))

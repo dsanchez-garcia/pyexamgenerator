@@ -109,10 +109,16 @@ búscalas por nombre de función si no coinciden.
   Deduplicar solo filas con ID no vacío. — hecho en `cdceb49`.
 - [x] **GRD-5 (P1)** Marcas de tiempo falsas en la corrección desde Excel — `grading/graders.py:82-84`
   escribe `"20 de abril de 2026 17:05"` y una duración fija en todas las filas. — hecho en `929e4f6`.
-- [ ] **GRD-6 (P1)** Modo `extremo` + emparejamiento difuso pueden justificar faltas al alumno
+- [x] **GRD-6 (P1)** Modo `extremo` + emparejamiento difuso pueden justificar faltas al alumno
   equivocado — `grading/attendance.py:1037-1051`, `:410` (`cutoff=0.55`); `graders.py:56`
   (`cutoff=0.6`) asigna la nota al nombre más parecido en silencio. Subir umbrales, respetar
   `message_class` y reportar coincidencias < 0.9 como incidencias.
+  *Decidido por el mantenedor (2026-10-22): ningún umbral separa una errata de otra persona
+  («Mario»/«María» puntúan 0,94), así que solo se asignan coincidencias seguras (correo, mismo nombre
+  en cualquier orden, o el único alumno que contiene todas las palabras) y el resto se informa con
+  el candidato más parecido; el modo extremo no cuenta los correos clasificados como
+  `no_justifica`; `ExamGrader` usa las mismas reglas con un fichero de incidencias.* — hecho en la
+  rama `fix/grd-6-emparejamiento-seguro` (`grading/_names.py`).
 - [x] **GRD-7 (P1)** Índice vs posición en el emparejamiento OCR — `grading/extraction.py:282-293`
   (`best_idx` de `iterrows()` usado con `.iloc`); `:295` fija `"Número de ID"` en vez de
   `self.id_col`. — hecho en `9ae14f6`.

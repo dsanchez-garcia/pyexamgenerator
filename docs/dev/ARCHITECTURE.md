@@ -155,6 +155,12 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
   columna entre varios nombres posibles, también con *mojibake*), `clean_text` y `parse_decimal`
   (nota con coma o punto decimal; `None` si no es un número). Las clases conservan sus nombres
   privados (`_normalize`, `_find_column`…) como alias.
+- **Nombre escrito → alumno** (correos de justificación, xlsx de respuestas): `grading/_names.py:
+  match_name` asigna solo coincidencias seguras: el mismo nombre en cualquier orden (sin tildes ni
+  mayúsculas) o el único alumno que contiene todas sus palabras. Si no, no asigna y devuelve el
+  alumno más parecido como candidato para el informe (`GRD-6`): un umbral de parecido no distingue
+  una errata de otra persona («Mario» y «María» puntúan 0,94). El OCR de hojas manuscritas sigue
+  usando parecido (`extraction.py`), con la incidencia `MISSING_ID` si no encuentra al alumno.
 - **`export_steps_dir`:** las entradas solo se vuelven a leer para exportarlas cuando se pide
   (`_export_step_input`).
 
@@ -245,7 +251,8 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `test_exam_generator_outputs.py` | nombres de fichero seguros, categoría de Moodle, plantillas DOCX (runs partidos, cabeceras) |
 | `test_question_generator_flow.py` | flujo completo de generación con un cliente de Gemini simulado; troceo de PDF por páginas y generadores reutilizables |
 | `test_question_generator_errors.py` | errores de Gemini: reintentos con espera (429/5xx), clave no válida, modelo retirado |
-| `test_grading_attendance_flow.py` | justificaciones, punto extra en modo extremo y normal, `export_steps_dir` y `manifest.json` |
+| `test_grading_attendance_flow.py` | justificaciones, punto extra en modo extremo y normal, `export_steps_dir` y `manifest.json`; correos de nombre parecido, desde otra dirección o que no justifican nada |
+| `test_grading_names.py` | emparejamiento seguro de un nombre con la matrícula (`match_name`) |
 | `test_grading_ocr_sheet.py` | hojas de respuestas PNG sintéticas con RapidOCR simulado, de la imagen a la nota (requiere `[grading]`) |
 | `test_grading_text_helpers.py` | reglas comunes de `grading/_text.py`; filas sin ID ni nombre en la nota final y la comparación |
 | `test_gui_logic.py` | `gui_logic.py` sin pantalla: listas de rutas, penalización, pesos, tipos forzados, nombres de examen, preguntas por tema |

@@ -6,7 +6,7 @@ It lives apart from ``main_app.py`` so it can be tested without a display. Nothi
 
 import math
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 
 def split_paths(text: Optional[str]) -> List[str]:
@@ -157,3 +157,40 @@ def integration_warnings(summary: Any, incidents_path: str) -> List[str]:
             f"Revisa: {incidents_path}"
         )
     return warning_msgs
+
+
+def justification_warnings(summary_rows: Iterable[Mapping[str, Any]], review_hint: str) -> List[str]:
+    """Warnings for the justification emails that justify nothing (GRD-6).
+
+    ``summary_rows`` are the rows of ``justificaciones_resumen.xlsx``: emails not assigned to any
+    student (``Revisar``) and emails of a student that do not look like a justification
+    (``Cuenta_Para_Justificar``). ``review_hint`` tells where to look.
+    """
+    rows = list(summary_rows)
+    unassigned = sum(1 for row in rows if row.get("Revisar") == "si")
+    not_counted = sum(1 for row in rows if row.get("Revisar") == "no" and row.get("Cuenta_Para_Justificar") == "no")
+    warnings: List[str] = []
+    if unassigned:
+        warnings.append(
+            f"{unassigned} correo(s) de justificación no se han asignado a ningún alumno: el remitente no "
+            "coincide con la matrícula (ni por correo ni por nombre) o encaja con varios alumnos. No "
+            "justifican faltas hasta que corrijas el remitente en el Excel de justificaciones.\n"
+            f"{review_hint}"
+        )
+    if not_counted:
+        warnings.append(
+            f"{not_counted} correo(s) de alumnos no justifican faltas porque no parecen una justificación "
+            f"(consultas, agradecimientos…).\n{review_hint}"
+        )
+    return warnings
+
+
+def answer_grading_warnings(incidents: int, incidents_path: str) -> List[str]:
+    """Warning for the rows of an answers file not graded or repeated (GRD-6)."""
+    if not incidents:
+        return []
+    return [
+        f"{incidents} fila(s) del fichero de respuestas tienen incidencias: un nombre que no coincide con "
+        "la matrícula o que encaja con varios alumnos (esas filas no se han corregido), o dos filas del "
+        f"mismo alumno.\nRevisa: {incidents_path}"
+    ]

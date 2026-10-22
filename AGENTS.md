@@ -73,6 +73,7 @@ pyexamgenerator/
     _ids.py                normalize_id: comparar IDs de alumno (úsalo siempre)
     _paths.py              prepare_output_path: rutas de salida (las absolutas se respetan)
     _text.py               normalize_key, find_column, clean_text, parse_decimal: reglas comunes (úsalas)
+    _names.py              match_name: nombre escrito → alumno, solo coincidencias seguras (úsalo)
     extraction.py          OCR (único módulo que importa cv2/numpy/rapidocr)
     graders.py, integrations.py, attendance.py, final_grade.py, comparison.py, data.py, session.py
 tests/                     pytest; todos los datos se generan en tmp_path
@@ -184,6 +185,10 @@ Antes de dar una tarea por terminada:
 - Columnas de Moodle con nombres en español y, a veces, *mojibake* (`"Nmero de ID"`); busca columnas
   y lee notas con `pyexamgenerator.grading._text` (`find_column`, `normalize_key`, `parse_decimal`),
   que todos los módulos de `grading` comparten. No escribas otra copia con reglas distintas.
+- Para asignar un nombre escrito a un alumno de la matrícula usa `grading._names.match_name`, no un
+  umbral de parecido (`difflib`): «Mario» y «María» puntúan 0,94 y el parecido asignaría la nota o
+  la justificación a otra persona. Lo que no se asigne con seguridad debe acabar en un informe de
+  incidencias, nunca en silencio.
 - Los tipos de examen pueden ser `A`/`B` o `1A`/`1B`; el tipo se infiere del sufijo del nombre del
   XML (`..._1A.xml`).
 - La GUI tiene pruebas de humo en `tests/test_gui_smoke.py`: construyen la ventana real sin mostrarla

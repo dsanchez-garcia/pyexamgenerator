@@ -1,10 +1,13 @@
-import difflib
 import re
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from pyexamgenerator.grading._names import AMBIGUOUS, NameMatch, match_name
+from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading.data import SharedExamDataStore
+
+INCIDENT_COLUMNS = ["Fila", "Nombre_Escrito", "Tipo", "Severidad", "Detalle", "Candidato", "Score"]
 
 
 class ExamGrader:
@@ -50,28 +53,61 @@ class ExamGrader:
             with_lookup_name=True,
         )
 
-    def _match_student(self, input_name):
-        name_list = self.enrollment_df["Lookup_Name"].tolist()
-        cleaned_name = str(input_name).strip().lower()
-        matches = difflib.get_close_matches(cleaned_name, name_list, n=1, cutoff=0.6)
-        if matches:
-            return self.enrollment_df[self.enrollment_df["Lookup_Name"] == matches[0]].iloc[0]
-        return None
+    def _full_names(self) -> List[str]:
+        first = self.enrollment_df[self.first_name_col].astype(str).str.strip()
+        last = self.enrollment_df[self.last_name_col].astype(str).str.strip()
+        return (first + " " + last).str.strip().tolist()
 
-    def grade_and_export(self, output_path: str) -> pd.DataFrame:
+    def _match_student(self, input_name) -> Tuple[Optional[pd.Series], NameMatch]:
+        """The enrolled student for a name of the answers file, only when the match is safe (GRD-6).
+
+        Returns ``(row, match)``; ``row`` is None when the name is not assigned, and the row is then
+        reported for review instead of graded: the most similar name (threshold 0.6) used to get the
+        grade, also another student's ("Mario" for "María").
+        """
+        match = match_name(input_name, self._full_names())
+        row = self.enrollment_df.iloc[match.position] if match.position is not None else None
+        return row, match
+
+    def _unmatched_incident(self, file_row: int, written: str, match: NameMatch) -> Dict[str, object]:
+        candidate = self._full_names()[match.candidate] if match.candidate is not None else ""
+        if match.kind == AMBIGUOUS:
+            kind = "AMBIGUOUS_STUDENT"
+            detail = (f"Varios alumnos de la matrícula encajan con este nombre (p. ej. «{candidate}»): "
+                      "escríbelo completo en el fichero de respuestas y vuelve a corregir.")
+        else:
+            kind = "UNMATCHED_STUDENT"
+            detail = "No coincide con ningún alumno de la matrícula"
+            detail += f": el más parecido es «{candidate}». " if candidate else ". "
+            detail += "Corrige el nombre en el fichero de respuestas y vuelve a corregir."
+        return {"Fila": file_row, "Nombre_Escrito": written, "Tipo": kind, "Severidad": "alta",
+                "Detalle": detail + " Esta fila no se ha corregido.", "Candidato": candidate,
+                "Score": round(match.score, 4)}
+
+    def grade_and_export(self, output_path: str, incidents_output_path: Optional[str] = None) -> pd.DataFrame:
+        """Grades every row of the answers file and writes the result to ``output_path``.
+
+        A row whose name is not safely matched to one enrolled student is not graded, and two rows
+        matched to the same student are both kept; all of them are listed in ``last_incidents_df``
+        (and written to ``incidents_output_path`` when given), with the most similar student.
+        """
         question_count = len(self.questions_info)
         points_per_question = 10.0 / question_count
         points_str = f"{points_per_question:.2f}".replace(".", ",")
 
         result_rows = []
+        incidents: List[Dict[str, object]] = []
+        rows_by_student: Dict[int, List[Tuple[int, str]]] = {}
 
-        for _, row in self.answers_df.iterrows():
+        for position, (_, row) in enumerate(self.answers_df.iterrows()):
             generated_name = str(row.get("Nombre_Alumno_Generado", row.iloc[0]))
-            official_student = self._match_student(generated_name)
+            official_student, match = self._match_student(generated_name)
+            file_row = position + 2  # row of the answers workbook (the header is row 1)
 
-            if official_student is None:
-                print(f"Warning: could not match student '{generated_name}', row skipped.")
+            if official_student is None or match.position is None:
+                incidents.append(self._unmatched_incident(file_row, generated_name, match))
                 continue
+            rows_by_student.setdefault(match.position, []).append((file_row, generated_name))
 
             student_result = {
                 "Apellido(s)": official_student[self.last_name_col],
@@ -117,9 +153,28 @@ class ExamGrader:
             student_result.update(per_question_scores)
             result_rows.append(student_result)
 
+        full_names = self._full_names()
+        for student, file_rows in rows_by_student.items():
+            if len(file_rows) < 2:
+                continue
+            others = ", ".join(str(r) for r, _ in file_rows)
+            for file_row, written in file_rows:
+                incidents.append({
+                    "Fila": file_row, "Nombre_Escrito": written, "Tipo": "DUPLICATE_STUDENT", "Severidad": "alta",
+                    "Detalle": (f"Las filas {others} se han asignado a «{full_names[student]}»: el resultado tiene "
+                                "una fila por cada una. Revisa cuál es la buena."),
+                    "Candidato": full_names[student], "Score": 1.0,
+                })
+
         final_df = pd.DataFrame(result_rows)
         final_df.to_excel(output_path, index=False)
         print(f"OK: grading completed. Output saved to: {output_path}")
+
+        self.last_incidents_df = pd.DataFrame(incidents, columns=INCIDENT_COLUMNS).sort_values("Fila", kind="stable")
+        if incidents_output_path:
+            self.last_incidents_df.to_excel(prepare_output_path(incidents_output_path), index=False)
+        if incidents:
+            print(f"AVISO: {len(incidents)} incidencia(s) al asignar las respuestas a la matrícula.")
         return final_df
 
 

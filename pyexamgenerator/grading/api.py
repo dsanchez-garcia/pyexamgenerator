@@ -35,6 +35,8 @@ class ExcelGradingConfig:
     first_name_col: str = "Nombre"
     id_col: str = "Número de ID"
     email_col: str = "Dirección de correo"
+    # Rows whose name is not safely matched to one enrolled student, or two rows of the same one (GRD-6).
+    incidents_output_path: str = "incidencias_correccion_respuestas.xlsx"
 
 
 @dataclass
@@ -412,13 +414,18 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "enrollment_loaded", grader.enrollment_df)
         self._export_step_dataframe(export_state, "answers_loaded", grader.answers_df)
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
+        incidents_path = self._resolve_output_path(cfg.incidents_output_path, cfg.output_dir)
 
-        result_df = grader.grade_and_export(output_path)
+        result_df = grader.grade_and_export(output_path, incidents_output_path=incidents_path)
+        incidents_df = grader.last_incidents_df
+        self.results["answers_grading_incidents"] = incidents_df
+        self.results["answers_grading_incidents_path"] = incidents_path
         self._export_step_dataframe(export_state, "graded_output", result_df)
-        self._finalize_step_export(export_state, {"output_path": output_path})
+        self._export_step_dataframe(export_state, "incidents", incidents_df)
+        self._finalize_step_export(export_state, {"output_path": output_path, "incidents_output": incidents_path})
         self.session.record_workflow(
-            "grade_from_excel", config=cfg, outputs={"output_path": output_path},
-            summary={"rows": int(len(result_df))},
+            "grade_from_excel", config=cfg, outputs={"output_path": output_path, "incidents_output": incidents_path},
+            summary={"rows": int(len(result_df)), "incidents": int(len(incidents_df))},
         )
         return result_df
 
@@ -718,7 +725,7 @@ class ExamCorrectionAPI:
             self.results["integrated_theory"] = integrated_df
 
             progress("Asistencias y cuestionarios…")
-            attendance_quiz_df = AbsenceJustificationManager(
+            justification_result = AbsenceJustificationManager(
                 attendance_xlsx_path=cfg.attendance_xlsx_path,
                 justifications_xlsx_path=cfg.justifications_xlsx_path,
                 enrollment_xlsx_path=enrollment_path,
@@ -735,7 +742,10 @@ class ExamCorrectionAPI:
                 email_col=cfg.email_col,
                 justification_mode=cfg.justification_mode,
                 min_quiz_grade=cfg.min_quiz_grade,
-            ).analyze().attendance_quiz_df
+            ).analyze()
+            attendance_quiz_df = justification_result.attendance_quiz_df
+            # Emails not assigned to a student or not counted (GRD-6): the GUI warns about them.
+            self.results["justifications_summary"] = justification_result.summary_df
             self.results["attendance_with_quizzes"] = attendance_quiz_df
 
             progress("Aplicando punto extra…")
