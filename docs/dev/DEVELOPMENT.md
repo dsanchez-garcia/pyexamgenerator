@@ -24,7 +24,7 @@ venv/Scripts/python.exe -m pip install -e ".[dev,docs,grading]"
 
 ```bash
 venv/Scripts/python.exe -m pytest -q                      # todo
-venv/Scripts/python.exe -m pytest tests/test_v030_features.py -q
+venv/Scripts/python.exe -m pytest tests/test_bank_usage.py -q
 venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
 venv/Scripts/python.exe -m tox                            # matriz py310 / py314 (tox.ini)
 venv/Scripts/python.exe -m ruff check .                   # lint (reglas en pyproject.toml)

@@ -153,7 +153,7 @@ Antes de dar una tarea por terminada:
 
 1. `pytest` pasa completo (indica cuántos tests pasan/se saltan; los de OCR se saltan sin `[grading]`).
 2. Hay test nuevo para cada bug corregido o comportamiento añadido, con datos sintéticos creados en
-   `tmp_path` (ver ejemplos en `tests/test_grading_unit.py` y `tests/test_v030_features.py`).
+   `tmp_path` (ver ejemplos en `tests/test_grading_unit.py` y `tests/test_bank_usage.py`).
 3. `CHANGELOG.md`: entrada bajo `## [Unreleased]` en la sección adecuada (`### Añadido`,
    `### Cambiado`, `### Arreglado`), en español, con el formato de las entradas existentes
    (**negrita** + descripción, nombres de API entre comillas invertidas).

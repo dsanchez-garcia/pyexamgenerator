@@ -229,8 +229,11 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `test_release_metadata.py` | la versión y la fecha coinciden en `__init__.py`, `CITATION.cff`, `.zenodo.json` y `CHANGELOG.md` |
 | `conftest.py` | sustituye `google.genai.Client` en todos los tests (ninguno puede llamar a Gemini) |
 | `test_image_mode_unit.py` | utilidades de `input_mode='image'` |
-| `test_v023_features.py` | estado sin mayúsculas, XML no blanco, placeholders de plantilla DOCX |
-| `test_v030_features.py` | reparto por total, layout del DOCX, uso desde exámenes, etiquetas, unificación |
+| `test_exam_question_selection.py` | estado sin mayúsculas, reparto de un total de preguntas entre temas, alerta de uso |
+| `test_exam_docx_layout.py` | maquetación del DOCX (hoja de respuestas, columna NC, cabecera) y marcadores de plantilla |
+| `test_moodle_xml.py` | XML de Moodle: textos, penalizaciones válidas y XML desde un `_completo.xlsx` |
+| `test_bank_usage.py` | registro de uso desde exámenes, etiquetas derivadas del nombre, columnas sin tildes |
+| `test_bank_merge_and_unify.py` | añadir solo las aceptables y unificar bancos sin duplicados |
 | `test_grading_unit.py` | matrícula, punto extra, reporte por tema, integración OCR; OCR con `importorskip` |
 | `test_grading_session_and_grades.py` | sesión, sugerencias Moodle, justificaciones, nota final, comparación |
 
