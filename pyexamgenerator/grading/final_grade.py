@@ -97,11 +97,18 @@ class FinalGradeCalculator:
             raise ValueError("Debe indicar al menos un examen (fichero) para la nota final.")
 
         parsed = []
+        used_labels = set()
         for source in sources:
             path = source["path"]
             df = pd.read_excel(path)
             columns = list(df.columns)
-            label = str(source.get("label") or Path(path).stem)
+            base_label = str(source.get("label") or Path(path).stem)
+            # Two files with the same name (in different folders) or the same label would share
+            # one grade slot and output column, counting one grade twice.
+            label, copy_number = base_label, 2
+            while label in used_labels:
+                label, copy_number = f"{base_label} ({copy_number})", copy_number + 1
+            used_labels.add(label)
             weight = float(source.get("weight", 1.0))
             id_col = source.get("id_col") or self.id_col or _find_column(columns, _ID_CANDIDATES)
             first_col = self.first_name_col or _find_column(columns, _FIRST_CANDIDATES)

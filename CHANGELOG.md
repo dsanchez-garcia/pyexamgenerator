@@ -12,6 +12,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Nuevas pruebas de regresión:** análisis seguro de la respuesta de Gemini, carga de sesiones, relectura del banco y registro de uso, punto extra PIR, columnas de asistencia, normalización de IDs y compilación de todos los módulos del paquete (incluida la GUI).
 - **Pruebas de humo de la GUI:** `tests/test_gui_smoke.py` construye la ventana real de la aplicación (sin mostrarla) y prueba el diálogo de prompts y el guardado de la clave de API. Se saltan donde no hay pantalla para Tk.
 - **Más pruebas de regresión:** generación con datos reales (respuestas numéricas o vacías, letras como `B)`), lectura del DOCX revisado, nombres de columnas de uso, matrícula y asistencias con IDs vacíos o numéricos, y flujo OCR con hojas ilegibles o sin tipo de examen.
+- **Pruebas del flujo de generación de preguntas** con un cliente de Gemini simulado (sin llamadas a la API), de los ficheros de examen (nombres, categoría de Moodle, plantillas) y de la fachada de corrección.
+- **La CI prueba la GUI también en Linux** (pantalla virtual `xvfb`), y `pytest.ini` limita la recogida de tests a `tests/`.
+- **Guía de contribución y plantillas:** `CONTRIBUTING.md`, plantilla de *pull request* y de informe de error (con el aviso de no adjuntar datos de alumnos), enlazadas desde el README.
 
 ### Cambiado
 - **OCR: una hoja problemática ya no detiene la corrección:** si una imagen no se puede leer o no se puede deducir su tipo de examen, la hoja se omite y aparece en las incidencias con severidad alta (`UNREADABLE_IMAGE` / `EXAM_TYPE_UNRESOLVED`); el resto de hojas se corrige. `ExamCorrectionAPI` expone siempre las incidencias en `results["ocr_incidents"]` y, sin un terminal interactivo, nunca pregunta el tipo con `input()`.
@@ -20,6 +23,15 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Columna de uso de la generación sin tildes:** `<examen>_<curso>_uso` elimina las tildes como ya hacía el registro de uso del banco (`Evaluacion`, no `Evaluaci_n`). Si el banco ya tiene la columna con el nombre antiguo, se reutiliza.
 - **Respuesta correcta inválida:** si una pregunta seleccionada no tiene una letra válida (A-D) en `Respuesta correcta`, la generación se detiene con un error que la identifica, en lugar de producir un examen sin respuesta correcta. Se aceptan variantes como `B)`, ` b ` o `(c)`.
 - **"Menos usadas" con celdas vacías:** una celda vacía en `Veces usada en examen` cuenta como 0 usos.
+- **Categoría de Moodle sin guion final:** el XML usa `$course$/top/Examen Parcial - A` (antes `... - A -`), igual que la sugerencia de "Sugerir nombres Moodle". Si hay texto adicional, sigue añadiéndose con ` - `.
+- **Nombres de fichero de los exámenes:** los caracteres no válidos (`/ \ : * ? " < > |`) de la asignatura o el examen se sustituyen por `-`, y un dato ausente ya no escribe `None`.
+- **Plantillas DOCX:** una ruta de plantilla inexistente detiene la generación con un error (antes se usaba un documento en blanco sin avisar), y la cabecera de la plantilla se conserva: la línea de identificación del alumno se añade debajo en lugar de sustituirla.
+- **Lista de ficheros fuente en la GUI separada por `;`:** los nombres pueden contener comas; al volver a seleccionar ficheros se añaden a la lista sin duplicados.
+- **Combinar resultados «en su sitio»:** antes de sobrescribir se guarda una copia con fecha y hora del fichero anterior, y una celda vacía en el fichero nuevo ya no borra el valor anterior.
+- **Una sola tarea de corrección a la vez** en la GUI: un segundo clic mientras otra está en marcha muestra un aviso.
+- **Nombre de salida por defecto de `generate_multiple_choice_questions`:** `preguntas_pendiente_de_revisar.xlsx` (antes repetía el sufijo).
+- **Dependencias:** ya no se instalan `ttkwidgets` ni `importlib-metadata`, que no se usaban.
+- **`sync_branch.bat`:** lista los ficheros no versionados y pide confirmación antes de borrarlos con `git clean`.
 - **Sesiones de corrección: JSON primero, pickle solo con permiso:** `GradingSession.load(...)` y `ExamCorrectionAPI.load_session(...)` usan siempre el `.json` y solo leen un `.pkl` (sin su `.json`) con `allow_pickle=True`, porque deserializar un pickle puede ejecutar código. La GUI pide confirmación antes de abrir un `.pkl`.
 - **Documentación para desarrolladores y agentes de IA:** `AGENTS.md`, `CLAUDE.md`, `docs/dev/` y `TODO.md` con la revisión priorizada del repositorio.
 
@@ -43,6 +55,14 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Corrección desde Excel con fechas inventadas:** `ExamGrader` escribía "20 de abril de 2026 17:05" y una duración fija en todas las filas; esas columnas quedan vacías.
 - **"Editar" tipo de prompt abría el texto vacío:** había métodos duplicados en la GUI y se usaba la copia defectuosa; además, renombrar un prompt propio ya no deja el nombre antiguo.
 - **Clave de API:** «Guardar Clave» ya no guarda el marcador `TU_CLAVE_API` ni muestra dos avisos seguidos.
+- **Nota OCR asignada a otro alumno con el mismo nombre de pila:** si los ficheros usaban la columna `Apellidos` (sin `(s)`), la integración comparaba apellidos vacíos y emparejaba solo por el nombre; ahora usa las columnas detectadas y exige nombre y apellidos.
+- **Justificaciones de alumnos con nombre compuesto:** ya no dependen de que coincida el ID (`María José García` se partía como `María` + `José García`).
+- **Nota final con dos ficheros del mismo nombre** (en carpetas distintas): reciben etiquetas distintas (`notas`, `notas (2)`); antes la nota del segundo se contaba dos veces.
+- **`run_moodle_plus_ocr_pipeline`** ya no modifica los objetos de configuración que recibe, y todos los flujos de corrección (OCR, matrícula, punto extra PIR, informes por tema) quedan registrados en la sesión.
+- **Marcadores de plantilla partidos o en la cabecera:** `{{subject}}` y demás se sustituyen aunque Word los haya partido en varios fragmentos con formato, y también en cabeceras y pies de página.
+- **Tema de los ficheros `.PDF` (en mayúsculas) e imágenes:** el tema ya no conserva la extensión.
+- **Errores de entrada en la GUI:** un peso no numérico en la nota final o un banco ilegible (o bloqueado por Excel) al listar los temas muestran un mensaje en lugar de fallar solo en la consola.
+- **Compatibilidad con pandas futuro:** al combinar resultados, asignar decimales a una columna leída como entera ya no genera el aviso que en próximas versiones de pandas será un error.
 
 ## [0.3.0] - 2026-09-15
 

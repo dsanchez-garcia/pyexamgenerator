@@ -596,12 +596,25 @@ class OcrGradeIntegrator:
             return pd.NA
 
     @staticmethod
-    def _name_match(general_row: pd.Series, ocr_row: pd.Series) -> bool:
-        g_first = str(general_row.get("Nombre", "")).strip().lower()
-        g_last = str(general_row.get("Apellido(s)", "")).strip().lower()
-        o_first = str(ocr_row.get("Nombre", "")).strip().lower()
-        o_last = str(ocr_row.get("Apellido(s)", "")).strip().lower()
-        if not (g_first or g_last or o_first or o_last):
+    def _name_match(
+        general_row: pd.Series,
+        ocr_row: pd.Series,
+        general_first_col: Optional[str] = "Nombre",
+        general_last_col: Optional[str] = "Apellido(s)",
+        ocr_first_col: Optional[str] = "Nombre",
+        ocr_last_col: Optional[str] = "Apellido(s)",
+    ) -> bool:
+        """True when first and last names are equal, using the columns detected in each file.
+
+        With fixed 'Nombre'/'Apellido(s)' names, files using 'Apellidos' compared two empty last
+        names and matched students by first name only.
+        """
+        def value(row: pd.Series, col: Optional[str]) -> str:
+            return str(row.get(col, "")).strip().lower() if col else ""
+
+        g_first, g_last = value(general_row, general_first_col), value(general_row, general_last_col)
+        o_first, o_last = value(ocr_row, ocr_first_col), value(ocr_row, ocr_last_col)
+        if not (g_first and g_last and o_first and o_last):
             return False
         return (g_first == o_first) and (g_last == o_last)
 
@@ -778,7 +791,8 @@ class OcrGradeIntegrator:
 
             if target_idx is None:
                 for idx_general, general_row in out_df.iterrows():
-                    if self._name_match(general_row, ocr_row):
+                    if self._name_match(general_row, ocr_row, general_first_name_col, general_last_name_col,
+                                        ocr_first_name_col, ocr_last_name_col):
                         target_idx = int(idx_general)
                         break
 
@@ -971,7 +985,8 @@ class OcrGradeIntegrator:
 
             if target_idx is None:
                 for idx_general, general_row in out_df.iterrows():
-                    if self._name_match(general_row, ocr_row):
+                    if self._name_match(general_row, ocr_row, general_first_name_col, general_last_name_col,
+                                        ocr_first_name_col, ocr_last_name_col):
                         target_idx = int(idx_general)
                         break
 

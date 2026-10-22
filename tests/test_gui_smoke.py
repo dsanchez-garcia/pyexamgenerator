@@ -115,3 +115,87 @@ def test_saved_placeholder_from_older_versions_is_ignored(app, tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({"api_key": "TU_CLAVE_API"}), encoding="utf-8")
 
     assert app.load_api_key() is None
+
+
+def test_selecting_source_files_twice_keeps_a_valid_list(app, tmp_path, monkeypatch):
+    """GUI-4: la segunda selección se pegaba a la primera sin separador ('a.pdfb.pdf') y la coma
+    separaba nombres de fichero que contienen comas."""
+    from tkinter import filedialog
+
+    first = str(tmp_path / "Calidad, Seguridad.pdf")
+    second = str(tmp_path / "tema 2.pdf")
+    for path in (first, second):
+        open(path, "wb").close()
+
+    monkeypatch.setattr(filedialog, "askopenfilenames", lambda **kwargs: (first,))
+    app.select_pdf_files()
+    monkeypatch.setattr(filedialog, "askopenfilenames", lambda **kwargs: (first, second))
+    app.select_pdf_files()
+    monkeypatch.setattr(filedialog, "askopenfilenames", lambda **kwargs: ())
+    app.select_pdf_files()  # cancelled dialog: the list is kept
+
+    assert app._split_paths(app.pdf_files_var.get()) == [first, second]
+
+
+def test_split_paths_accepts_a_comma_list_typed_by_hand(app, tmp_path):
+    a, b = str(tmp_path / "a.pdf"), str(tmp_path / "b.pdf")
+    for path in (a, b):
+        open(path, "wb").close()
+
+    assert app._split_paths(f"{a}, {b}") == [a, b]
+    assert app._split_paths(f"{a};{b}") == [a, b]
+
+
+def test_invalid_final_grade_weight_shows_an_error(app, tmp_path):
+    """GUI-5: un peso no numérico lanzaba ValueError fuera de cualquier try (solo salía por consola)."""
+    app.grad_out_var.set(str(tmp_path))
+    app.grad_final_mode_var.set("by_file")
+    app.grad_final_files_var.set(f"{tmp_path / 'notas.xlsx'}|cuarenta")
+
+    app.run_final_grade()
+
+    assert [kind for kind, _title, _message in app.shown_messages] == ["error"]
+    assert "cuarenta" in app.shown_messages[0][2]
+
+
+def test_unreadable_bank_when_listing_topics_shows_an_error(app, tmp_path):
+    """GUI-5: un banco inexistente o bloqueado por Excel solo daba un error en la consola."""
+    assert app._read_bank_with_topics(str(tmp_path / "no_existe.xlsx")) is None
+    assert [kind for kind, _title, _message in app.shown_messages] == ["error"]
+
+
+def test_only_one_grading_job_runs_at_a_time(app):
+    """GUI-3: dos clics seguidos lanzaban dos correcciones a la vez sobre la misma carpeta."""
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+    steps = []
+
+    def slow_job():
+        started.set()
+        release.wait(timeout=10)
+        return "hecho"
+
+    def drive():
+        # Runs inside mainloop: the worker thread can only talk to Tk while it is running.
+        if not steps:
+            app._grad_run_async("Trabajando", slow_job)
+            steps.append("first")
+        elif steps == ["first"] and started.is_set():
+            app._grad_run_async("Otra vez", lambda: "no debería ejecutarse")
+            steps.append("second")
+            release.set()
+        elif steps == ["first", "second"] and not app._grad_job_running:
+            app.root.quit()
+            return
+        app.root.after(20, drive)
+
+    app.root.after(0, drive)
+    watchdog = app.root.after(15000, app.root.quit)  # never hang the test run
+    app.root.mainloop()
+    app.root.after_cancel(watchdog)
+
+    assert steps == ["first", "second"]
+    assert [kind for kind, _title, _message in app.shown_messages].count("warning") == 1
+    assert ("info", "Corrección", "hecho") in app.shown_messages
+    assert not app._grad_job_running

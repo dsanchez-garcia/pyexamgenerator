@@ -131,7 +131,8 @@ class QuestionGenerator:
         # self.topic_number = topic_match.group(1) if topic_match else file_name.split('.pdf')[0]
 
         # Using the PDF name directly
-        self.topic_number = file_name.split('.pdf')[0]
+        # splitext: '.PDF' and image extensions are removed too (split('.pdf') missed them).
+        self.topic_number = os.path.splitext(file_name)[0]
 
         return self.topic_number
 
@@ -850,7 +851,8 @@ class QuestionGenerator:
             pd.DataFrame: A DataFrame containing all the successfully generated and filtered questions.
         """
         if output_filename is None:
-            output_filename = 'preguntas_pendiente_de_revisar'
+            # The '_pendiente_de_revisar' suffix is added when saving.
+            output_filename = 'preguntas'
 
         if output_dir is None:
             output_dir = os.getcwd()

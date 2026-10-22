@@ -28,10 +28,10 @@ venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
 venv/Scripts/python.exe -m tox                            # matriz py39 / py310 / py314 (tox.ini)
 ```
 
-Estado a 2026-10-22: 149 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
+Estado a 2026-10-22: 169 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
 pruebas de la GUI, que necesitan pantalla). La CI (`.github/workflows/tests.yml`) repite la suite en
-Ubuntu y Windows, con y sin el extra; en Linux las pruebas de GUI y, sin `[grading]`, las de OCR se
-saltan.
+Ubuntu (con pantalla virtual `xvfb`) y Windows, con y sin el extra; sin `[grading]` se saltan las
+pruebas de OCR. `pytest.ini` limita la recogida a `tests/` y muestra el motivo de cada test saltado.
 
 Convenciones para tests nuevos:
 
@@ -89,7 +89,7 @@ mantengan los tests en verde, sin mezclar cambios funcionales.
 | `dist_build_docs.bat` | regenera `docs/source/api/` y compila HTML | sí (acaba en `PAUSE`) |
 | `dist_upload_test.bat` / `dist_upload.bat` | suben a TestPyPI / PyPI | **no** sin orden explícita |
 | `install_current_version.bat` | `pip install` del código actual; `--add-path` modifica el PATH | **no** sin orden explícita |
-| `sync_branch.bat` | `git clean -fd` + checkout + pull | **no** sin orden explícita |
+| `sync_branch.bat` | lista y, tras confirmar, borra lo no versionado (`git clean -fd`); checkout + pull | **no** sin orden explícita |
 
 Los scripts terminan con `PAUSE`: en un entorno no interactivo, ejecuta los comandos equivalentes
 directamente en lugar del `.bat`.

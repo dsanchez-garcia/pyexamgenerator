@@ -40,7 +40,14 @@ jobs:
           fi
       - name: Importar el paquete
         run: python -c "import pyexamgenerator as p; print(p.__version__, 'HAS_OCR =', p.grading.HAS_OCR)"
+      - name: Pantalla virtual para las pruebas de la GUI (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
       - name: Ejecutar tests
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest -q -rs
+      - name: Ejecutar tests
+        if: runner.os != 'Linux'
         run: python -m pytest -q -rs
 
   docs:
