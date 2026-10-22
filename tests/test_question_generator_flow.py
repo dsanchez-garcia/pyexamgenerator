@@ -106,6 +106,31 @@ def _pages_pdf(path, pages):
     return str(path)
 
 
+def test_pdf_text_is_read_with_pypdf_not_the_abandoned_pypdf2(tmp_path):
+    """PKG-4: PyPDF2 está abandonado (avisaba en cada ejecución); el texto se lee con su sucesor, pypdf.
+
+    En un proceso aparte, para que otros tests no hayan importado ya PyPDF2.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    pdf = _pages_pdf(tmp_path / "Tema 1.pdf", ["Uno", "Dos"])
+    code = (
+        "import sys\n"
+        "from pyexamgenerator.question_generator import QuestionGenerator\n"
+        f"pages, text = QuestionGenerator._read_pdf({pdf!r})\n"
+        "print([page.strip() for page in pages], 'PyPDF2' in sys.modules)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=300,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == "['Uno', 'Dos'] False"
+
+
 def test_pdf_split_into_page_chunks_for_the_prompts(tmp_path):
     """Troceo de un PDF por páginas (sin llamar a Gemini): fragmentos de N páginas, un número total de
     fragmentos equilibrados, y el mismo resultado al reutilizar el generador con otro PDF (ARC-13)."""

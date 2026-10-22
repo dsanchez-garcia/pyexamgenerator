@@ -248,7 +248,9 @@ búscalas por nombre de función si no coinciden.
 - [x] **PKG-3 (P2)** `ttkwidgets` es dependencia obligatoria solo por un import no usado
   (`main_app.py:30`). Eliminar import y dependencia. Igual con `Document` (`:25`) y el fallback
   `importlib_metadata` (`:37-42`, y `importlib-metadata; python_version < "3.8"` en `setup.py`). — hecho en `2fd7db2`.
-- [ ] **PKG-4 (P2)** `PyPDF2` está deprecado (avisa en cada test). Migrar a `pypdf`.
+- [x] **PKG-4 (P2)** `PyPDF2` está deprecado (avisa en cada test). Migrar a `pypdf`.
+  *Decidido por el mantenedor (2026-10-22): migrar a `pypdf`.* — hecho en la rama `build/pypdf`
+  (`pypdf>=6.21.2`, la primera versión sin los avisos de seguridad publicados en octubre de 2026).
 - [x] **PKG-5 (P2)** `requirements-dev.txt` duplica las dependencias de `setup.py`. Sustituir por
   `pip install -e .[dev,grading,docs]` cuando exista PKG-2. — hecho en `410a2f1`.
 - [x] **PKG-6 (P2)** `docs/requirements.txt` sin versiones fijadas y RTD con `fail_on_warning: true`:
