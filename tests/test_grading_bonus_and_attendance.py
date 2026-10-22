@@ -47,7 +47,7 @@ def test_pir_bonus_requires_attendance_and_quiz():
 
     summary, _incidents, _warnings = calculator.calculate()
 
-    bonus = dict(zip(summary["Nombre"], summary["PIR_Bonus"]))
+    bonus = dict(zip(summary["Nombre"], summary["PIR_Bonus"], strict=True))
     assert bonus == {"Ana": 1.0, "Leo": 0.0}
 
 

@@ -32,7 +32,7 @@ venv/Scripts/python.exe -m ruff format .                  # formato (comillas ta
 venv/Scripts/python.exe -m mypy                           # tipos (módulos en [tool.mypy])
 ```
 
-La CI también ejecuta `ruff check` (de momento solo las reglas `F` de pyflakes), `ruff format
+La CI también ejecuta `ruff check` (reglas `F` de pyflakes y `B` de bugbear), `ruff format
 --check` y `mypy` en modo no estricto sobre los módulos listados en `[tool.mypy]` de `pyproject.toml`
 (añade ahí los que tipes). Para revisar y formatear en cada commit:
 `venv/Scripts/pre-commit.exe install` (configuración en `.pre-commit-config.yaml`).

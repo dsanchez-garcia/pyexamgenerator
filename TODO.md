@@ -337,7 +337,9 @@ búscalas por nombre de función si no coinciden.
   mensaje falso). *Pendiente: aplicar `ruff format` en un PR aparte y ampliar las reglas.*
   *`ruff format` aplicado en `5916315` (decidido por el mantenedor el 2026-10-22: comillas tal como
   estaban, Markdown excluidos; mismo AST antes y después); la CI y pre-commit lo exigen y el commit
-  está en `.git-blame-ignore-revs`. Queda ampliar las reglas de lint.*
+  está en `.git-blame-ignore-revs`. Reglas `B` (bugbear) activadas en la rama `build/ruff-bugbear`
+  (sus 15 avisos corregidos). Otras reglas medidas y descartadas por ahora: `E501` (69 líneas que
+  el formateador no puede partir), `UP` (848 cambios de sintaxis) e `I`/`SIM` (cosméticas).*
 - [x] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
   `grading/api.py` y los dataclasses de configuración. — hecho en `b08fab8` (job `mypy` en la CI;
   ir añadiendo módulos a `[tool.mypy]`).

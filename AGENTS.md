@@ -52,7 +52,7 @@ venv/Scripts/python.exe -m pyexamgenerator.main_app
 En Linux/macOS sustituye `venv/Scripts/python.exe` por `venv/bin/python`. Instalación de un entorno
 nuevo: ver `docs/dev/DEVELOPMENT.md`.
 
-`ruff check .` debe pasar (de momento solo las reglas `F` de pyflakes) y el código está formateado
+`ruff check .` debe pasar (reglas `F` de pyflakes y `B` de bugbear) y el código está formateado
 con `ruff format` (línea de 120, comillas tal como estén; los Markdown se excluyen): ejecútalo antes
 de hacer commit. `pre-commit install` hace las dos cosas en cada commit y la CI las comprueba.
 

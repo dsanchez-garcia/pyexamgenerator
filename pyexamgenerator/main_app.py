@@ -3831,7 +3831,7 @@ class ExamApp:
         row = 0
         col = 0
 
-        for i, theme in enumerate(unique_themes):
+        for theme in unique_themes:
             theme_frame = ttk.Frame(self.by_theme_frame)
             theme_frame.grid(row=row, column=col, padx=5, pady=2, sticky='ew')
             ttk.Label(theme_frame, text=f"{theme}:").pack(side='left')

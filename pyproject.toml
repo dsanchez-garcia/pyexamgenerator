@@ -95,13 +95,13 @@ version = { attr = "pyexamgenerator.__version__" }
 include = ["pyexamgenerator*"]
 
 [tool.ruff]
-# Lint (DEV-1): only real errors for now (pyflakes, "F"). The code is formatted with `ruff format`;
-# the CI and pre-commit check both.
+# Lint (DEV-1): real errors (pyflakes, "F") and likely bugs (flake8-bugbear, "B"). The code is
+# formatted with `ruff format`; the CI and pre-commit check both.
 target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["F"]
+select = ["F", "B"]
 
 [tool.ruff.format]
 # Single and double quotes are kept as they are (fewer changes than unifying them).

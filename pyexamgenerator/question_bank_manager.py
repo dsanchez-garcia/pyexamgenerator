@@ -139,13 +139,7 @@ class QuestionBankManager:
         self,
         existing_bank_path: str,
         reviewed_questions_path: str,
-        duplicate_check_columns: Optional[List[str]] = [
-            'Pregunta',
-            'Respuesta A',
-            'Respuesta B',
-            'Respuesta C',
-            'Respuesta D',
-        ],
+        duplicate_check_columns: Optional[List[str]] = None,
         add_only_acceptable: bool = False,
     ) -> Tuple[int, Optional[pd.DataFrame]]:
         """
@@ -157,7 +151,7 @@ class QuestionBankManager:
             reviewed_questions_path (str): Path to the Excel file with revised questions to add.
             duplicate_check_columns (Optional[List[str]]): List of column names used to
                                                             identify duplicate questions.
-                                                            Defaults to checking question and all answers.
+                                                            Defaults (None) to the question and all answers.
             add_only_acceptable (bool, optional): If True, only adds questions with 'Aceptable' status.
                                                   Defaults to False (adds all).
 
@@ -166,6 +160,8 @@ class QuestionBankManager:
                                                 question bank DataFrame. Returns (-1, None) if there are
                                                 errors reading the files.
         """
+        if duplicate_check_columns is None:
+            duplicate_check_columns = ['Pregunta', 'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D']
         try:
             df_existing = pd.read_excel(existing_bank_path)
             df_reviewed = pd.read_excel(reviewed_questions_path)
@@ -195,10 +191,10 @@ class QuestionBankManager:
         added_count = 0
 
         # Iterate through each question in the reviewed file
-        for index, row_reviewed in df_reviewed.iterrows():
+        for _, row_reviewed in df_reviewed.iterrows():
             is_duplicate = False
             # Compare it against every question in the existing bank
-            for index_existing, row_existing in df_existing.iterrows():
+            for _, row_existing in df_existing.iterrows():
                 match = True
                 # Check all specified columns for a perfect match
                 for col in duplicate_check_columns:

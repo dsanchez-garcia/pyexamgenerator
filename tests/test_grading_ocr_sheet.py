@@ -214,7 +214,7 @@ def test_synthetic_sheets_are_graded_end_to_end(ocr_sheets, tmp_path):
     assert by_image.loc[leo, "Dirección de correo"] == "leo@example.com"
 
     incidents = pd.read_excel(tmp_path / "salida" / "incidencias.xlsx")
-    assert sorted(zip(incidents["Imagen"], incidents["Tipo"])) == [
+    assert sorted(zip(incidents["Imagen"], incidents["Tipo"], strict=True)) == [
         (ana, "UNRESOLVED_ANSWERS"),
         (leo, "UNRESOLVED_ANSWERS"),
     ]

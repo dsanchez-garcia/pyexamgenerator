@@ -122,7 +122,7 @@ def test_grade_from_images_reports_unreadable_and_unresolved_sheets(tmp_path):
 
     assert grades["Imagen"].tolist() == ["buena.jpg"]
     incidents = pd.read_excel(tmp_path / "incidencias.xlsx")
-    by_type = dict(zip(incidents["Tipo"], incidents["Imagen"]))
+    by_type = dict(zip(incidents["Tipo"], incidents["Imagen"], strict=True))
     assert by_type["UNREADABLE_IMAGE"] == "rota.jpg"
     assert by_type["EXAM_TYPE_UNRESOLVED"] == "sin_tipo.jpg"
     assert set(incidents.loc[incidents["Imagen"].isin(["rota.jpg", "sin_tipo.jpg"]), "Severidad"]) == {"alta"}

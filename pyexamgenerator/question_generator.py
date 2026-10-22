@@ -645,7 +645,7 @@ class QuestionGenerator:
             "superó el umbral establecido."
         )
 
-        for index, row in df.iterrows():
+        for _, row in df.iterrows():
             # Visual separator between questions
             document.add_paragraph("---")
 

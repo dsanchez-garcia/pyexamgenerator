@@ -414,7 +414,7 @@ def test_grading_jobs_read_tk_variables_only_in_the_main_thread(app, grading_bac
     for action, library_call in GRADING_ACTIONS:  # one window for all: building it is slow
         app.shown_messages.clear()
         method = getattr(app, action)
-        _run_in_mainloop(app, (lambda: method(False)) if action == "run_compare_results" else method)
+        _run_in_mainloop(app, (lambda method=method: method(False)) if action == "run_compare_results" else method)
 
         assert library_call in grading_backend.calls, action
         assert grading_backend.reads_outside_main_thread == [], action
