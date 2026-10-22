@@ -52,7 +52,7 @@ if not defined PY_CMD (
 
 if not defined PY_CMD (
     echo ERROR: No se encontro Python en PATH.
-    echo Instala Python 3.8+ y marca "Add Python to PATH".
+    echo Instala Python 3.10+ y marca "Add Python to PATH".
     exit /b 1
 )
 

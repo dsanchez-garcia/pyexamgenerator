@@ -17,6 +17,7 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Guía de contribución y plantillas:** `CONTRIBUTING.md`, plantilla de *pull request* y de informe de error (con el aviso de no adjuntar datos de alumnos), enlazadas desde el README.
 
 ### Cambiado
+- **INCOMPATIBLE: Python 3.10 o superior.** La versión mínima pasa de 3.8 a 3.10: Python 3.8 y 3.9 ya no tienen soporte y la librería `google-genai` exige 3.10 en sus versiones actuales (en 3.8 ni siquiera se podía instalar). Se actualizan `python_requires` y los clasificadores, `tox.ini`, Read the Docs y la CI (que prueba 3.10 y 3.14). Con Python 3.9, la última versión utilizable es la 0.3.0.
 - **OCR: una hoja problemática ya no detiene la corrección:** si una imagen no se puede leer o no se puede deducir su tipo de examen, la hoja se omite y aparece en las incidencias con severidad alta (`UNREADABLE_IMAGE` / `EXAM_TYPE_UNRESOLVED`); el resto de hojas se corrige. `ExamCorrectionAPI` expone siempre las incidencias en `results["ocr_incidents"]` y, sin un terminal interactivo, nunca pregunta el tipo con `input()`.
 - **Carpeta temporal del OCR:** por defecto se usa la carpeta temporal del sistema (`pyexamgenerator_temp`) en lugar del Escritorio, que a menudo se sincroniza con la nube y estas copias son escaneos de alumnos.
 - **`QuestionGenerator` sin clave explícita:** `api_key` es opcional y se toma de `GEMINI_API_KEY` (el ejemplo del README `QuestionGenerator(model_name=...)` ya funciona); `model_name` sigue siendo obligatorio.
@@ -43,7 +44,6 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Asistencias a partir de 2027:** las columnas de asistencia solo se reconocían si contenían "2026"; ahora se acepta cualquier año.
 - **Alumnos partidos en dos filas por el ID:** la nota final y la comparación de resultados emparejan `12345678` y `12345678.0` (columna leída como número con huecos) como el mismo alumno.
 - **Deduplicación de notas de Moodle:** `MoodleGradeIntegrator.integrate_grades(deduplicate_by_id=True)` ya no fusiona en una sola fila a todos los alumnos sin `Número de ID`.
-- **Compatibilidad de anotaciones:** `question_generator.py` usaba `tuple[...]`, que no funciona en Python 3.8.
 - **Test de integración independiente de datos locales:** `tests/test_exam_order_integration.py` genera su banco sintético en lugar de depender de `prueba_error/` (no versionado).
 - **Asistencia o justificación aplicada al alumno equivocado:** un `Número de ID` vacío se convertía en el texto `nan` y todos los alumnos sin ID compartían la misma clave; en modo extremo, la justificación de uno podía aplicarse a otros. La matrícula fusionada tampoco duplica ya a un alumno por `12345678` frente a `12345678.0`.
 - **OCR asignaba la hoja a otro alumno:** con una matrícula ordenada o filtrada, el emparejamiento por nombre devolvía la fila de otra posición. Los IDs oficiales ya no salen como `nan` ni con `.0`.

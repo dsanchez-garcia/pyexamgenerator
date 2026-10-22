@@ -210,14 +210,14 @@ búscalas por nombre de función si no coinciden.
 
 ## 5. Dependencias, empaquetado y compatibilidad
 
-- [ ] **PKG-1 (P1)** `setup.py` declara `python_requires='>=3.8'`, pero
+- [x] **PKG-1 (P1)** `setup.py` declara `python_requires='>=3.8'`, pero
   `question_generator.py:594` usa `tuple[...]` (requiere 3.9): la app no arranca en 3.8. Además 3.8
   (EOL 2024-10) y 3.9 (EOL 2025-10) ya no tienen soporte. **Decisión pendiente del mantenedor:**
   subir el mínimo a 3.10 y actualizar clasificadores, `tox.ini`, `.readthedocs.yaml` (usa 3.9) y
   README.
-  *Parcial (`07e3e4d`): corregida la anotación `tuple[...]`. Además, `google-genai` exige Python ≥ 3.9
-  (≥ 3.10 en sus versiones actuales), así que 3.8 ni siquiera es instalable. Sigue pendiente decidir el
-  mínimo.*
+  *Decidido por el mantenedor (2026-10-22): mínimo Python 3.10. Anotación corregida en `07e3e4d`;
+  `setup.py`, `tox.ini`, `.readthedocs.yaml`, CI, README y guías actualizados en la rama
+  `build/python-3.10`.*
 - [ ] **PKG-2 (P2)** Migrar `setup.py` → `pyproject.toml` (PEP 621) con extras `dev`, `docs`,
   `grading`; centralizar configuración de pytest y ruff. Mantener la versión única en
   `pyexamgenerator/__init__.py` (dinámica).

@@ -16,9 +16,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Versión mínima declarada en setup.py, sin y con el extra OCR.
-          - { os: ubuntu-latest, python-version: "3.9", extras: "" }
-          - { os: ubuntu-latest, python-version: "3.9", extras: "grading" }
+          # Versión mínima declarada en setup.py (python_requires), sin y con el extra OCR.
+          - { os: ubuntu-latest, python-version: "3.10", extras: "" }
+          - { os: ubuntu-latest, python-version: "3.10", extras: "grading" }
           # Versión de desarrollo habitual (Windows, Python 3.14) y Linux equivalente.
           - { os: ubuntu-latest, python-version: "3.14", extras: "grading" }
           - { os: windows-latest, python-version: "3.14", extras: "grading" }
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           # Misma versión que .readthedocs.yaml, para reproducir su build.
-          python-version: "3.9"
+          python-version: "3.10"
           cache: pip
       - name: Instalar dependencias de la documentación
         run: |
