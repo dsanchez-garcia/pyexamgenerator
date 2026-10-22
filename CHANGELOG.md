@@ -20,6 +20,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **`QuestionBankManager.usage_column_name`:** nombre público del método que calcula la columna `<etiqueta>_uso` (se mantiene `_usage_column_name` como alias).
 - **Más pruebas:** la GUI en segundo plano (Gemini, modelos, exámenes), las lecturas de la interfaz desde los hilos, la rueda del ratón y los tooltips; el pipeline completo; rutas de salida absolutas; coherencia de la versión entre `__init__.py`, `CITATION.cff`, `.zenodo.json` y `CHANGELOG.md`. `tests/conftest.py` sustituye el cliente de Gemini en todos los tests, de modo que ninguno puede llamar a la API real.
 - **Lint con ruff:** la CI comprueba el código con `ruff` (de momento, las reglas de pyflakes) y `.pre-commit-config.yaml` permite hacerlo en cada commit (`pre-commit install`). La configuración está en `pyproject.toml`.
+- **`GeminiRequestError`:** nueva excepción pública para los errores de Gemini que no se arreglan reintentando: clave no válida o sin permiso (401/403) y modelo inexistente o retirado (404). Con un modelo retirado, el mensaje sugiere los modelos disponibles para tu clave.
+- **Callbacks en lugar de `input()`:** `review_callback` en `ExamGenerator.generate_exam_from_excel(check=True)` y `exam_type_callback` / `review_callback` en el OCR (`ImageExamGrader.grade_from_images`, `ImageGradingConfig`), para preguntar al usuario desde una GUI o un notebook.
+- **Reglas del punto extra configurables:** `min_quiz_grade` (nota mínima de los cuestionarios en cada tema; `AbsenceJustificationConfig`, `FullPipelineConfig`) y `bonus_points` (puntos que se suman; `TheoryBonusConfig`, `FullPipelineConfig`, `TheoryBonusApplier`). Los valores por defecto no cambian (7,5 y +1).
 
 ### Cambiado
 - **INCOMPATIBLE: Python 3.10 o superior.** La versión mínima pasa de 3.8 a 3.10: Python 3.8 y 3.9 ya no tienen soporte y la librería `google-genai` exige 3.10 en sus versiones actuales (en 3.8 ni siquiera se podía instalar). Se actualizan `python_requires` y los clasificadores, `tox.ini`, Read the Docs y la CI (que prueba 3.10 y 3.14). Con Python 3.9, la última versión utilizable es la 0.3.0.
@@ -48,6 +51,10 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Empaquetado con `pyproject.toml`:** sustituye a `setup.py`, `pytest.ini` y `requirements-dev.txt` (PEP 621), con los mismos metadatos y dependencias; la versión sigue en `pyexamgenerator/__init__.py`. Nuevos extras `[dev]` (tests, lint y publicación) y `[docs]`: el entorno de desarrollo se instala con `pip install -e ".[dev,docs,grading]"`. La licencia figura como expresión SPDX (`License-Expression: GPL-3.0-or-later`).
 - **Versiones fijadas para la documentación:** Read the Docs y la CI compilan con Sphinx 8.1.3, sphinx-rtd-theme 3.1.0, MyST 4.0.1 y docutils 0.21.2, para que una versión nueva no rompa la publicación por sorpresa.
 - **Tests reorganizados por funcionalidad:** `test_v023_features.py` y `test_v030_features.py` se reparten en `test_exam_question_selection.py`, `test_exam_docx_layout.py`, `test_moodle_xml.py`, `test_bank_usage.py` y `test_bank_merge_and_unify.py`.
+- **Reintentos ante errores temporales de Gemini:** el límite de solicitudes (429) y los servidores saturados o no disponibles (5xx) se reintentan con esperas crecientes (2, 4 y 8 s, o la que indique la API, hasta 1 minuto) antes de avisar. Se detectan por el código de error de la API en lugar de buscar texto en el mensaje, y desaparece la pausa fija de 1 s tras cada respuesta.
+- **Mensajes sin modelos concretos:** las sugerencias ya no recomiendan `gemini-2.5-flash` (desde septiembre de 2026 solo lo pueden usar quienes ya lo usaban); remiten a la lista de «Cargar Modelos». El README y el tutorial, igual.
+- **Previsualización (`check=True`) fuera de un terminal:** sin `review_callback`, un error claro antes de generar nada (antes `input()` se quedaba esperando o fallaba). En la consola se acepta sí/si/s/yes.
+- **Informe por tema del punto extra:** además de LPRL, RSP y T02..T11, incluye cualquier otro tema que aparezca en las columnas de clase (antes, un tema 1 o 12 se perdía).
 
 ### Arreglado
 - **Seguridad: la respuesta de Gemini ya no se ejecuta con `eval`:** se analiza con `ast.literal_eval` (o `json.loads`), de modo que un PDF que manipule la salida del modelo no puede ejecutar código. Además, una pregunta mal formada (menos de cuatro opciones, respuesta no textual) ya no descarta el resto de preguntas de la misma respuesta.
@@ -82,6 +89,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Ventana lenta al cambiar de pestaña o al cerrarse:** cada tooltip enlazaba sus manejadores a la ventana entera, y se ejecutaban (tooltips × widgets) veces en cada evento. Ahora hay un solo manejador por ventana.
 - **Fachada de corrección:** sin `export_steps_dir`, ya no vuelve a leer todos los ficheros de entrada, y `MoodleIntegrationConfig(xlsx_files=...)` acepta un generador (antes la integración fallaba con «No XLSX files were provided»).
 - **Previsualización de exámenes (`check=True`):** si no se podía borrar el examen de previsualización, el mensaje decía que se había borrado; ahora informa del error.
+- **Modelo retirado o clave no válida en la generación de preguntas:** se repetía la llamada fallida en cada intento de cada fragmento y el resultado era «no se generaron preguntas» sin explicación; ahora se detiene al primer error con un mensaje que dice qué cambiar.
+- **Temas en el punto extra PIR:** «Ley 31/95» o «RD 39/97» con barra (y «Ley 31/1995») se reconocen igual que en el análisis de asistencia; antes el cálculo PIR solo aceptaba «Ley 31_95» y la sesión se ignoraba. Un texto como «Sistema 3» ya no se toma por «Tema 3».
+- **Sesiones de corrección con callbacks en el config:** al guardar la sesión, los callbacks se omiten; antes se copiaban en profundidad (con un método de la GUI, la ventana entera) y la grabación fallaba.
 
 ## [0.3.0] - 2026-09-15
 

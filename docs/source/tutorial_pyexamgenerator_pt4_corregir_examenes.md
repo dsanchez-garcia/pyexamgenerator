@@ -95,7 +95,9 @@ corrección.
 4. **Asistencias + justificaciones + cuestionarios** en modo `extremo`
    (`AbsenceJustificationManager`).
 5. **Punto extra PIR** (`TheoryBonusApplier`): aplica `+1` (con tope en 10) a quien cumple
-   asistencia y cuestionarios.
+   asistencia y cuestionarios. Ambas reglas se pueden cambiar en scripts: los puntos con
+   `bonus_points` y la nota mínima de los cuestionarios en cada tema (7,5) con `min_quiz_grade`
+   (en `TheoryBonusConfig`, `AbsenceJustificationConfig` o `FullPipelineConfig`).
 6. **Reporte por tema** (`TheoryTopicReporter`): notas de cuestionarios por tema y obtención del
    punto extra.
 
