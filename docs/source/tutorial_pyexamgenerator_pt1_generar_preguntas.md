@@ -94,7 +94,7 @@ Esta es la parte más importante, donde personalizamos la tarea.
 Ya está todo configurado.
 
 *   **Botón "Generar Preguntas":** Haz clic en este gran botón en la parte inferior.
-*   **¿Qué pasará ahora?:** La aplicación se quedará "pensando" por unos segundos. Cuando termine, aparecerá una ventana emergente confirmando que las preguntas se han generado con éxito.
+*   **¿Qué pasará ahora?:** La generación puede tardar desde unos segundos hasta varios minutos. Se hace en segundo plano: la barra de estado indica que se están generando las preguntas, el botón queda desactivado hasta que termina y puedes seguir usando la ventana. Cuando termine, aparecerá una ventana emergente confirmando que las preguntas se han generado con éxito.
 
 ![](/_static/gifs/parte2-3_v01_parte2.gif)
 

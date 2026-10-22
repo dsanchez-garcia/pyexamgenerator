@@ -76,6 +76,9 @@ api.grade_from_images(ImageGradingConfig(
 ))
 ```
 
+Con `default_output_dir`, los nombres de salida relativos (como `calificaciones.xlsx`) se guardan en
+esa carpeta; si indicas una ruta absoluta, se respeta.
+
 Si más adelante decides **sí** contar la asistencia, ejecuta ese paso por separado y cruza el
 resultado con las notas; al estar desacoplado, puedes incorporarlo o descartarlo sin rehacer la
 corrección.
@@ -85,7 +88,10 @@ corrección.
 1. **Matriculados** (`EnrollmentMerger`): fusiona los listados de matrícula.
 2. **Identificación de respuestas** (`ImageExamGrader`): OCR de las hojas, detección del tipo de
    examen y nota sobre 10. Genera la **tabla de incidencias** para revisión manual.
-3. **Integración de notas OCR en teoría** (`OcrGradeIntegrator`).
+3. **Integración de notas OCR en teoría** (`OcrGradeIntegrator`). Si la nota de una hoja sustituye
+   a una nota distinta que el alumno ya tenía (por ejemplo, porque también hizo el cuestionario en
+   Moodle, o porque la hoja es de otra persona), se aplica igualmente y queda la incidencia
+   `OVERWRITTEN_GRADE` en `incidencias_integracion_ocr.xlsx` para que la revises.
 4. **Asistencias + justificaciones + cuestionarios** en modo `extremo`
    (`AbsenceJustificationManager`).
 5. **Punto extra PIR** (`TheoryBonusApplier`): aplica `+1` (con tope en 10) a quien cumple
@@ -94,7 +100,32 @@ corrección.
    punto extra.
 
 Salidas (3 tablas): incidencias de identificación, cuestionarios + punto extra y calificaciones de
-teoría.
+teoría (más `incidencias_integracion_ocr.xlsx` si la integración tiene incidencias). Los ficheros
+intermedios van a la carpeta `_intermedios`, que se borra al terminar, también si hay un error.
+
+Todo este flujo está disponible en una sola llamada (es lo que ejecuta el botón *"Pipeline
+completo"* de la interfaz):
+
+```python
+from pyexamgenerator.grading import ExamCorrectionAPI, FullPipelineConfig
+
+api = ExamCorrectionAPI()
+teoria = api.run_full_pipeline(
+    FullPipelineConfig(
+        enrollment_paths=["GIM.xlsx", "GITI-GIE-GIEI.xlsx"],
+        xml_paths=["examen_1A.xml", "examen_1B.xml"],
+        image_paths=["hoja1.jpg", "hoja2.jpg"],
+        theory_xlsx_path="teoria_moodle.xlsx",
+        attendance_xlsx_path="asistencias.xlsx",
+        schedule_xlsx_path="horario.xlsx",
+        justifications_xlsx_path="justificaciones.xlsx",
+        quizzes_xlsx_path="cuestionarios.xlsx",
+        output_dir="salida",
+    ),
+    progress_callback=print,  # opcional: avisa al empezar cada paso
+)
+print(api.results["full_pipeline_outputs"])  # rutas de las tablas generadas
+```
 
 ## Uso como librería
 
@@ -142,7 +173,8 @@ propio botón, para que ejecutes solo el paso que necesites:
 8. **Sesión:** guardar/cargar para retomar el trabajo.
 
 Se mantiene además un botón **"Pipeline completo"** que ejecuta todos los pasos de una pasada (como
-antes). Cada acción corre en segundo plano y deja sus resultados en la carpeta de salida.
+antes; usa `ExamCorrectionAPI.run_full_pipeline`). Cada acción corre en segundo plano y deja sus
+resultados en la carpeta de salida; solo se ejecuta una tarea de corrección a la vez.
 
 ## Sesión reanudable (retomar más tarde)
 

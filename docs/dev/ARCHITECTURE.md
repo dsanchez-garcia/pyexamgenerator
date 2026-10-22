@@ -126,6 +126,7 @@ numerados y un `manifest.json`. Los resultados se guardan en `api.results` y en 
 | `integrate_moodle_grades` | `MoodleIntegrationConfig` | `integrations.MoodleGradeIntegrator` |
 | `integrate_ocr_grades` | `OCRIntegrationConfig` | `integrations.OcrGradeIntegrator` |
 | `run_moodle_plus_ocr_pipeline` | las dos anteriores | ambos integradores |
+| `run_full_pipeline` | `FullPipelineConfig` | matrícula → OCR → integración → asistencias → punto extra → informe (el «Pipeline completo» de la GUI; borra `_intermedios` también tras un error) |
 | `merge_enrollment_sources` | `EnrollmentMergeConfig` | `data.EnrollmentMerger` |
 | `process_absence_justifications` | `AbsenceJustificationConfig` | `attendance.AbsenceJustificationManager` |
 | `calculate_pir_bonus` | `PIRBonusConfig` | `attendance.PIRBonusCalculator` |
@@ -138,6 +139,13 @@ numerados y un `manifest.json`. Los resultados se guardan en `api.results` y en 
 Las clases de trabajo guardan sus entradas y salidas como atributos para poder inspeccionarlas.
 `data.SharedExamDataStore` cachea lecturas de Excel/XML compartidas.
 
+- **Rutas de salida:** un nombre relativo se escribe en la carpeta de salida (`output_dir` del
+  config o `default_output_dir` de la fachada; solo se conserva el nombre del fichero) y una ruta
+  absoluta se respeta. Fachada y clases de trabajo usan el mismo helper,
+  `grading/_paths.py: prepare_output_path`.
+- **`export_steps_dir`:** las entradas solo se vuelven a leer para exportarlas cuando se pide
+  (`_export_step_input`).
+
 ### Flujo de datos de corrección
 
 1. **Matrícula:** varios xlsx (por grupo) → lista única de alumnos (`EnrollmentMerger`).
@@ -147,7 +155,8 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
    forzarse con `forced_student_by_image`.
 4. **Integración:** notas de Moodle (columnas `Cuestionario:..._Tipo X (Real)`) + notas OCR. Modo
    unión (por defecto) o estricto (`append_unmatched_students`); incidencias en
-   `incidencias_integracion_ocr.xlsx`.
+   `incidencias_integracion_ocr.xlsx`: filas bloqueadas y notas OCR que sustituyen a una nota
+   distinta que ya existía (`OVERWRITTEN_GRADE`, se aplican igualmente).
 5. **Asistencia y bonus:** asistencias + correos de justificación + cuestionarios → punto extra PIR.
 6. **Nota final** ponderada (por fichero o por columnas) y **comparación** con una versión previa.
 
@@ -171,11 +180,20 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 - `__init__` carga la clave (`GEMINI_API_KEY` → `config.json`), crea ~70 variables Tkinter y
   construye las pestañas: `create_question_tab`, `create_manage_bank_tab`, `create_exam_tab`,
   `create_grading_tab`, y el menú «Ayuda».
-- Hilos: solo la pestaña de corrección usa hilos (`_grad_run_async`, `run_grading`), y solo una
-  tarea a la vez (`_grad_try_start_job` / `_grad_finish_job`); el resto (incluidas las llamadas a
-  Gemini) se ejecuta en el hilo principal (`GUI-3`). Los hilos devuelven resultados con
-  `root.after`, que exige el `mainloop` en marcha (en los tests, ver
-  `test_only_one_grading_job_runs_at_a_time`).
+- Hilos: las tareas largas se ejecutan fuera del hilo de la interfaz. Generación con Gemini, carga
+  de modelos y generación de exámenes usan `_run_in_background` (deshabilita el botón, ejecuta en
+  un hilo y llama a `on_success`/`on_error` en el hilo principal); la corrección usa
+  `_grad_run_async`, con una sola tarea a la vez (`_grad_try_start_job` / `_grad_finish_job`), y
+  «Pipeline completo» delega en `ExamCorrectionAPI.run_full_pipeline`. Todos los valores de la
+  interfaz se leen antes de lanzar el hilo; un diálogo pedido desde un hilo (la alerta de uso de
+  preguntas) se muestra con `_call_in_main_thread`. Los hilos devuelven resultados con
+  `root.after`, que exige el `mainloop` en marcha (en los tests, ver `_run_in_mainloop` en
+  `test_gui_smoke.py`). Cada generación de exámenes usa su propio `ExamGenerator`, porque la
+  instancia guarda estado mientras trabaja (`ARC-13`).
+- Desplazamiento: `_bind_page_scroll` enlaza la rueda del ratón en las pestañas «Generar
+  Preguntas» y «Gestionar Banco», salvo en los widgets que se desplazan solos (tablas, textos).
+- Tooltips (`tooltip.py`): un único manejador por ventana oculta los tooltips visibles al ocultarla
+  o cerrarla.
 - Listas de rutas en un campo: separadas por `;` (`ExamApp._split_paths`); los nombres de fichero
   pueden contener comas.
 - Los `messagebox.show*` se sustituyen por diálogos con texto copiable.
@@ -202,12 +220,14 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `test_grading_bonus_and_attendance.py` | punto extra PIR y columnas de asistencia |
 | `test_grading_ids.py` | `normalize_id`; nota final, comparación, matrícula y asistencias con IDs float o vacíos |
 | `test_grading_ocr_robustness.py` | emparejamiento OCR, hojas ilegibles o sin tipo, carpeta temporal (requiere `[grading]`) |
-| `test_grading_matching.py` | emparejamiento por nombre (justificaciones, integración OCR con `Apellidos`) |
-| `test_grading_api_workflows.py` | fachada: configs sin efectos secundarios, combinar con copia, nota final con nombres repetidos, sesión |
+| `test_grading_matching.py` | emparejamiento por nombre (justificaciones, integración OCR con `Apellidos`) y aviso de notas sustituidas |
+| `test_grading_api_workflows.py` | fachada: configs sin efectos secundarios, combinar con copia, nota final con nombres repetidos, sesión, pipeline completo (OCR y asistencias simulados), rutas absolutas y lecturas solo para exportar pasos |
 | `test_exam_generator_outputs.py` | nombres de fichero seguros, categoría de Moodle, plantillas DOCX (runs partidos, cabeceras) |
 | `test_question_generator_flow.py` | flujo completo de generación con un cliente de Gemini simulado |
-| `test_gui_smoke.py` | ventana real de la GUI: prompts, clave de API, lista de ficheros, errores de entrada y una sola tarea de corrección (se salta sin pantalla; en la CI de Linux usa xvfb) |
+| `test_gui_smoke.py` | ventana real de la GUI: prompts, clave de API, lista de ficheros, errores de entrada, una sola tarea de corrección, variables Tk solo en el hilo principal, tareas en segundo plano, rueda del ratón, tooltips y valores por defecto (se salta sin pantalla; en la CI de Linux usa xvfb) |
 | `test_package_smoke.py` | compila todos los módulos (incluida la GUI) |
+| `test_release_metadata.py` | la versión y la fecha coinciden en `__init__.py`, `CITATION.cff`, `.zenodo.json` y `CHANGELOG.md` |
+| `conftest.py` | sustituye `google.genai.Client` en todos los tests (ninguno puede llamar a Gemini) |
 | `test_image_mode_unit.py` | utilidades de `input_mode='image'` |
 | `test_v023_features.py` | estado sin mayúsculas, XML no blanco, placeholders de plantilla DOCX |
 | `test_v030_features.py` | reparto por total, layout del DOCX, uso desde exámenes, etiquetas, unificación |

@@ -8,13 +8,17 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 ## [Unreleased]
 
 ### Añadido
-- **Integración continua:** workflow de GitHub Actions (`.github/workflows/tests.yml`) que ejecuta `pytest` en Ubuntu y Windows (Python 3.9 y 3.14, con y sin el extra `[grading]`) y compila la documentación con `sphinx -W`, igual que Read the Docs.
+- **Integración continua:** workflow de GitHub Actions (`.github/workflows/tests.yml`) que ejecuta `pytest` en Ubuntu y Windows (Python 3.10 y 3.14, con y sin el extra `[grading]`) y compila la documentación con `sphinx -W`, igual que Read the Docs.
 - **Nuevas pruebas de regresión:** análisis seguro de la respuesta de Gemini, carga de sesiones, relectura del banco y registro de uso, punto extra PIR, columnas de asistencia, normalización de IDs y compilación de todos los módulos del paquete (incluida la GUI).
 - **Pruebas de humo de la GUI:** `tests/test_gui_smoke.py` construye la ventana real de la aplicación (sin mostrarla) y prueba el diálogo de prompts y el guardado de la clave de API. Se saltan donde no hay pantalla para Tk.
 - **Más pruebas de regresión:** generación con datos reales (respuestas numéricas o vacías, letras como `B)`), lectura del DOCX revisado, nombres de columnas de uso, matrícula y asistencias con IDs vacíos o numéricos, y flujo OCR con hojas ilegibles o sin tipo de examen.
 - **Pruebas del flujo de generación de preguntas** con un cliente de Gemini simulado (sin llamadas a la API), de los ficheros de examen (nombres, categoría de Moodle, plantillas) y de la fachada de corrección.
 - **La CI prueba la GUI también en Linux** (pantalla virtual `xvfb`), y `pytest.ini` limita la recogida de tests a `tests/`.
 - **Guía de contribución y plantillas:** `CONTRIBUTING.md`, plantilla de *pull request* y de informe de error (con el aviso de no adjuntar datos de alumnos), enlazadas desde el README.
+- **Pipeline completo en la librería:** `ExamCorrectionAPI.run_full_pipeline(FullPipelineConfig)` hace lo mismo que el botón «Pipeline completo» de la GUI (matrícula, OCR, integración de notas, asistencias, punto extra e informe de cuestionarios), con un `progress_callback` opcional para informar del avance. La GUI lo usa.
+- **Política de seguridad:** `SECURITY.md` explica cómo informar en privado de una vulnerabilidad y resume cómo trata la aplicación los datos de los alumnos (qué se procesa en local, qué se envía a Gemini, clave de API, temporales y sesiones).
+- **`QuestionBankManager.usage_column_name`:** nombre público del método que calcula la columna `<etiqueta>_uso` (se mantiene `_usage_column_name` como alias).
+- **Más pruebas:** la GUI en segundo plano (Gemini, modelos, exámenes), las lecturas de la interfaz desde los hilos, la rueda del ratón y los tooltips; el pipeline completo; rutas de salida absolutas; coherencia de la versión entre `__init__.py`, `CITATION.cff`, `.zenodo.json` y `CHANGELOG.md`. `tests/conftest.py` sustituye el cliente de Gemini en todos los tests, de modo que ninguno puede llamar a la API real.
 
 ### Cambiado
 - **INCOMPATIBLE: Python 3.10 o superior.** La versión mínima pasa de 3.8 a 3.10: Python 3.8 y 3.9 ya no tienen soporte y la librería `google-genai` exige 3.10 en sus versiones actuales (en 3.8 ni siquiera se podía instalar). Se actualizan `python_requires` y los clasificadores, `tox.ini`, Read the Docs y la CI (que prueba 3.10 y 3.14). Con Python 3.9, la última versión utilizable es la 0.3.0.
@@ -35,6 +39,11 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **`sync_branch.bat`:** lista los ficheros no versionados y pide confirmación antes de borrarlos con `git clean`.
 - **Sesiones de corrección: JSON primero, pickle solo con permiso:** `GradingSession.load(...)` y `ExamCorrectionAPI.load_session(...)` usan siempre el `.json` y solo leen un `.pkl` (sin su `.json`) con `allow_pickle=True`, porque deserializar un pickle puede ejecutar código. La GUI pide confirmación antes de abrir un `.pkl`.
 - **Documentación para desarrolladores y agentes de IA:** `AGENTS.md`, `CLAUDE.md`, `docs/dev/` y `TODO.md` con la revisión priorizada del repositorio.
+- **La ventana ya no se queda congelada:** la generación de preguntas con Gemini, la carga de la lista de modelos y la generación de exámenes se ejecutan en segundo plano; el botón que las lanza queda deshabilitado hasta que terminan. La alerta de uso de preguntas sigue preguntando antes de continuar.
+- **Campos de «Generar Exámenes» sin valores de prueba:** la asignatura, el examen, el curso, el banco, las instrucciones de la hoja de respuestas y el texto adicional de la categoría de Moodle empiezan vacíos. Antes venían con «Asignatura de Prueba», «Prueba GUI»… y, si no se cambiaban, acababan en los exámenes (por ejemplo, «Prueba GUI» en la hoja de respuestas). El nombre de salida por defecto de «Generar Preguntas» es `preguntas` (antes `banco_prueba`).
+- **Integración de notas OCR: aviso al sustituir una nota existente:** si la nota de una hoja sustituye a una nota distinta que el alumno ya tenía en teoría (por ejemplo, porque también hizo el cuestionario en Moodle, o porque la hoja es de otra persona), la nota OCR se sigue aplicando pero queda la incidencia `OVERWRITTEN_GRADE` (severidad media) en `incidencias_integracion_ocr.xlsx`, el resumen cuenta `grades_overwritten` y la GUI lo avisa.
+- **Rutas de salida absolutas en `grading`:** una ruta de salida absoluta se respeta aunque haya una carpeta de salida; antes el fichero acababa en esa carpeta. Los nombres relativos siguen guardándose en la carpeta de salida.
+- **`.gitignore`:** ignora las cachés de herramientas (pytest, tox, ruff, mypy), `prueba_error/` y `deposito_rodin/`, y permite versionar ficheros de prueba sintéticos en `tests/fixtures/`.
 
 ### Arreglado
 - **Seguridad: la respuesta de Gemini ya no se ejecuta con `eval`:** se analiza con `ast.literal_eval` (o `json.loads`), de modo que un PDF que manipule la salida del modelo no puede ejecutar código. Además, una pregunta mal formada (menos de cuatro opciones, respuesta no textual) ya no descarta el resto de preguntas de la misma respuesta.
@@ -63,6 +72,11 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Tema de los ficheros `.PDF` (en mayúsculas) e imágenes:** el tema ya no conserva la extensión.
 - **Errores de entrada en la GUI:** un peso no numérico en la nota final o un banco ilegible (o bloqueado por Excel) al listar los temas muestran un mensaje en lugar de fallar solo en la consola.
 - **Compatibilidad con pandas futuro:** al combinar resultados, asignar decimales a una columna leída como entera ya no genera el aviso que en próximas versiones de pandas será un error.
+- **Corrección desde la GUI y campos de la interfaz:** las tareas de corrección leían campos de la ventana (carpeta de salida, matriculados, horario, columna de nota…) desde su hilo de trabajo, algo que Tkinter no admite de forma segura y que podía mezclar valores si se editaba un campo durante la tarea. Ahora se leen todos antes de empezar.
+- **«Pipeline completo» deja ficheros con datos de alumnos tras un error:** la carpeta `_intermedios` (matrícula fusionada, notas OCR, teoría integrada) solo se borraba si todo iba bien; ahora se borra siempre.
+- **Rueda del ratón:** la tabla de modelos, el texto del prompt y la tabla de exámenes a registrar vuelven a desplazarse con la rueda (la página se quedaba con todos los eventos).
+- **Ventana lenta al cambiar de pestaña o al cerrarse:** cada tooltip enlazaba sus manejadores a la ventana entera, y se ejecutaban (tooltips × widgets) veces en cada evento. Ahora hay un solo manejador por ventana.
+- **Fachada de corrección:** sin `export_steps_dir`, ya no vuelve a leer todos los ficheros de entrada, y `MoodleIntegrationConfig(xlsx_files=...)` acepta un generador (antes la integración fallaba con «No XLSX files were provided»).
 
 ## [0.3.0] - 2026-09-15
 
