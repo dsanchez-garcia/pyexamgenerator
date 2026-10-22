@@ -14,6 +14,15 @@ from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
 from pyexamgenerator.grading.session import GradingSession
 
 
+def _read_excel_later(path: str, sheet_name: int = 0) -> Callable[[], pd.DataFrame]:
+    """A deferred ``pd.read_excel`` for :meth:`ExamCorrectionAPI._export_step_input`."""
+
+    def read() -> pd.DataFrame:
+        return pd.read_excel(path, sheet_name=sheet_name)
+
+    return read
+
+
 @dataclass
 class ExcelGradingConfig:
     exam_xml_path: str
@@ -466,7 +475,7 @@ class ExamCorrectionAPI:
             if export_state is not None and output:
                 written_path = self._resolve_output_path(output, cfg.output_dir)
                 if Path(written_path).exists():
-                    self._export_step_input(export_state, step_name, lambda p=written_path: pd.read_excel(p))
+                    self._export_step_input(export_state, step_name, _read_excel_later(written_path))
         out_answers = self._resolve_output_path(cfg.output_answers, cfg.output_dir)
         out_grades = self._resolve_output_path(cfg.output_grades, cfg.output_dir)
         out_audit = self._resolve_output_path(cfg.output_audit, cfg.output_dir) if cfg.output_audit else None
@@ -511,7 +520,7 @@ class ExamCorrectionAPI:
         export_state = self._start_step_export(export_steps_dir, "integrate_moodle_grades")
         for i, path in enumerate(cfg.xlsx_files, start=1):
             self._export_step_input(export_state, f"source_file_{i}",
-                                    lambda p=path: pd.read_excel(p, sheet_name=cfg.sheet))
+                                    _read_excel_later(path, cfg.sheet))
 
         integrator = MoodleGradeIntegrator(
             xlsx_files=cfg.xlsx_files,
@@ -655,7 +664,7 @@ class ExamCorrectionAPI:
             raise ValueError("El pipeline completo necesita una carpeta de salida (output_dir).")
         work_dir = Path(out_dir) / "_intermedios"
         work_dir.mkdir(parents=True, exist_ok=True)
-        outputs: Dict[str, object] = {}
+        outputs: Dict[str, str] = {}
         try:
             progress("Fusionando matriculados…")
             enrollment_path = str(work_dir / "matriculados.xlsx")
@@ -760,7 +769,7 @@ class ExamCorrectionAPI:
         export_state = self._start_step_export(export_steps_dir, "merge_enrollment_sources")
         for i, source_path in enumerate(cfg.source_paths, start=1):
             self._export_step_input(export_state, f"source_enrollment_{i}",
-                                    lambda p=source_path: pd.read_excel(p, sheet_name=cfg.sheet))
+                                    _read_excel_later(source_path, cfg.sheet))
 
         merged_df = build_merged_enrollment_from_sources(cfg.source_paths, sheet_name=cfg.sheet)
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)

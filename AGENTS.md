@@ -37,8 +37,9 @@ venv/Scripts/python.exe -m pytest -q
 venv/Scripts/python.exe -m pytest tests/test_grading_unit.py -q
 venv/Scripts/python.exe -m pytest -q -k "unify"
 
-# Lint (reglas en pyproject.toml; la CI lo exige)
+# Lint y tipos (configuración en pyproject.toml; la CI exige ambos)
 venv/Scripts/python.exe -m ruff check .
+venv/Scripts/python.exe -m mypy
 
 # Comprobar que el paquete se importa
 venv/Scripts/python.exe -c "import pyexamgenerator as p; print(p.__version__, p.grading.HAS_OCR)"
