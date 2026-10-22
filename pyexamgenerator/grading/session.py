@@ -5,6 +5,9 @@ grading workflow, the configuration used and a summary of the results. It is wri
 binary pickle (``.pkl``, exact round-trip) and as a human-readable JSON (``.json``, equivalent
 content) so a correction session can be resumed later — for example, knowing the paths of the exams
 that were generated and grading them directly without re-specifying every route.
+
+Loading always prefers the JSON. Unpickling can execute arbitrary code, so a ``.pkl`` is only read
+when the caller explicitly passes ``allow_pickle=True`` (only for files you created yourself).
 """
 
 from __future__ import annotations
@@ -154,26 +157,30 @@ class GradingSession:
         return pkl_path, json_path
 
     @classmethod
-    def load(cls, path: str) -> "GradingSession":
-        """Loads a session from ``path`` (``.pkl`` or ``.json``) or from its base name.
+    def load(cls, path: str, allow_pickle: bool = False) -> "GradingSession":
+        """Loads a session from ``path`` (``.json`` or ``.pkl``) or from its base name.
 
-        If an exact file is given it is used; otherwise the pickle is preferred over the JSON.
+        The JSON is always preferred: given a base name or a ``.pkl`` path, the sibling ``.json`` is
+        used when it exists. A pickle is only read with ``allow_pickle=True`` because unpickling an
+        untrusted file can execute arbitrary code.
+
+        Raises:
+            FileNotFoundError: If neither a ``.json`` nor a ``.pkl`` session exists.
+            ValueError: If only a pickle exists and ``allow_pickle`` is False.
         """
-        p = Path(path)
-        if p.suffix.lower() == ".pkl" and p.exists():
-            with open(p, "rb") as handle:
-                return pickle.load(handle)
-        if p.suffix.lower() == ".json" and p.exists():
-            with open(p, "r", encoding="utf-8") as handle:
-                return cls.from_dict(json.load(handle))
-
         base = _strip_known_ext(str(path))
-        pkl_candidate = Path(base + ".pkl")
-        if pkl_candidate.exists():
-            with open(pkl_candidate, "rb") as handle:
-                return pickle.load(handle)
         json_candidate = Path(base + ".json")
+        pkl_candidate = Path(base + ".pkl")
+
         if json_candidate.exists():
             with open(json_candidate, "r", encoding="utf-8") as handle:
                 return cls.from_dict(json.load(handle))
-        raise FileNotFoundError(f"No session file found for '{path}' (.pkl or .json).")
+        if pkl_candidate.exists():
+            if not allow_pickle:
+                raise ValueError(
+                    f"Only a pickle session was found ('{pkl_candidate}'). Loading pickles can execute "
+                    "arbitrary code: pass allow_pickle=True only if you created this file yourself."
+                )
+            with open(pkl_candidate, "rb") as handle:
+                return pickle.load(handle)
+        raise FileNotFoundError(f"No session file found for '{path}' (.json or .pkl).")

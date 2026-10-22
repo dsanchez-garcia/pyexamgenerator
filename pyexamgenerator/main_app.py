@@ -1398,11 +1398,25 @@ class ExamApp:
         path = self.grad_session_path_var.get().strip()
         if not path:
             path = filedialog.askopenfilename(
-                title="Cargar sesión de corrección", filetypes=[("Sesión", "*.json *.pkl"), ("Todos", "*.*")])
+                title="Cargar sesión de corrección",
+                filetypes=[("Sesión JSON", "*.json"), ("Sesión pickle (solo propias)", "*.pkl"), ("Todos", "*.*")])
         if not path:
             return
         try:
             session = GradingSession.load(path)
+        except ValueError:
+            # Only a pickle exists: unpickling can run code, so ask before trusting the file.
+            if not messagebox.askyesno(
+                    "Sesión en formato pickle",
+                    "Solo se ha encontrado la sesión en formato .pkl (sin su .json).\n\n"
+                    "Abrir un .pkl puede ejecutar código. Continúa solo si este archivo lo has "
+                    "creado tú en este equipo.\n\n¿Cargarlo de todos modos?"):
+                return
+            try:
+                session = GradingSession.load(path, allow_pickle=True)
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Error", f"No se pudo cargar la sesión: {exc}")
+                return
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Error", f"No se pudo cargar la sesión: {exc}")
             return

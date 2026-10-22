@@ -214,9 +214,12 @@ class ExamCorrectionAPI:
         """Writes the accumulated session to ``<base>.pkl`` and ``<base>.json``."""
         return self.session.save(path)
 
-    def load_session(self, path: str) -> GradingSession:
-        """Loads a session (``.pkl`` or ``.json``) and adopts it as the current session."""
-        self.session = GradingSession.load(path)
+    def load_session(self, path: str, allow_pickle: bool = False) -> GradingSession:
+        """Loads a session (``.json``, or ``.pkl`` with ``allow_pickle=True``) and adopts it.
+
+        See :meth:`GradingSession.load`: pickles are only read when explicitly allowed.
+        """
+        self.session = GradingSession.load(path, allow_pickle=allow_pickle)
         return self.session
 
     def _resolve_output_dir(self, explicit_output_dir: Optional[str]) -> Optional[str]:
