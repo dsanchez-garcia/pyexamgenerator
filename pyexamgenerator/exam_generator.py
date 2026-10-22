@@ -58,6 +58,8 @@ class ExamGenerator:
         self.generated_exams = []
         self.last_usage_warning_questions = pd.DataFrame()
         self.generation_cancelled = False
+        # With update_excel=True: why the usage could not be written to the bank (None if it was).
+        self.bank_update_error: Optional[str] = None
 
     # Fraction percentages commonly accepted by Moodle for multichoice answers.
     _MOODLE_GRADE_OPTIONS_PERCENT: Tuple[float, ...] = (
@@ -502,14 +504,19 @@ class ExamGenerator:
                                     None in case of an error.
         """
         try:
-            df = pd.read_excel(excel_path)
-            # Attempt to convert the 'Número de pregunta' (Question Number) column to an integer.
-            if 'Número de pregunta' in df.columns:
-                df['Número de pregunta'] = pd.to_numeric(df['Número de pregunta'], errors='coerce').fillna(0).astype(int)
-            return df
+            return self._read_bank(excel_path)
         except Exception as e:
             print(f"Error al leer el archivo Excel: {e}")
             return None
+
+    @staticmethod
+    def _read_bank(excel_path: str) -> pd.DataFrame:
+        """Reads the question bank; errors (missing, locked by Excel, invalid file) are raised."""
+        df = pd.read_excel(excel_path)
+        # Attempt to convert the 'Número de pregunta' (Question Number) column to an integer.
+        if 'Número de pregunta' in df.columns:
+            df['Número de pregunta'] = pd.to_numeric(df['Número de pregunta'], errors='coerce').fillna(0).astype(int)
+        return df
 
     def generate_question_text(self, df: pd.DataFrame, renumber: bool = False, shuffle_answers: bool = False) -> Tuple[str, str]:
         """
@@ -909,7 +916,9 @@ class ExamGenerator:
             check (bool): If True, generates a preview and waits for confirmation before creating all
                 exams: from ``review_callback`` or, without it, by asking in the console (only from an
                 interactive terminal; elsewhere a ``ValueError`` is raised before generating anything).
-            update_excel (bool): If True, updates the source Excel file with usage statistics.
+            update_excel (bool): If True, updates the source Excel file with usage statistics. If the
+                bank cannot be written (e.g. it is open in Excel), the exams are kept and the reason is
+                left in ``self.bank_update_error``.
             answer_sheet_instructions (Optional[str]): Text with instructions for the answer sheet.
             template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
             session_output_path (Optional[str]): If set, writes a resumable grading session (``.pkl`` +
@@ -926,6 +935,7 @@ class ExamGenerator:
         # Start a fresh list of generated-exam records for this run.
         self.generated_exams = []
         self.generation_cancelled = False
+        self.bank_update_error = None
 
         if check and review_callback is None and not stdin_is_interactive():
             # input() would block or fail in a GUI, a notebook or CI.
@@ -937,10 +947,9 @@ class ExamGenerator:
 
         # Always re-read the bank: a cached DataFrame from a previous call could belong to another
         # file (or an outdated version of this one) and, with update_excel=True, overwrite it.
-        self.df = self.read_questions_from_excel(bank_excel_path)
-
-        if self.df is None:
-            return
+        # Read errors are raised: returning quietly made callers (the GUI) report a generation
+        # that did not happen.
+        self.df = self._read_bank(bank_excel_path)
 
         exam_columns = [col for col in self.df.columns if re.match(r'.*_\d{2}-\d{2}', col)]
         for col in exam_columns:
@@ -1334,6 +1343,9 @@ class ExamGenerator:
                 print(
                     f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'.")
             except Exception as e:
+                # The exams are already written: keep them, but let the caller know that the usage was
+                # not recorded (e.g. the bank is open in Excel) instead of only printing it.
+                self.bank_update_error = f"{type(e).__name__}: {e}"
                 print(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
 
     def _save_grading_session(self, session_output_path: str, subject: Optional[str] = None,

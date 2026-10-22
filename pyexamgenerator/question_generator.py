@@ -998,17 +998,18 @@ class QuestionGenerator:
         self.current_prompt_example_content_type = prompt_example_content_type
         print(f"Contenido de ejemplos en prompt: {self.current_prompt_example_content_type}")
 
-        if existing_bank_path and os.path.exists(existing_bank_path):
+        if existing_bank_path:
+            # A bank was chosen to avoid duplicates: if it cannot be read (missing, open in Excel...),
+            # stop before calling Gemini instead of quietly generating without the filter.
             try:
                 self.existing_bank_df = pd.read_excel(existing_bank_path)
-                print(f"Banco de preguntas existente cargado desde '{existing_bank_path}' para el filtro de similitud.")
             except Exception as e:
-                print(f"Error al cargar el banco de preguntas existente: {e}")
-                self.existing_bank_df = None
+                raise ValueError(
+                    f"No se pudo leer el banco de preguntas existente '{existing_bank_path}': {e}"
+                ) from e
+            print(f"Banco de preguntas existente cargado desde '{existing_bank_path}' para el filtro de similitud.")
         else:
             self.existing_bank_df = None
-            if existing_bank_path:  # Only show warning if a path was provided
-                print(f"Advertencia: El archivo del banco de preguntas existente no se encontró en '{existing_bank_path}'.")
 
         for pdf_path in pdf_paths:
             print(f"\n--- Procesando archivo fuente: {pdf_path} ---")

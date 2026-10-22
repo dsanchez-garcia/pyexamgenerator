@@ -78,3 +78,20 @@ def test_generated_questions_similar_to_the_bank_are_filtered(tmp_path):
     assert empty_accepted.empty and empty_rejected.empty
     with pytest.raises(FileNotFoundError):
         generator.filter_generated_questions_duplicates(generated, str(tmp_path / "no_existe.xlsx"))
+
+
+def test_unreadable_duplicates_bank_stops_before_calling_gemini(tmp_path):
+    """ARC-9: si el banco elegido para evitar duplicados no se podía leer, se generaba igualmente sin
+    el filtro y solo quedaba un aviso en la consola."""
+    pdf_path = _pdf(tmp_path / "Tema 1.pdf", "La ley de prevencion de riesgos laborales.")
+    calls = []
+    generator = QuestionGenerator(api_key="dummy", model_name="models/test")
+    generator.client = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kwargs: calls.append(kwargs)))
+
+    with pytest.raises(ValueError, match="No se pudo leer el banco de preguntas existente"):
+        generator.generate_multiple_choice_questions(
+            pdf_paths=[pdf_path], prompt_type="PRL", num_questions_per_chunk_target=1, output_dir=str(tmp_path),
+            existing_bank_path=str(tmp_path / "no_existe.xlsx"), similarity_threshold=0.8,
+        )
+
+    assert calls == []

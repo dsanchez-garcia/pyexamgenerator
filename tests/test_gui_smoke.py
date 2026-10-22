@@ -549,3 +549,32 @@ def test_standard_messageboxes_are_not_replaced_for_the_whole_process(app):
     assert messagebox.showinfo.__module__ == "tkinter.messagebox"
     main_app.messagebox.showwarning("Aviso", "Texto que se puede copiar")
     assert app.shown_messages == [("warning", "Aviso", "Texto que se puede copiar")]
+
+
+def test_exams_generated_without_updating_the_bank_show_a_warning(app, monkeypatch, tmp_path):
+    """ARC-9: si el uso no se podía guardar en el banco (abierto en Excel), la GUI decía «Exámenes
+    generados correctamente» y el error solo salía en la consola."""
+    import pandas as pd
+
+    import pyexamgenerator.main_app as main_app
+
+    class LockedBankGenerator:
+        generation_cancelled = False
+        bank_update_error = None
+
+        def generate_exam_from_excel(self, **kwargs):
+            self.bank_update_error = "PermissionError: el fichero está abierto en Excel"
+
+    monkeypatch.setattr(main_app, "ExamGenerator", LockedBankGenerator)
+    bank = tmp_path / "banco.xlsx"
+    pd.DataFrame({"Tema": ["Tema 01"], "Pregunta": ["¿?"]}).to_excel(bank, index=False)
+    app.excel_filepath.set(str(bank))
+    app.selection_method_var.set("diccionario")
+    app.questions_per_topic.set("Tema 01:1")
+    app.update_excel.set(True)
+
+    _run_in_mainloop(app, app.generate_exams, done=lambda: bool(app.shown_messages))
+
+    (kind, title, message), = app.shown_messages
+    assert (kind, title) == ("warning", "Banco sin actualizar")
+    assert "abierto en Excel" in message and "Actualizar Banco con Exámenes" in message

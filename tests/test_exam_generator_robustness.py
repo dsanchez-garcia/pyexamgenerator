@@ -237,3 +237,36 @@ def test_check_in_a_terminal_accepts_si_without_accent(tmp_path, monkeypatch):
     _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True)
 
     assert list((tmp_path / "salida").glob("*_A.docx"))
+
+
+def test_unreadable_bank_raises_instead_of_returning_quietly(tmp_path):
+    """ARC-9: un banco ilegible hacía que la generación volviera sin hacer nada y sin error, y la GUI
+    mostraba «Exámenes generados correctamente»."""
+    bank_path = tmp_path / "banco.xlsx"
+    bank_path.write_text("esto no es un Excel", encoding="utf-8")
+
+    with pytest.raises(ValueError):  # pandas: the file is not a valid Excel workbook
+        _generate(bank_path, out_dir=tmp_path / "salida")
+
+    assert not (tmp_path / "salida").exists() or not list((tmp_path / "salida").iterdir())
+
+
+def test_bank_that_cannot_be_updated_is_reported(tmp_path, monkeypatch):
+    """ARC-9: con «Actualizar Excel», si el banco estaba abierto en Excel el uso no se registraba y
+    solo quedaba un mensaje en la consola."""
+    bank_path = tmp_path / "banco.xlsx"
+    _bank().to_excel(bank_path, index=False)
+    original_to_excel = pd.DataFrame.to_excel
+
+    def to_excel(self, path, *args, **kwargs):
+        if str(path) == str(bank_path):
+            raise PermissionError("el fichero está abierto en Excel")
+        return original_to_excel(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_excel", to_excel)
+
+    generator = _generate(bank_path, out_dir=tmp_path / "salida", update_excel=True)
+
+    assert generator.bank_update_error == "PermissionError: el fichero está abierto en Excel"
+    assert list((tmp_path / "salida").glob("*_A.docx"))  # the exams are kept
+    assert ExamGenerator().bank_update_error is None

@@ -3482,14 +3482,25 @@ class ExamApp:
                 usage_warning_threshold=usage_alert_threshold,
                 usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None
             )
-            return bool(getattr(generator, "generation_cancelled", False))
+            return bool(getattr(generator, "generation_cancelled", False)), getattr(generator, "bank_update_error", None)
 
-        def on_success(cancelled):
+        def on_success(outcome):
+            cancelled, bank_update_error = outcome
             if cancelled:
                 self.update_status("Generacion de examenes cancelada.")
                 messagebox.showinfo("Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
                 return
             self.update_status("Exámenes generados.")
+            if bank_update_error:
+                # The exams exist, but the bank does not record their use (e.g. it was open in Excel).
+                messagebox.showwarning(
+                    "Banco sin actualizar",
+                    "Los exámenes se han generado, pero no se pudo registrar su uso en el banco de preguntas:\n"
+                    f"{bank_update_error}\n\n"
+                    "Cierra el banco si está abierto en Excel y registra el uso con «Actualizar Banco con "
+                    "Exámenes» (pestaña «Gestionar Banco de Preguntas»).",
+                )
+                return
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
 
         def on_error(e):
