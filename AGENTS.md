@@ -64,12 +64,14 @@ pyexamgenerator/
   question_bank_manager.py QuestionBankManager: DOCX revisado ↔ XLSX, fusión, uso, unificación
   _text.py                 helpers compartidos: strip_accents, safe_filename_part
   exam_generator.py        ExamGenerator: banco XLSX → exámenes DOCX/XLSX/Moodle XML
-  main_app.py              GUI Tkinter (clase ExamApp, ~3.900 líneas) y entry point main()
+  main_app.py              GUI Tkinter (clase ExamApp, ~3.800 líneas) y entry point main()
+  gui_logic.py             lógica de la GUI sin tkinter: interpretar los campos, avisos (se prueba sin pantalla)
   tooltip.py               ToolTip para la GUI
   grading/                 corrección de exámenes (ver ARCHITECTURE.md)
     api.py                 ExamCorrectionAPI + dataclasses *Config
     _ids.py                normalize_id: comparar IDs de alumno (úsalo siempre)
     _paths.py              prepare_output_path: rutas de salida (las absolutas se respetan)
+    _text.py               normalize_key, find_column, clean_text, parse_decimal: reglas comunes (úsalas)
     extraction.py          OCR (único módulo que importa cv2/numpy/rapidocr)
     graders.py, integrations.py, attendance.py, final_grade.py, comparison.py, data.py, session.py
 tests/                     pytest; todos los datos se generan en tmp_path
@@ -78,7 +80,7 @@ docs/source/               Sphinx + MyST (Read the Docs); tutoriales en Markdown
 docs/dev/                  documentación para desarrolladores y agentes (fuera de Sphinx)
 examples/                  PDF de ejemplo de los tutoriales (no se empaquetan)
 pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [docs]) y config. de pytest
-*.bat                      scripts de Windows para build, docs, subida a PyPI e instalación
+*.bat, add_user_path.ps1   scripts de Windows para build, docs, subida a PyPI e instalación
 ```
 
 ## Reglas del proyecto
@@ -110,7 +112,9 @@ pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [d
   `[grading]`. Los tests de OCR usan `pytest.importorskip`.
 - **La librería no debe depender de la GUI.** Nada en `question_generator.py`,
   `question_bank_manager.py`, `exam_generator.py` ni `grading/` importa `tkinter`. La lógica nueva
-  va en la librería; `main_app.py` solo lee widgets, llama a la librería y muestra resultados.
+  va en la librería; `main_app.py` solo lee widgets, llama a la librería y muestra resultados. Lo que
+  sea propio de la GUI pero no necesite Tk (interpretar el texto de un campo, componer un aviso) va
+  en `gui_logic.py`, con tests en `tests/test_gui_logic.py`.
 - **No añadas `input()` ni prompts interactivos** a la librería: usa callbacks opcionales (como
   `usage_warning_callback` o `review_callback` en `ExamGenerator`, `exam_type_callback` en el OCR).
   Sin callback, solo se pregunta por consola desde un terminal (`pyexamgenerator/_console.py`).
@@ -173,8 +177,9 @@ Antes de dar una tarea por terminada:
 - Los Excel de Moodle tienen IDs con ceros iniciales y, si hay huecos, pandas lee los numéricos como
   float (`12345678.0`). Compara IDs siempre con `pyexamgenerator.grading._ids.normalize_id` y, si
   necesitas conservar ceros iniciales, lee con `dtype=object`.
-- Columnas de Moodle con nombres en español y, a veces, *mojibake* (`"Nmero de ID"`); los helpers de
-  `grading` buscan columnas de forma tolerante (`_find_column`). Reutilízalos.
+- Columnas de Moodle con nombres en español y, a veces, *mojibake* (`"Nmero de ID"`); busca columnas
+  y lee notas con `pyexamgenerator.grading._text` (`find_column`, `normalize_key`, `parse_decimal`),
+  que todos los módulos de `grading` comparten. No escribas otra copia con reglas distintas.
 - Los tipos de examen pueden ser `A`/`B` o `1A`/`1B`; el tipo se infiere del sufijo del nombre del
   XML (`..._1A.xml`).
 - La GUI tiene pruebas de humo en `tests/test_gui_smoke.py`: construyen la ventana real sin mostrarla

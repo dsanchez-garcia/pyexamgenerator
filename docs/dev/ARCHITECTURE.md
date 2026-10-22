@@ -34,7 +34,7 @@ Las reglas de trabajo están en [`AGENTS.md`](../../AGENTS.md); la deuda técnic
 
 | Capa | Módulos | Depende de |
 |---|---|---|
-| GUI | `main_app.py` (`ExamApp`), `tooltip.py` | tkinter + toda la librería |
+| GUI | `main_app.py` (`ExamApp`), `gui_logic.py` (sin tkinter), `tooltip.py` | tkinter + toda la librería |
 | Generación | `question_generator.py`, `question_bank_manager.py`, `exam_generator.py` | pandas, python-docx, google-genai, PyPDF2, PyMuPDF |
 | Corrección | `grading/*` | pandas; OCR opcional (cv2, rapidocr) solo en `grading/extraction.py` |
 
@@ -149,6 +149,11 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
   config o `default_output_dir` de la fachada; solo se conserva el nombre del fichero) y una ruta
   absoluta se respeta. Fachada y clases de trabajo usan el mismo helper,
   `grading/_paths.py: prepare_output_path`.
+- **Texto, columnas y notas:** todos los módulos usan las mismas reglas de `grading/_text.py`:
+  `normalize_key` (sin tildes, mayúsculas ni signos; celda vacía → `''`), `find_column` (busca una
+  columna entre varios nombres posibles, también con *mojibake*), `clean_text` y `parse_decimal`
+  (nota con coma o punto decimal; `None` si no es un número). Las clases conservan sus nombres
+  privados (`_normalize`, `_find_column`…) como alias.
 - **`export_steps_dir`:** las entradas solo se vuelven a leer para exportarlas cuando se pide
   (`_export_step_input`).
 
@@ -196,12 +201,17 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
   `root.after`, que exige el `mainloop` en marcha (en los tests, ver `_run_in_mainloop` en
   `test_gui_smoke.py`). Cada generación de exámenes usa su propio `ExamGenerator`, porque la
   instancia guarda estado mientras trabaja (`ARC-13`).
-- Desplazamiento: `_bind_page_scroll` enlaza la rueda del ratón en las pestañas «Generar
-  Preguntas» y «Gestionar Banco», salvo en los widgets que se desplazan solos (tablas, textos).
+- Desplazamiento: las cuatro pestañas se crean con `_create_scrollable_tab` y, al final de su
+  construcción, `_bind_page_scroll` enlaza la rueda del ratón en todos sus widgets salvo los que se
+  desplazan solos (tablas, textos).
 - Tooltips (`tooltip.py`): un único manejador por ventana oculta los tooltips visibles al ocultarla
   o cerrarla.
-- Listas de rutas en un campo: separadas por `;` (`ExamApp._split_paths`); los nombres de fichero
-  pueden contener comas.
+- Lo que el usuario escribe en los campos se interpreta en `gui_logic.py` (no importa tkinter; se
+  prueba sin pantalla en `test_gui_logic.py`): listas de rutas separadas por `;` (`split_paths`; los
+  nombres de fichero pueden contener comas), penalización, pesos de la nota final, tipos forzados por
+  imagen, nombres de examen y preguntas por tema.
+- Guardar y cargar la plantilla de exámenes y la sesión de corrección usan un único mapa de campos
+  (`_exam_template_fields`, `_grad_session_fields`, `_grad_column_fields`).
 - Los `messagebox.show*` se sustituyen por diálogos con texto copiable.
 - Ficheros persistidos:
 
@@ -229,7 +239,13 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `test_grading_matching.py` | emparejamiento por nombre (justificaciones, integración OCR con `Apellidos`) y aviso de notas sustituidas |
 | `test_grading_api_workflows.py` | fachada: configs sin efectos secundarios, combinar con copia, nota final con nombres repetidos, sesión, pipeline completo (OCR y asistencias simulados), rutas absolutas y lecturas solo para exportar pasos |
 | `test_exam_generator_outputs.py` | nombres de fichero seguros, categoría de Moodle, plantillas DOCX (runs partidos, cabeceras) |
-| `test_question_generator_flow.py` | flujo completo de generación con un cliente de Gemini simulado |
+| `test_question_generator_flow.py` | flujo completo de generación con un cliente de Gemini simulado; troceo de PDF por páginas y generadores reutilizables |
+| `test_question_generator_errors.py` | errores de Gemini: reintentos con espera (429/5xx), clave no válida, modelo retirado |
+| `test_grading_attendance_flow.py` | justificaciones, punto extra en modo extremo y normal, `export_steps_dir` y `manifest.json` |
+| `test_grading_ocr_sheet.py` | hojas de respuestas PNG sintéticas con RapidOCR simulado, de la imagen a la nota (requiere `[grading]`) |
+| `test_grading_text_helpers.py` | reglas comunes de `grading/_text.py`; filas sin ID ni nombre en la nota final y la comparación |
+| `test_gui_logic.py` | `gui_logic.py` sin pantalla: listas de rutas, penalización, pesos, tipos forzados, nombres de examen, preguntas por tema |
+| `test_dev_scripts.py` | `install_current_version.bat` sin `setx`; `add_user_path.ps1` con `-WhatIf` (solo Windows) |
 | `test_gui_smoke.py` | ventana real de la GUI: prompts, clave de API, lista de ficheros, errores de entrada, una sola tarea de corrección, variables Tk solo en el hilo principal, tareas en segundo plano, rueda del ratón, tooltips y valores por defecto (se salta sin pantalla; en la CI de Linux usa xvfb) |
 | `test_package_smoke.py` | compila todos los módulos (incluida la GUI) |
 | `test_release_metadata.py` | la versión y la fecha coinciden en `__init__.py`, `CITATION.cff`, `.zenodo.json` y `CHANGELOG.md` |
