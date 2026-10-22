@@ -4,10 +4,11 @@ import json
 from pathlib import Path
 import re
 import shutil
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading.data import SharedExamDataStore
 from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
 from pyexamgenerator.grading.session import GradingSession
@@ -196,6 +197,54 @@ class ComparisonConfig:
     last_name_col: Optional[str] = None
 
 
+@dataclass
+class FullPipelineConfig:
+    """Whole theory-exam correction in one pass (the GUI's «Pipeline completo»).
+
+    Merges the enrollment lists, grades the handwritten answer sheets (OCR), overlays the OCR
+    grades on the Moodle theory grades, analyses attendance + justifications + class quizzes and
+    applies the theory bonus point. Only the final tables are written to ``output_dir``; the
+    intermediate files go to ``<output_dir>/_intermedios``, which is deleted when the run ends,
+    also after an error (``keep_intermediate=True`` keeps it, e.g. for debugging).
+
+    The OCR thresholds default to the aggressive recovery used by the GUI. The enrollment lists
+    are merged into standard column names, so the OCR step does not take a column mapping; the
+    ``*_col`` fields apply to the attendance and justification files.
+    """
+
+    enrollment_paths: Sequence[str]
+    xml_paths: Sequence[str]
+    image_paths: Sequence[str]
+    theory_xlsx_path: str
+    attendance_xlsx_path: str
+    schedule_xlsx_path: str
+    justifications_xlsx_path: str
+    quizzes_xlsx_path: str
+    output_dir: Optional[str] = None
+    schedule_sheet: object = 0
+    attendance_header_row: int = 3
+    forced_type_by_image: Dict[str, str] = field(default_factory=dict)
+    temp_image_dir: Optional[str] = None
+    min_mark_ratio: float = 0.17
+    min_gap: float = 0.05
+    aggressive_recovery: bool = True
+    aggressive_min_ratio: float = 0.10
+    aggressive_min_gap_ratio: float = 0.22
+    aggressive_min_top_vs_second: float = 1.08
+    append_unmatched_students: bool = True
+    justification_mode: str = "extremo"
+    theory_grade_col: Optional[str] = None
+    cap_to_10: bool = True
+    keep_intermediate: bool = False
+    sender_col: str = "REMITENTE"
+    subject_col: str = "ASUNTO"
+    message_col: str = "MENSAJE"
+    first_name_col: Optional[str] = None
+    last_name_col: Optional[str] = None
+    id_col: Optional[str] = None
+    email_col: Optional[str] = None
+
+
 class ExamCorrectionAPI:
     """High-level facade to run exam correction workflows as a reusable library."""
 
@@ -230,10 +279,8 @@ class ExamCorrectionAPI:
         return out_dir
 
     def _resolve_output_path(self, filename_or_path: str, explicit_output_dir: Optional[str]) -> str:
-        out_dir = self._resolve_output_dir(explicit_output_dir)
-        if not out_dir:
-            return filename_or_path
-        return str(Path(out_dir) / Path(filename_or_path).name)
+        """A relative ``filename_or_path`` goes to the output folder; an absolute one is kept."""
+        return prepare_output_path(filename_or_path, self._resolve_output_dir(explicit_output_dir))
 
     @staticmethod
     def _backend_import_error(module_name: str, error: Exception) -> RuntimeError:
@@ -292,6 +339,22 @@ class ExamCorrectionAPI:
                 "columns": int(len(df.columns)),
             }
         )
+
+    @classmethod
+    def _export_step_input(
+        cls,
+        state: Optional[Dict[str, object]],
+        step_name: str,
+        read_input: Callable[[], pd.DataFrame],
+    ) -> None:
+        """Exports an input table as a step; ``read_input()`` only runs when steps are exported.
+
+        Reading every input file again just to export it, also when no export was requested,
+        doubled the reading work of each workflow.
+        """
+        if state is None:
+            return
+        cls._export_step_dataframe(state, step_name, read_input())
 
     @staticmethod
     def _finalize_step_export(
@@ -388,18 +451,12 @@ class ExamCorrectionAPI:
         self._export_step_dataframe(export_state, "answers_detected", answers_df)
         self._export_step_dataframe(export_state, "grades_generated", grades_df)
         self._export_step_dataframe(export_state, "audit_details", audit_df)
-        if cfg.output_incidents:
-            incidents_path = self._resolve_output_path(cfg.output_incidents, cfg.output_dir)
-            if Path(incidents_path).exists():
-                self._export_step_dataframe(export_state, "ocr_incidents", pd.read_excel(incidents_path))
-        if cfg.output_review:
-            review_path = self._resolve_output_path(cfg.output_review, cfg.output_dir)
-            if Path(review_path).exists():
-                self._export_step_dataframe(export_state, "ocr_manual_review", pd.read_excel(review_path))
-        if cfg.output_manual_changes:
-            changes_path = self._resolve_output_path(cfg.output_manual_changes, cfg.output_dir)
-            if Path(changes_path).exists():
-                self._export_step_dataframe(export_state, "ocr_manual_changes", pd.read_excel(changes_path))
+        for step_name, output in (("ocr_incidents", cfg.output_incidents), ("ocr_manual_review", cfg.output_review),
+                                  ("ocr_manual_changes", cfg.output_manual_changes)):
+            if export_state is not None and output:
+                written_path = self._resolve_output_path(output, cfg.output_dir)
+                if Path(written_path).exists():
+                    self._export_step_input(export_state, step_name, lambda p=written_path: pd.read_excel(p))
         out_answers = self._resolve_output_path(cfg.output_answers, cfg.output_dir)
         out_grades = self._resolve_output_path(cfg.output_grades, cfg.output_dir)
         out_audit = self._resolve_output_path(cfg.output_audit, cfg.output_dir) if cfg.output_audit else None
@@ -439,14 +496,16 @@ class ExamCorrectionAPI:
     def integrate_moodle_grades(self, cfg: MoodleIntegrationConfig, export_steps_dir: Optional[str] = None) -> pd.DataFrame:
         from pyexamgenerator.grading.integrations import MoodleGradeIntegrator
 
+        # Iterated more than once: a generator would be empty the second time.
+        cfg = replace(cfg, xlsx_files=list(cfg.xlsx_files), group_types=list(cfg.group_types))
         export_state = self._start_step_export(export_steps_dir, "integrate_moodle_grades")
         for i, path in enumerate(cfg.xlsx_files, start=1):
-            source_df = pd.read_excel(path, sheet_name=cfg.sheet)
-            self._export_step_dataframe(export_state, f"source_file_{i}", source_df)
+            self._export_step_input(export_state, f"source_file_{i}",
+                                    lambda p=path: pd.read_excel(p, sheet_name=cfg.sheet))
 
         integrator = MoodleGradeIntegrator(
-            xlsx_files=list(cfg.xlsx_files),
-            group_types=list(cfg.group_types),
+            xlsx_files=cfg.xlsx_files,
+            group_types=cfg.group_types,
             sheet=cfg.sheet,
             id_col=cfg.id_col,
             first_name_col=cfg.first_name_col,
@@ -471,8 +530,8 @@ class ExamCorrectionAPI:
         from pyexamgenerator.grading.integrations import OcrGradeIntegrator
 
         export_state = self._start_step_export(export_steps_dir, "integrate_ocr_grades")
-        self._export_step_dataframe(export_state, "general_input", pd.read_excel(cfg.general_xlsx_path))
-        self._export_step_dataframe(export_state, "ocr_input", pd.read_excel(cfg.ocr_xlsx_path))
+        self._export_step_input(export_state, "general_input", lambda: pd.read_excel(cfg.general_xlsx_path))
+        self._export_step_input(export_state, "ocr_input", lambda: pd.read_excel(cfg.ocr_xlsx_path))
 
         integrator = OcrGradeIntegrator(
             general_xlsx_path=cfg.general_xlsx_path,
@@ -515,6 +574,7 @@ class ExamCorrectionAPI:
             "blocked_unmatched",
             "blocked_missing_target",
             "blocked_missing_grade",
+            "grades_overwritten",
         ):
             if key in integration_summary:
                 summary_payload[key] = int(integration_summary.get(key, 0) or 0)
@@ -553,15 +613,142 @@ class ExamCorrectionAPI:
         )
         return final_df
 
+    def run_full_pipeline(
+        self,
+        cfg: FullPipelineConfig,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> pd.DataFrame:
+        """Runs the whole theory correction described in :class:`FullPipelineConfig`.
+
+        Returns the theory grades with the bonus point applied. ``self.results`` also keeps the OCR
+        incidents (``ocr_incidents``), the summary and incidents of the OCR integration, the
+        attendance + quizzes table and ``full_pipeline_outputs`` (paths of the tables written).
+        ``progress_callback(message)``, when given, is called before each step (e.g. to update a
+        status bar) from the thread that runs the pipeline.
+        """
+        # OCR first: without the [grading] extra this fails before anything is written.
+        from pyexamgenerator.grading.extraction import ImageExamGrader
+        from pyexamgenerator.grading.attendance import (
+            AbsenceJustificationManager,
+            TheoryBonusApplier,
+            TheoryTopicReporter,
+        )
+        from pyexamgenerator.grading.data import EnrollmentMerger
+        from pyexamgenerator.grading.integrations import OcrGradeIntegrator
+
+        def progress(message: str) -> None:
+            if progress_callback is not None:
+                progress_callback(message)
+
+        out_dir = self._resolve_output_dir(cfg.output_dir)
+        if not out_dir:
+            raise ValueError("El pipeline completo necesita una carpeta de salida (output_dir).")
+        work_dir = Path(out_dir) / "_intermedios"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        outputs: Dict[str, object] = {}
+        try:
+            progress("Fusionando matriculados…")
+            enrollment_path = str(work_dir / "matriculados.xlsx")
+            EnrollmentMerger(list(cfg.enrollment_paths)).export(enrollment_path)
+
+            progress("OCR de hojas (puede tardar)…")
+            # The merged roster uses the standard column names, so the grader keeps its defaults.
+            grader = ImageExamGrader(
+                xml_paths=list(cfg.xml_paths),
+                enrollment_path=enrollment_path,
+                min_mark_ratio=cfg.min_mark_ratio,
+                min_gap=cfg.min_gap,
+                aggressive_recovery=cfg.aggressive_recovery,
+                aggressive_min_ratio=cfg.aggressive_min_ratio,
+                aggressive_min_gap_ratio=cfg.aggressive_min_gap_ratio,
+                aggressive_min_top_vs_second=cfg.aggressive_min_top_vs_second,
+                temp_image_dir=cfg.temp_image_dir,
+            )
+            grader.grade_from_images(
+                image_paths=list(cfg.image_paths),
+                output_answers="respuestas.xlsx",
+                output_grades="calificaciones_manuscritos.xlsx",
+                output_dir=str(work_dir),
+                output_incidents="incidencias.xlsx",
+                forced_type_by_image=dict(cfg.forced_type_by_image),
+                prompt_missing_type=False,
+                interactive_review=False,
+            )
+            ocr_incidents_df = pd.read_excel(work_dir / "incidencias.xlsx")
+            outputs["ocr_incidents"] = str(Path(out_dir) / "incidencias_identificacion_respuestas.xlsx")
+            ocr_incidents_df.to_excel(outputs["ocr_incidents"], index=False)
+            self.results["ocr_incidents"] = ocr_incidents_df
+
+            progress("Integrando notas OCR en teoría…")
+            integrator = OcrGradeIntegrator(
+                general_xlsx_path=cfg.theory_xlsx_path,
+                ocr_xlsx_path=str(work_dir / "calificaciones_manuscritos.xlsx"),
+                enrollment_paths=list(cfg.enrollment_paths),
+                append_unmatched_students=cfg.append_unmatched_students,
+            )
+            integrated_df = integrator.integrate(str(work_dir / "teoria_integrada.xlsx"))
+            integration_summary = dict(getattr(integrator, "last_integration_summary", {}) or {})
+            integration_incidents_df = getattr(integrator, "last_integration_incidents_df", None)
+            if isinstance(integration_incidents_df, pd.DataFrame):
+                self.results["ocr_integration_incidents"] = integration_incidents_df
+                if not integration_incidents_df.empty:
+                    outputs["integration_incidents"] = str(Path(out_dir) / "incidencias_integracion_ocr.xlsx")
+                    integration_incidents_df.to_excel(outputs["integration_incidents"], index=False)
+                    self.results["ocr_integration_incidents_path"] = outputs["integration_incidents"]
+            self.results["ocr_integration_summary"] = integration_summary
+            self.results["integrated_theory"] = integrated_df
+
+            progress("Asistencias y cuestionarios…")
+            attendance_quiz_df = AbsenceJustificationManager(
+                attendance_xlsx_path=cfg.attendance_xlsx_path,
+                justifications_xlsx_path=cfg.justifications_xlsx_path,
+                enrollment_xlsx_path=enrollment_path,
+                schedule_xlsx_path=cfg.schedule_xlsx_path,
+                schedule_sheet=cfg.schedule_sheet,
+                quizzes_xlsx_path=cfg.quizzes_xlsx_path,
+                attendance_header_row=cfg.attendance_header_row,
+                sender_col=cfg.sender_col,
+                subject_col=cfg.subject_col,
+                message_col=cfg.message_col,
+                first_name_col=cfg.first_name_col,
+                last_name_col=cfg.last_name_col,
+                id_col=cfg.id_col,
+                email_col=cfg.email_col,
+                justification_mode=cfg.justification_mode,
+            ).analyze().attendance_quiz_df
+            self.results["attendance_with_quizzes"] = attendance_quiz_df
+
+            progress("Aplicando punto extra…")
+            outputs["theory_grades"] = str(Path(out_dir) / "calificaciones_examen_teoria.xlsx")
+            theory_df = TheoryBonusApplier(
+                integrated_df, attendance_quiz_df, theory_grade_col=cfg.theory_grade_col, cap_to_10=cfg.cap_to_10,
+            ).apply(outputs["theory_grades"])
+            _attendance_report_df, quiz_report_df = TheoryTopicReporter(attendance_quiz_df).build()
+            outputs["quiz_report"] = str(Path(out_dir) / "cuestionarios_clase_y_punto_extra.xlsx")
+            quiz_report_df.to_excel(outputs["quiz_report"], index=False)
+        finally:
+            # Intermediate files hold students' data: never leave them behind, not even on error.
+            if not cfg.keep_intermediate:
+                shutil.rmtree(work_dir, ignore_errors=True)
+
+        self.results["theory_with_bonus"] = theory_df
+        self.results["topic_quiz_report"] = quiz_report_df
+        self.results["full_pipeline_outputs"] = dict(outputs)
+        summary: Dict[str, object] = {"rows": int(len(theory_df)), "ocr_incidents": int(len(ocr_incidents_df))}
+        summary.update({key: int(value or 0) for key, value in integration_summary.items()})
+        self.session.record_workflow("run_full_pipeline", config=cfg, outputs=outputs, summary=summary)
+        return theory_df
+
     def merge_enrollment_sources(
         self,
         cfg: EnrollmentMergeConfig,
         export_steps_dir: Optional[str] = None,
     ) -> pd.DataFrame:
+        cfg = replace(cfg, source_paths=list(cfg.source_paths))  # iterated twice
         export_state = self._start_step_export(export_steps_dir, "merge_enrollment_sources")
         for i, source_path in enumerate(cfg.source_paths, start=1):
-            src_df = pd.read_excel(source_path, sheet_name=cfg.sheet)
-            self._export_step_dataframe(export_state, f"source_enrollment_{i}", src_df)
+            self._export_step_input(export_state, f"source_enrollment_{i}",
+                                    lambda p=source_path: pd.read_excel(p, sheet_name=cfg.sheet))
 
         merged_df = build_merged_enrollment_from_sources(cfg.source_paths, sheet_name=cfg.sheet)
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
@@ -584,13 +771,13 @@ class ExamCorrectionAPI:
         from pyexamgenerator.grading.attendance import AbsenceJustificationManager
 
         export_state = self._start_step_export(export_steps_dir, "process_absence_justifications")
-        self._export_step_dataframe(
+        self._export_step_input(
             export_state,
             "attendance_input",
-            pd.read_excel(cfg.attendance_xlsx_path, header=cfg.attendance_header_row),
+            lambda: pd.read_excel(cfg.attendance_xlsx_path, header=cfg.attendance_header_row),
         )
-        self._export_step_dataframe(export_state, "justifications_input", pd.read_excel(cfg.justifications_xlsx_path))
-        self._export_step_dataframe(export_state, "enrollment_input", pd.read_excel(cfg.enrollment_xlsx_path))
+        self._export_step_input(export_state, "justifications_input", lambda: pd.read_excel(cfg.justifications_xlsx_path))
+        self._export_step_input(export_state, "enrollment_input", lambda: pd.read_excel(cfg.enrollment_xlsx_path))
 
         manager = AbsenceJustificationManager(
             attendance_xlsx_path=cfg.attendance_xlsx_path,
@@ -661,8 +848,8 @@ class ExamCorrectionAPI:
         from pyexamgenerator.grading.attendance import apply_theory_bonus_from_attendance_quiz
 
         export_state = self._start_step_export(export_steps_dir, "apply_theory_bonus")
-        self._export_step_dataframe(export_state, "theory_input", pd.read_excel(cfg.theory_xlsx_path))
-        self._export_step_dataframe(export_state, "attendance_quiz_input", pd.read_excel(cfg.attendance_quiz_xlsx_path))
+        self._export_step_input(export_state, "theory_input", lambda: pd.read_excel(cfg.theory_xlsx_path))
+        self._export_step_input(export_state, "attendance_quiz_input", lambda: pd.read_excel(cfg.attendance_quiz_xlsx_path))
 
         output_path = self._resolve_output_path(cfg.output_path, cfg.output_dir)
         result_df = apply_theory_bonus_from_attendance_quiz(
@@ -691,7 +878,7 @@ class ExamCorrectionAPI:
 
         output_dir = self._resolve_output_path(cfg.output_dir, None)
         export_state = self._start_step_export(export_steps_dir, "export_theory_topic_reports")
-        self._export_step_dataframe(export_state, "attendance_quiz_input", pd.read_excel(cfg.attendance_quiz_xlsx_path))
+        self._export_step_input(export_state, "attendance_quiz_input", lambda: pd.read_excel(cfg.attendance_quiz_xlsx_path))
 
         attendance_report_df, quiz_report_df = export_theory_topic_reports(
             attendance_quiz_xlsx_path=cfg.attendance_quiz_xlsx_path,
@@ -805,9 +992,11 @@ class ExamCorrectionAPI:
         from pyexamgenerator.grading.attendance import PIRBonusCalculator
 
         export_state = self._start_step_export(export_steps_dir, "calculate_pir_bonus")
-        self._export_step_dataframe(export_state, "attendance_input", pd.read_excel(cfg.attendance_path, header=cfg.attendance_header_row))
-        self._export_step_dataframe(export_state, "schedule_input", pd.read_excel(cfg.schedule_path, sheet_name=cfg.schedule_sheet))
-        self._export_step_dataframe(export_state, "quizzes_input", pd.read_excel(cfg.quizzes_path))
+        self._export_step_input(export_state, "attendance_input",
+                                lambda: pd.read_excel(cfg.attendance_path, header=cfg.attendance_header_row))
+        self._export_step_input(export_state, "schedule_input",
+                                lambda: pd.read_excel(cfg.schedule_path, sheet_name=cfg.schedule_sheet))
+        self._export_step_input(export_state, "quizzes_input", lambda: pd.read_excel(cfg.quizzes_path))
 
         calculator = PIRBonusCalculator(
             attendance_path=cfg.attendance_path,

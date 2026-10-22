@@ -21,6 +21,7 @@ from pyexamgenerator.grading.api import (
     AbsenceJustificationConfig,
     FinalGradeConfig,
     ComparisonConfig,
+    FullPipelineConfig,
 )
 from pyexamgenerator.grading.data import SharedExamDataStore, EnrollmentMerger
 from pyexamgenerator.grading.graders import ExamGrader
@@ -76,4 +77,5 @@ __all__ = [
     "AbsenceJustificationConfig",
     "FinalGradeConfig",
     "ComparisonConfig",
+    "FullPipelineConfig",
 ]

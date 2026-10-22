@@ -39,8 +39,9 @@ búscalas por nombre de función si no coinciden.
   `grading/extraction.py:658`, `main_app.py:617` (`~/Desktop/pyexamgenerator_temp`). En Windows el
   Escritorio suele sincronizarse con OneDrive (datos personales en la nube, RGPD). Usar
   `tempfile.gettempdir()` y limpiar también `debug_dir` (`extraction.py:604`). — hecho en `9ae14f6`.
-- [ ] **SEC-5 (P2)** Añadir `SECURITY.md` con cómo reportar vulnerabilidades y una nota sobre datos
-  personales de alumnos (no subir nunca xlsx reales, ni a issues).
+- [x] **SEC-5 (P2)** Añadir `SECURITY.md` con cómo reportar vulnerabilidades y una nota sobre datos
+  personales de alumnos (no subir nunca xlsx reales, ni a issues). — hecho en `f59af25`. *Pendiente
+  del mantenedor: activar «Private vulnerability reporting» en Settings → Code security.*
 
 ## 2. Bugs de corrección (datos incorrectos)
 
@@ -119,18 +120,19 @@ búscalas por nombre de función si no coinciden.
   asistencia (`ley3195`, `:239`).
 - [ ] **GRD-11 (P2)** Reglas del bonus ignoran la config — `attendance.py:1836` (solo `T02..T11`),
   `:1764` (+1.0 fijo), `:742,746` (7.5 fijo) frente a `bonus_points`/`min_quiz_grade`.
-- [ ] **GRD-12 (P2)** `_name_match` fija `Nombre`/`Apellido(s)` — `grading/integrations.py:615-622`;
+- [x] **GRD-12 (P2)** `_name_match` fija `Nombre`/`Apellido(s)` — `grading/integrations.py:615-622`;
   `:865` sobrescribe una nota Moodle existente sin incidencia.
   *Parcial (`45dd6f5`): `_name_match` usa las columnas detectadas y exige nombre y apellidos (con
-  `Apellidos` emparejaba solo por el nombre de pila). Falta avisar cuando el OCR sobrescribe una
-  nota que ya existía.*
-- [ ] **GRD-13 (P2)** La fachada relee todos los ficheros aunque no se exporten pasos —
+  `Apellidos` emparejaba solo por el nombre de pila). Completado en `2d669ed`: incidencia
+  `OVERWRITTEN_GRADE` cuando el OCR sustituye a una nota distinta.*
+- [x] **GRD-13 (P2)** La fachada relee todos los ficheros aunque no se exporten pasos —
   `grading/api.py:429-461,568-574,645,675,777`; `cfg.xlsx_files` se itera dos veces (falla con
-  generadores).
-- [ ] **GRD-14 (P2)** `_resolve_output_path` descarta rutas absolutas explícitas
+  generadores). — hecho en `1bccd2c`.
+- [x] **GRD-14 (P2)** `_resolve_output_path` descarta rutas absolutas explícitas
   (`grading/api.py:232`); `run_moodle_plus_ocr_pipeline` muta los config del llamador (`:523-529`).
   *Parcial (`37de35a`): `run_moodle_plus_ocr_pipeline` ya no modifica los config. Falta respetar
-  rutas absolutas (hay que cambiar también las clases de trabajo, que hacen lo mismo).*
+  rutas absolutas (hay que cambiar también las clases de trabajo, que hacen lo mismo).
+  Completado en `1bccd2c` (`grading/_paths.py`).*
 - [x] **GRD-15 (P2)** «Sobrescribir en su sitio» sin copia de seguridad (`grading/api.py:750`) y
   `comparison.py:213` reemplaza valores por NaN cuando el fichero nuevo tiene celdas vacías. — hecho en `37de35a`.
 - [x] **GRD-16 (P2)** Dos ficheros con el mismo nombre en carpetas distintas colisionan en la nota
@@ -144,29 +146,29 @@ búscalas por nombre de función si no coinciden.
   (344/370), `add_edit_prompt_type` (380/468), `delete_prompt_type` (429/516),
   `update_prompt_type_options` (448/531). Bug visible: «Editar» abre el prompt vacío. Borrar la
   segunda copia (468-539). — hecho en `0fa3771`.
-- [ ] **GUI-2 (P1)** Variables Tkinter leídas desde hilos de trabajo — `main_app.py` ~1100-1537
+- [x] **GUI-2 (P1)** Variables Tkinter leídas desde hilos de trabajo — `main_app.py` ~1100-1537
   (`self.grad_*_var.get()` dentro de `work()`). Leer todo en el hilo principal antes de lanzar el
-  hilo y devolver resultados solo con `root.after`.
-- [ ] **GUI-3 (P1)** Operaciones largas bloquean la ventana: generación con Gemini (`:2328`), carga
+  hilo y devolver resultados solo con `root.after`. — hecho en `393881d`.
+- [x] **GUI-3 (P1)** Operaciones largas bloquean la ventana: generación con Gemini (`:2328`), carga
   de modelos (`:2000`), generación de exámenes (`:3413`). Los botones de corrección no se
   deshabilitan: dos clics en «Pipeline completo» lanzan dos hilos sobre la misma carpeta
   `_intermedios` (`:1602`). Un helper común «deshabilitar → hilo → rehabilitar en `finally`».
-  *Parcial (`80735e8`): solo una tarea de corrección a la vez. Falta llevar a un hilo la generación
-  con Gemini, la carga de modelos y la generación de exámenes.*
+  *Parcial (`80735e8`): solo una tarea de corrección a la vez. Completado en `da5b678`
+  (`_run_in_background`): Gemini, la carga de modelos y la generación de exámenes en un hilo.*
 - [x] **GUI-4 (P2)** Elegir ficheros dos veces concatena rutas sin separador (`:2199`) y separar por
   `,` rompe nombres de Windows con comas (`:2221`). — hecho en `063ec17`.
 - [x] **GUI-5 (P2)** `float()`/`read_excel` fuera de `try` (`:1056,1069,1294,1301,3371,3386`): el
   error solo sale por consola. — hecho en `063ec17`.
-- [ ] **GUI-6 (P2)** El binding de la rueda del ratón rompe el scroll de `Treeview`/`Text` internos
-  (`:1667-1672,1978,2788`).
-- [ ] **GUI-7 (P2)** `run_grading` (`:1453-1623`) reimplementa el pipeline completo a mano; moverlo a
-  `ExamCorrectionAPI.run_full_pipeline(cfg)` y limpiar `_intermedios` en `finally`.
-- [ ] **GUI-8 (P2)** `tooltip.py:50-51` registra manejadores `<Unmap>`/`<Destroy>` en la ventana
-  raíz por cada tooltip (nunca se eliminan). Enlazar solo al widget.
+- [x] **GUI-6 (P2)** El binding de la rueda del ratón rompe el scroll de `Treeview`/`Text` internos
+  (`:1667-1672,1978,2788`). — hecho en `dc0dc50`.
+- [x] **GUI-7 (P2)** `run_grading` (`:1453-1623`) reimplementa el pipeline completo a mano; moverlo a
+  `ExamCorrectionAPI.run_full_pipeline(cfg)` y limpiar `_intermedios` en `finally`. — hecho en `393881d`.
+- [x] **GUI-8 (P2)** `tooltip.py:50-51` registra manejadores `<Unmap>`/`<Destroy>` en la ventana
+  raíz por cada tooltip (nunca se eliminan). Enlazar solo al widget. — hecho en `6cccdbc`.
 - [ ] **GUI-9 (P3)** Parcheo global de `messagebox.show*` (`:248-250`); usar un método envoltorio.
-- [ ] **GUI-10 (P3)** Valores por defecto de prueba en la UI («Asignatura de Prueba», «Prueba GUI»,
+- [x] **GUI-10 (P3)** Valores por defecto de prueba en la UI («Asignatura de Prueba», «Prueba GUI»,
   `La/ruta/del/banco...`, `:142-158`); la GUI llama a un método privado `_usage_column_name`
-  (`:3604`).
+  (`:3604`). — hecho en `19ee139`.
 
 ## 4. Arquitectura y mantenibilidad
 
@@ -176,6 +178,7 @@ búscalas por nombre de función si no coinciden.
   mapeos de plantilla/sesión, constructor de avisos OCR).
 - [ ] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
+  *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*
 - [ ] **ARC-3 (P2)** Nombres de columna repetidos como literales en todos los módulos (`'Pregunta'`,
   `'Respuesta A'`, `'Estado'`, `'Veces usada en examen'`, `'_uso'`, `'Número de ID'`…). Crear
   `pyexamgenerator/schema.py` con constantes y usarlo en todas partes.
@@ -229,8 +232,9 @@ búscalas por nombre de función si no coinciden.
   `pip install -e .[dev,grading,docs]` cuando exista PKG-2.
 - [ ] **PKG-6 (P2)** `docs/requirements.txt` sin versiones fijadas y RTD con `fail_on_warning: true`:
   una versión nueva de Sphinx puede romper la build. Fijar versiones.
-- [ ] **PKG-7 (P3)** La versión está en 3 sitios (`__init__.py`, `CITATION.cff`, `.zenodo.json`) más
+- [x] **PKG-7 (P3)** La versión está en 3 sitios (`__init__.py`, `CITATION.cff`, `.zenodo.json`) más
   la fecha en `CHANGELOG.md`. Añadir un test que compruebe que coinciden (o un script de *bump*).
+  — hecho en `ae5ba96`.
 - [ ] **PKG-8 (P3)** Modelos Gemini fijados en mensajes y docs (`gemini-2.5-flash/pro` en
   `question_generator.py:60,986,998`, README). Verificar vigencia y sacar la sugerencia de
   configuración o de `client.models.list()`.
@@ -264,7 +268,8 @@ búscalas por nombre de función si no coinciden.
   fixture sintético de hoja de respuestas.*
 - [ ] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
   *Parcial: `tests/test_gui_smoke.py` construye la ventana real (Windows y Linux con xvfb) y prueba
-  prompts, clave de API, lista de ficheros, errores de entrada y la tarea única de corrección. Falta
+  prompts, clave de API, lista de ficheros, errores de entrada, la tarea única de corrección, las
+  tareas en segundo plano, las lecturas desde hilos, la rueda del ratón y los tooltips. Falta
   extraer `gui_logic.py`.*
 - [x] **TST-6 (P3)** Añadir configuración de pytest (`testpaths = tests`, marcadores `ocr` e
   `integration`, `filterwarnings`). — hecho en `63e1da2`.
@@ -272,8 +277,8 @@ búscalas por nombre de función si no coinciden.
   (`test_moodle_xml.py`, `test_bank_usage.py`…). `test_exam_order_integration.py` mezcla
   tabuladores con espacios.
   *Parcial (`07e3e4d`): `test_exam_order_integration.py` ya usa solo espacios.*
-- [ ] **TST-8 (P3)** `tests/test_image_mode_unit.py:28` crea un `genai.Client` real con clave falsa;
-  simularlo.
+- [x] **TST-8 (P3)** `tests/test_image_mode_unit.py:28` crea un `genai.Client` real con clave falsa;
+  simularlo. — hecho en `092840c` (`tests/conftest.py`, para todos los tests).
 
 ## 7. Herramientas de desarrollo
 
@@ -292,9 +297,10 @@ búscalas por nombre de función si no coinciden.
 
 ## 8. Repositorio y documentación
 
-- [ ] **REPO-1 (P2)** `.gitignore`: faltan `.tox/`, `.pytest_cache/`, `docs/build/`, `.ruff_cache/`,
+- [x] **REPO-1 (P2)** `.gitignore`: faltan `.tox/`, `.pytest_cache/`, `docs/build/`, `.ruff_cache/`,
   `.mypy_cache/`; los patrones globales `*.xlsx`, `*.docx`, `*.xml`, `*.jpg` impedirán versionar
-  fixtures de test (ver TST-2). Hay además un cambio sin commitear (`deposito_rodin/`).
+  fixtures de test (ver TST-2). Hay además un cambio sin commitear (`deposito_rodin/`). — hecho en
+  `c622270` (con excepción acotada a `tests/fixtures/`).
 - [x] **REPO-2 (P2)** `__init__.py` vacío en la raíz del repositorio convierte la raíz en paquete y
   puede confundir a pytest y a las herramientas. Eliminar. — hecho en `07e3e4d`.
 - [ ] **REPO-3 (P3)** PDFs de ejemplo en la raíz (`RD 31-95 LPRL*.pdf`, `RD 39-97 RSP*.pdf`, ~1 MB).

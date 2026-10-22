@@ -368,7 +368,7 @@ Para ver una lista detallada de los cambios, mejoras y correcciones de errores e
 
 ## Contribución
 
-Las contribuciones son bienvenidas. Si encuentras un error o tienes una idea para una nueva funcionalidad, por favor, abre un "issue" en el repositorio de GitHub (sin adjuntar datos reales de alumnos). Antes de proponer cambios, consulta la [guía de contribución](https://github.com/dsanchez-garcia/pyexamgenerator/blob/master/CONTRIBUTING.md).
+Las contribuciones son bienvenidas. Si encuentras un error o tienes una idea para una nueva funcionalidad, por favor, abre un "issue" en el repositorio de GitHub (sin adjuntar datos reales de alumnos). Antes de proponer cambios, consulta la [guía de contribución](https://github.com/dsanchez-garcia/pyexamgenerator/blob/master/CONTRIBUTING.md). Los problemas de seguridad se comunican en privado, como indica la [política de seguridad](https://github.com/dsanchez-garcia/pyexamgenerator/blob/master/SECURITY.md), que también resume cómo trata la aplicación los datos de los alumnos.
 
 ## Licencia
 

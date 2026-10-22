@@ -24,7 +24,6 @@ from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
 import os
 import json
-import shutil
 import tempfile
 import threading
 from google import genai
@@ -130,10 +129,11 @@ class ExamApp:
         self.update_status("Aplicación iniciada.")
 
         # --- Variables for the "Generate Exams" tab ---
-        self.excel_filepath = tk.StringVar(value="La/ruta/del/banco/de/preguntas.xlsx")
-        self.subject = tk.StringVar(value="Asignatura de Prueba")
-        self.exam_name = tk.StringVar(value="Examen de Prueba")
-        self.course = tk.StringVar(value="Curso 2024-2025")
+        # No sample values in the exam data: they ended up in real exams when left unchanged.
+        self.excel_filepath = tk.StringVar()
+        self.subject = tk.StringVar()
+        self.exam_name = tk.StringVar()
+        self.course = tk.StringVar()
         self.num_exams = tk.StringVar(value="2")
         self.exam_names = tk.StringVar(value="Tipo A,Tipo B")
         self.questions_per_topic = tk.StringVar(value="Tema 01:2,Tema 02:2")
@@ -144,9 +144,9 @@ class ExamApp:
         self.left_margin = tk.StringVar(value="0.5")
         self.right_margin = tk.StringVar(value="0.5")
         self.font_size = tk.StringVar(value="10")
-        self.answer_sheet_instructions = tk.StringVar(value="Prueba GUI")
+        self.answer_sheet_instructions = tk.StringVar()
         self.penalty = tk.StringVar(value="-25")
-        self.xml_cat_additional_text = tk.StringVar(value="Prueba GUI")
+        self.xml_cat_additional_text = tk.StringVar()
         self.export_moodle = tk.BooleanVar(value=False)
         self.update_excel = tk.BooleanVar(value=False)
         self.usage_alert_enabled_var = tk.BooleanVar(value=True)
@@ -161,7 +161,7 @@ class ExamApp:
         # --- Variables for the "Generate Questions" tab ---
         self.pdf_files_var = tk.StringVar()
         self.num_questions_var = tk.StringVar(value="5")
-        self.output_filename_var = tk.StringVar(value="banco_prueba")
+        self.output_filename_var = tk.StringVar(value="preguntas")
         self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else "TU_CLAVE_API")
         self.gen_questions_output_dir_var = tk.StringVar()
 
@@ -484,6 +484,101 @@ class ExamApp:
         """
         self.status_text.set(message)
 
+    # Widgets that scroll their own content with the mouse wheel.
+    _SELF_SCROLLING_WIDGETS = (tk.Text, tk.Listbox, tk.Canvas, ttk.Treeview, tk.Scrollbar, ttk.Scrollbar)
+
+    @classmethod
+    def _bind_page_scroll(cls, canvas: tk.Canvas, widget: tk.Misc) -> None:
+        """Scrolls the tab ``canvas`` with the mouse wheel over ``widget`` and its descendants.
+
+        Widgets that scroll their own content (tables, text boxes...) keep their wheel: binding
+        them as well, with "break", stopped them from scrolling (models table, prompt text...).
+        """
+
+        def on_mousewheel(event):
+            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
+            if delta_units == 0:
+                delta_units = -1 if event.delta > 0 else 1
+            canvas.yview_scroll(delta_units, "units")
+            return "break"
+
+        def on_scroll_up(_event):
+            canvas.yview_scroll(-1, "units")
+            return "break"
+
+        def on_scroll_down(_event):
+            canvas.yview_scroll(1, "units")
+            return "break"
+
+        def bind_recursively(current):
+            if current is not canvas and isinstance(current, cls._SELF_SCROLLING_WIDGETS):
+                return
+            current.bind("<MouseWheel>", on_mousewheel)
+            current.bind("<Button-4>", on_scroll_up)
+            current.bind("<Button-5>", on_scroll_down)
+            for child in current.winfo_children():
+                bind_recursively(child)
+
+        bind_recursively(widget)
+
+    def _run_in_background(self, status_msg: str, work_fn, on_success, on_error, widgets=()) -> None:
+        """Runs ``work_fn()`` in a worker thread so the window keeps responding.
+
+        ``widgets`` (e.g. the button that launched the task) stay disabled until the task ends, so
+        it cannot be launched twice. ``work_fn`` runs outside the Tk main thread: it must not read
+        Tk variables nor touch widgets (read every value before; to ask the user, use
+        :meth:`_call_in_main_thread`). Then ``on_success(result)`` or ``on_error(exception)`` runs
+        in the main thread and the widgets are enabled again in every case.
+        """
+        for widget in widgets:
+            widget.configure(state="disabled")
+        self.update_status(status_msg)
+
+        def finish(callback, value):
+            try:
+                callback(value)
+            finally:
+                for widget in widgets:
+                    try:
+                        widget.configure(state="normal")
+                    except tk.TclError:
+                        pass  # the window was closed meanwhile
+
+        def worker():
+            try:
+                result = work_fn()
+            except Exception as exc:  # noqa: BLE001 - handed to on_error in the main thread
+                self.root.after(0, lambda e=exc: finish(on_error, e))
+            else:
+                self.root.after(0, lambda r=result: finish(on_success, r))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _call_in_main_thread(self, fn):
+        """Runs ``fn()`` in the Tk main thread and returns its result.
+
+        For worker threads that need to ask the user: dialogs must be created in the main thread.
+        The calling thread waits for the answer.
+        """
+        if threading.current_thread() is threading.main_thread():
+            return fn()
+        done = threading.Event()
+        outcome: Dict[str, Any] = {}
+
+        def run():
+            try:
+                outcome["value"] = fn()
+            except Exception as exc:  # noqa: BLE001 - re-raised in the calling thread
+                outcome["error"] = exc
+            finally:
+                done.set()
+
+        self.root.after(0, run)
+        done.wait()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome.get("value")
+
     def create_grading_tab(self) -> None:
         """Crea la pestaña 'Corregir Exámenes' dividida en secciones independientes, cada una con su botón.
 
@@ -736,10 +831,12 @@ class ExamApp:
                 var.set(path)
 
     # --- Helpers shared by the grading sections ---
-    def _grad_run_async(self, status_msg: str, work_fn) -> None:
+    def _grad_run_async(self, status_msg: str, work_fn, done_msg: str = "Listo.") -> None:
         """Runs ``work_fn`` in a background thread, updating the status bar and reporting result/errors.
 
-        ``work_fn`` may return either:
+        ``work_fn`` runs outside the Tk main thread: it must not read Tk variables nor touch widgets
+        (read every value before calling this method; use ``self.root.after`` for UI updates).
+        It may return either:
         - a string (success info), or
         - a dict like {"info": "...", "warnings": ["...", ...]}.
         """
@@ -763,7 +860,7 @@ class ExamApp:
                 elif result:
                     result_msg = str(result)
 
-                self.root.after(0, lambda: self.update_status("Listo."))
+                self.root.after(0, lambda: self.update_status(done_msg))
                 if warning_msgs:
                     warning_text = "\n\n".join(warning_msgs)
                     self.root.after(0, lambda t=warning_text: messagebox.showwarning("Avisos", t))
@@ -794,24 +891,73 @@ class ExamApp:
     def _grad_finish_job(self) -> None:
         self._grad_job_running = False
 
-    def _grad_api(self):
+    @staticmethod
+    def _grad_api(out_dir: Optional[str]):
         from pyexamgenerator.grading import ExamCorrectionAPI
-        out = self.grad_out_var.get().strip() or None
-        return ExamCorrectionAPI(default_output_dir=out)
+        return ExamCorrectionAPI(default_output_dir=(out_dir or "").strip() or None)
 
     def _grad_enrollment_list(self):
         return [p for p in self.grad_enrollment_var.get().split(";") if p.strip()]
 
-    def _grad_merged_enrollment(self, out_dir: str) -> str:
-        """Merges the selected enrollment files into ``<out_dir>/matriculados.xlsx`` and returns its path."""
+    @staticmethod
+    def _grad_merged_enrollment(enrollment_paths: List[str], out_dir: str) -> str:
+        """Merges the enrollment files into ``<out_dir>/matriculados.xlsx`` and returns its path.
+
+        Called from worker threads, so it receives the paths instead of reading the Tk variables.
+        """
         from pyexamgenerator.grading import EnrollmentMerger
-        paths = self._grad_enrollment_list()
-        if not paths:
+        if not enrollment_paths:
             raise ValueError("Selecciona al menos un fichero de matriculados.")
         os.makedirs(out_dir, exist_ok=True)
         merged = os.path.join(out_dir, "matriculados.xlsx")
-        EnrollmentMerger(paths).export(merged)
+        EnrollmentMerger(enrollment_paths).export(merged)
         return merged
+
+    @staticmethod
+    def _grad_integration_warnings(summary: Any, incidents_path: str) -> List[str]:
+        """Warnings for the summary of an OCR integration (summary rows removed, blocked OCR rows)."""
+        if not isinstance(summary, dict):
+            return []
+        warning_msgs: List[str] = []
+        removed_summary_rows = int(summary.get("general_summary_rows_removed", 0) or 0)
+        if removed_summary_rows > 0:
+            warning_msgs.append(
+                "Se eliminaron automáticamente "
+                f"{removed_summary_rows} fila(s) de promedio/resumen "
+                "en las notas de teoría antes de integrar OCR."
+            )
+        blocked = [
+            ("blocked_missing_identity", "Sin identidad (ID o nombre+apellidos)"),
+            ("blocked_unmatched", "Alumno no encontrado en teoría"),
+            ("blocked_missing_target", "Sin columna destino en teoría"),
+            ("blocked_missing_grade", "Sin nota OCR válida"),
+        ]
+        parts = [
+            f"- {label}: {int(summary.get(key, 0) or 0)}"
+            for key, label in blocked if int(summary.get(key, 0) or 0) > 0
+        ]
+        if parts:
+            warning_msgs.append(
+                "Durante la integración se bloquearon filas OCR:\n"
+                + "\n".join(parts)
+                + f"\nRevisa: {incidents_path}"
+            )
+        overwritten = int(summary.get("grades_overwritten", 0) or 0)
+        if overwritten > 0:
+            warning_msgs.append(
+                f"La nota OCR sustituyó a una nota distinta que ya había en teoría en {overwritten} alumno(s); "
+                "comprueba que cada hoja es de ese alumno.\n"
+                f"Revisa: {incidents_path}"
+            )
+        return warning_msgs
+
+    @staticmethod
+    def _open_folder(path: str) -> None:
+        """Opens ``path`` in the file browser (Windows only; ignored elsewhere)."""
+        try:
+            os.startfile(path)  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
     def _grad_columns(self) -> dict:
         return {
@@ -1028,10 +1174,12 @@ class ExamApp:
     def grade_exams_from_images(self) -> None:
         """Section 1a: OCR of handwritten answer sheets into a grades XLSX."""
         from pyexamgenerator.grading import HAS_OCR, ImageGradingConfig
+        # Every Tk variable is read here, in the main thread: work() runs in another thread.
+        enrollment = self._grad_enrollment_list()
         xmls = [p for p in self.grad_xmls_var.get().split(";") if p.strip()]
         images = [p for p in self.grad_images_var.get().split(";") if p.strip()]
         out = self.grad_out_var.get().strip()
-        if not (self._grad_enrollment_list() and xmls and images and out):
+        if not (enrollment and xmls and images and out):
             messagebox.showerror("Faltan datos", "Necesitas matriculados, plantillas XML, imágenes y carpeta de salida.")
             return
         if not HAS_OCR:
@@ -1042,10 +1190,10 @@ class ExamApp:
         temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
 
         def work():
-            matric = self._grad_merged_enrollment(out)
+            matric = self._grad_merged_enrollment(enrollment, out)
             cfg = ImageGradingConfig(
                 xml_paths=xmls, image_paths=images, enrollment_path=matric,
-                enrollment_paths=self._grad_enrollment_list(),
+                enrollment_paths=enrollment,
                 output_answers="respuestas.xlsx", output_grades="calificaciones_manuscritos.xlsx",
                 output_incidents="incidencias.xlsx", output_dir=out,
                 forced_type_by_image=forced, prompt_missing_type=False, interactive_review=False,
@@ -1055,7 +1203,7 @@ class ExamApp:
                 last_name_col=cols["last_name_col"], email_col=cols["email_col"],
                 temp_image_dir=temp_image_dir,
             )
-            api = self._grad_api()
+            api = self._grad_api(out)
             api.grade_from_images(cfg)
 
             warning_msgs: List[str] = []
@@ -1077,23 +1225,24 @@ class ExamApp:
     def grade_exams_from_answers(self) -> None:
         """Section 1b: grade from an already-digitized Moodle answers XLSX."""
         from pyexamgenerator.grading import ExcelGradingConfig
+        enrollment = self._grad_enrollment_list()
         xmls = [p for p in self.grad_xmls_var.get().split(";") if p.strip()]
         answers = self.grad_answers_var.get().strip()
         out = self.grad_out_var.get().strip()
-        if not (self._grad_enrollment_list() and xmls and answers and out):
+        if not (enrollment and xmls and answers and out):
             messagebox.showerror("Faltan datos", "Necesitas matriculados, una plantilla XML, el xlsx de respuestas y carpeta de salida.")
             return
         cols = self._grad_columns()
 
         def work():
-            matric = self._grad_merged_enrollment(out)
+            matric = self._grad_merged_enrollment(enrollment, out)
             cfg = ExcelGradingConfig(
                 exam_xml_path=xmls[0], answers_xlsx_path=answers, enrollment_xlsx_path=matric,
                 output_path="calificaciones_desde_respuestas.xlsx", output_dir=out,
                 last_name_col=cols["last_name_col"], first_name_col=cols["first_name_col"],
                 id_col=cols["id_col"], email_col=cols["email_col"],
             )
-            self._grad_api().grade_from_excel(cfg)
+            self._grad_api(out).grade_from_excel(cfg)
             return f"Corrección desde respuestas completada. Resultados en:\n{out}"
 
         self._grad_run_async("Corrigiendo desde respuestas…", work)
@@ -1101,30 +1250,33 @@ class ExamApp:
     def run_attendance_analysis(self) -> None:
         """Section 2: attendance + justifications cross-check (optional, independent step)."""
         from pyexamgenerator.grading import AbsenceJustificationConfig
+        enrollment = self._grad_enrollment_list()
         attendance = self.grad_attendance_var.get().strip()
         justif = self.grad_justif_var.get().strip()
         out = self.grad_out_var.get().strip()
-        if not (self._grad_enrollment_list() and attendance and justif and out):
+        if not (enrollment and attendance and justif and out):
             messagebox.showerror("Faltan datos", "Necesitas matriculados, asistencias, justificaciones y carpeta de salida.")
             return
         cols = self._grad_columns()
+        schedule = self.grad_schedule_var.get().strip() or None
+        quizzes = self.grad_quizzes_var.get().strip() or None
         sheet_raw = self.grad_sched_sheet_var.get().strip()
         schedule_sheet = int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0)
         header_raw = self.grad_att_header_var.get().strip()
         header_row = int(header_raw) if header_raw.lstrip("-").isdigit() else 3
 
         def work():
-            matric = self._grad_merged_enrollment(out)
+            matric = self._grad_merged_enrollment(enrollment, out)
             cfg = AbsenceJustificationConfig(
                 attendance_xlsx_path=attendance, justifications_xlsx_path=justif,
-                enrollment_xlsx_path=matric, schedule_xlsx_path=self.grad_schedule_var.get().strip() or None,
-                schedule_sheet=schedule_sheet, quizzes_xlsx_path=self.grad_quizzes_var.get().strip() or None,
+                enrollment_xlsx_path=matric, schedule_xlsx_path=schedule,
+                schedule_sheet=schedule_sheet, quizzes_xlsx_path=quizzes,
                 output_dir=out, attendance_header_row=header_row,
                 sender_col=cols["sender_col"], subject_col=cols["subject_col"], message_col=cols["message_col"],
                 first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
                 id_col=cols["id_col"], email_col=cols["email_col"],
             )
-            self._grad_api().process_absence_justifications(cfg)
+            self._grad_api(out).process_absence_justifications(cfg)
             return f"Asistencia/justificaciones analizadas. Resultados en:\n{out}"
 
         self._grad_run_async("Analizando asistencia y justificaciones…", work)
@@ -1139,48 +1291,21 @@ class ExamApp:
             return
         ocr_grades = self.grad_ocr_grades_var.get().strip() or os.path.join(out, "calificaciones_manuscritos.xlsx")
         append_unmatched_students = bool(self.grad_append_unmatched_var.get())
+        enrollment = self._grad_enrollment_list()
 
         def work():
             cfg = OCRIntegrationConfig(
                 general_xlsx_path=theory, ocr_xlsx_path=ocr_grades,
                 output_path="teoria_integrada.xlsx", output_dir=out,
-                enrollment_paths=self._grad_enrollment_list(),
+                enrollment_paths=enrollment,
                 append_unmatched_students=append_unmatched_students,
             )
-            api = self._grad_api()
+            api = self._grad_api(out)
             api.integrate_ocr_grades(cfg)
 
-            warning_msgs: List[str] = []
-            integration_summary = api.results.get("ocr_integration_summary")
-            if isinstance(integration_summary, dict):
-                removed_summary_rows = int(integration_summary.get("general_summary_rows_removed", 0) or 0)
-                if removed_summary_rows > 0:
-                    warning_msgs.append(
-                        "Se eliminaron automáticamente "
-                        f"{removed_summary_rows} fila(s) de promedio/resumen "
-                        "en las notas de teoría antes de integrar OCR."
-                    )
-                blocked_missing_identity = int(integration_summary.get("blocked_missing_identity", 0) or 0)
-                blocked_unmatched = int(integration_summary.get("blocked_unmatched", 0) or 0)
-                blocked_missing_target = int(integration_summary.get("blocked_missing_target", 0) or 0)
-                blocked_missing_grade = int(integration_summary.get("blocked_missing_grade", 0) or 0)
-                blocked_total = blocked_missing_identity + blocked_unmatched + blocked_missing_target + blocked_missing_grade
-                if blocked_total > 0:
-                    parts = []
-                    if blocked_missing_identity:
-                        parts.append(f"- Sin identidad (ID o nombre+apellidos): {blocked_missing_identity}")
-                    if blocked_unmatched:
-                        parts.append(f"- Alumno no encontrado en teoría: {blocked_unmatched}")
-                    if blocked_missing_target:
-                        parts.append(f"- Sin columna destino en teoría: {blocked_missing_target}")
-                    if blocked_missing_grade:
-                        parts.append(f"- Sin nota OCR válida: {blocked_missing_grade}")
-                    incidents_path = str(api.results.get("ocr_integration_incidents_path") or os.path.join(out, "incidencias_integracion_ocr.xlsx"))
-                    warning_msgs.append(
-                        "Durante la integración se bloquearon filas OCR:\n"
-                        + "\n".join(parts)
-                        + f"\nRevisa: {incidents_path}"
-                    )
+            incidents_path = str(api.results.get("ocr_integration_incidents_path")
+                                 or os.path.join(out, "incidencias_integracion_ocr.xlsx"))
+            warning_msgs = self._grad_integration_warnings(api.results.get("ocr_integration_summary"), incidents_path)
 
             ocr_incidents_path = os.path.join(out, "incidencias.xlsx")
             if os.path.exists(ocr_incidents_path):
@@ -1211,14 +1336,15 @@ class ExamApp:
             return
         integrated = self.grad_integrated_var.get().strip() or os.path.join(out, "teoria_integrada.xlsx")
         attquiz = self.grad_attquiz_var.get().strip() or os.path.join(out, "asistencias_con_cuestionarios.xlsx")
+        theory_grade_col = self.grad_total_col_var.get().strip() or None
 
         def work():
             cfg = TheoryBonusConfig(
                 theory_xlsx_path=integrated, attendance_quiz_xlsx_path=attquiz,
                 output_path="calificaciones_examen_teoria.xlsx", output_dir=out,
-                theory_grade_col=self.grad_total_col_var.get().strip() or None, cap_to_10=True,
+                theory_grade_col=theory_grade_col, cap_to_10=True,
             )
-            self._grad_api().apply_theory_bonus(cfg)
+            self._grad_api(out).apply_theory_bonus(cfg)
             return f"Punto extra aplicado. Resultados en:\n{out}"
 
         self._grad_run_async("Aplicando punto extra…", work)
@@ -1260,7 +1386,7 @@ class ExamApp:
                                    first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"])
 
         def work():
-            self._grad_api().compute_final_grade(cfg)
+            self._grad_api(out).compute_final_grade(cfg)
             return f"Nota final calculada en:\n{out}"
 
         self._grad_run_async("Calculando nota final ponderada…", work)
@@ -1293,7 +1419,7 @@ class ExamApp:
                 merged_output_path="resultados_combinados.xlsx", output_dir=out,
                 id_col=cols["id_col"], first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
             )
-            result = self._grad_api().compare_results(cfg)
+            result = self._grad_api(out).compare_results(cfg)
             s = result.summary
             message = (f"Comparación: {s['changed_cells']} celdas cambiadas en {s['changed_students']} alumno(s), "
                        f"{s['added']} nuevo(s), {s['removed']} ausente(s).\nInforme en: {out}")
@@ -1418,16 +1544,15 @@ class ExamApp:
         messagebox.showinfo("Sesión", "Sesión cargada. Rutas y columnas restauradas.")
 
     def run_grading(self) -> None:
-        """Lanza el pipeline de corrección en un hilo aparte para no congelar la interfaz.
+        """Lanza el pipeline de corrección completo en un hilo aparte para no congelar la interfaz.
 
-        Genera SOLO 3 tablas en la carpeta de salida (incidencias, cuestionarios+punto extra y
-        calificaciones de teoría); los ficheros intermedios van a `_intermedios/` y se borran.
+        La lógica está en :meth:`ExamCorrectionAPI.run_full_pipeline`: genera SOLO las tablas finales
+        en la carpeta de salida (incidencias, cuestionarios+punto extra y calificaciones de teoría);
+        los ficheros intermedios van a `_intermedios/` y se borran siempre, también tras un error.
         """
-        from pyexamgenerator.grading import (
-            HAS_OCR, EnrollmentMerger, ImageExamGrader, OcrGradeIntegrator,
-            AbsenceJustificationManager, TheoryBonusApplier, TheoryTopicReporter,
-        )
+        from pyexamgenerator.grading import HAS_OCR, FullPipelineConfig
 
+        # Every Tk variable is read here, in the main thread: work() runs in another thread.
         enrollment = [p for p in self.grad_enrollment_var.get().split(";") if p]
         xmls = [p for p in self.grad_xmls_var.get().split(";") if p]
         images = [p for p in self.grad_images_var.get().split(";") if p]
@@ -1455,143 +1580,55 @@ class ExamApp:
             return
 
         sheet_raw = self.grad_sched_sheet_var.get().strip()
-        schedule_sheet = int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0)
-
-        forced = self._grad_parse_forced()
-        temp_image_dir = self.grad_ocr_temp_dir_var.get().strip() or None
-
-        pipeline_cols = self._grad_columns()
         header_raw = self.grad_att_header_var.get().strip()
-        pipeline_cols["attendance_header_row"] = int(header_raw) if header_raw.lstrip("-").isdigit() else 3
+        cols = self._grad_columns()
+        cfg = FullPipelineConfig(
+            enrollment_paths=enrollment, xml_paths=xmls, image_paths=images,
+            theory_xlsx_path=theory, attendance_xlsx_path=attendance, schedule_xlsx_path=schedule,
+            justifications_xlsx_path=justif, quizzes_xlsx_path=quizzes, output_dir=out_dir,
+            schedule_sheet=int(sheet_raw) if sheet_raw.isdigit() else (sheet_raw or 0),
+            attendance_header_row=int(header_raw) if header_raw.lstrip("-").isdigit() else 3,
+            forced_type_by_image=self._grad_parse_forced(),
+            temp_image_dir=self.grad_ocr_temp_dir_var.get().strip() or None,
+            append_unmatched_students=bool(self.grad_append_unmatched_var.get()),
+            justification_mode="extremo",
+            sender_col=cols["sender_col"], subject_col=cols["subject_col"], message_col=cols["message_col"],
+            first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
+            id_col=cols["id_col"], email_col=cols["email_col"],
+        )
 
-        def worker():
-            try:
-                warning_msgs: List[str] = []
-                self.root.after(0, lambda: self.update_status("Corrigiendo… fusionando matriculados."))
-                work = os.path.join(out_dir, "_intermedios")
-                os.makedirs(work, exist_ok=True)
-                matric = os.path.join(work, "matriculados.xlsx")
-                EnrollmentMerger(enrollment).export(matric)
+        def work():
+            def progress(message: str) -> None:
+                self.root.after(0, lambda m=message: self.update_status(f"Corrigiendo… {m}"))
 
-                self.root.after(0, lambda: self.update_status("Corrigiendo… OCR de hojas (puede tardar)."))
-                grader = ImageExamGrader(
-                    xml_paths=xmls, enrollment_path=matric,
-                    aggressive_recovery=True, aggressive_min_ratio=0.10,
-                    aggressive_min_gap_ratio=0.22, aggressive_min_top_vs_second=1.08,
-                    temp_image_dir=temp_image_dir,
+            api = self._grad_api(out_dir)
+            api.run_full_pipeline(cfg, progress_callback=progress)
+
+            warning_msgs: List[str] = []
+            ocr_incidents = api.results.get("ocr_incidents")
+            if isinstance(ocr_incidents, pd.DataFrame) and not ocr_incidents.empty:
+                warning_msgs.append(
+                    "Se detectaron incidencias durante el OCR "
+                    f"({len(ocr_incidents)} fila(s)).\n"
+                    f"Revisa: {os.path.join(out_dir, 'incidencias_identificacion_respuestas.xlsx')}"
                 )
-                grader.grade_from_images(
-                    image_paths=images, output_answers="respuestas.xlsx",
-                    output_grades="calificaciones_manuscritos.xlsx", output_dir=work,
-                    output_incidents="incidencias.xlsx", forced_type_by_image=forced,
-                    prompt_missing_type=False, interactive_review=False,
-                )
-                incidencias = pd.read_excel(os.path.join(work, "incidencias.xlsx"))
-                if not incidencias.empty:
-                    warning_msgs.append(
-                        "Se detectaron incidencias durante el OCR "
-                        f"({len(incidencias)} fila(s)).\n"
-                        f"Revisa: {os.path.join(out_dir, 'incidencias_identificacion_respuestas.xlsx')}"
-                    )
-                incidencias.to_excel(
-                    os.path.join(out_dir, "incidencias_identificacion_respuestas.xlsx"), index=False)
+            integration_incidents_path = (api.results.get("full_pipeline_outputs") or {}).get("integration_incidents")
+            warning_msgs += self._grad_integration_warnings(
+                api.results.get("ocr_integration_summary"),
+                integration_incidents_path or os.path.join(out_dir, "incidencias_integracion_ocr.xlsx"),
+            )
 
-                self.root.after(0, lambda: self.update_status("Corrigiendo… integrando notas OCR en teoría."))
-                ocr_integrator = OcrGradeIntegrator(
-                    general_xlsx_path=theory,
-                    ocr_xlsx_path=os.path.join(work, "calificaciones_manuscritos.xlsx"),
-                    enrollment_paths=enrollment,
-                    append_unmatched_students=bool(self.grad_append_unmatched_var.get()),
-                )
-                integrated = ocr_integrator.integrate(os.path.join(work, "teoria_integrada.xlsx"))
+            msg = ("Corrección completada. Tablas generadas en:\n" + out_dir +
+                   "\n\n- incidencias_identificacion_respuestas.xlsx"
+                   "\n- cuestionarios_clase_y_punto_extra.xlsx"
+                   "\n- calificaciones_examen_teoria.xlsx")
+            if integration_incidents_path:
+                msg += "\n- incidencias_integracion_ocr.xlsx"
+            self._open_folder(out_dir)
+            return {"info": msg, "warnings": warning_msgs}
 
-                integration_incidents_path = None
-                integration_incidents_df = getattr(ocr_integrator, "last_integration_incidents_df", None)
-                if isinstance(integration_incidents_df, pd.DataFrame) and not integration_incidents_df.empty:
-                    integration_incidents_path = os.path.join(out_dir, "incidencias_integracion_ocr.xlsx")
-                    integration_incidents_df.to_excel(integration_incidents_path, index=False)
-
-                integration_summary = dict(getattr(ocr_integrator, "last_integration_summary", {}) or {})
-                removed_summary_rows = int(integration_summary.get("general_summary_rows_removed", 0) or 0)
-                if removed_summary_rows > 0:
-                    warning_msgs.append(
-                        "Se eliminaron automáticamente "
-                        f"{removed_summary_rows} fila(s) de promedio/resumen "
-                        "en las notas de teoría antes de integrar OCR."
-                    )
-                blocked_missing_identity = int(integration_summary.get("blocked_missing_identity", 0) or 0)
-                blocked_unmatched = int(integration_summary.get("blocked_unmatched", 0) or 0)
-                blocked_missing_target = int(integration_summary.get("blocked_missing_target", 0) or 0)
-                blocked_missing_grade = int(integration_summary.get("blocked_missing_grade", 0) or 0)
-                blocked_total = blocked_missing_identity + blocked_unmatched + blocked_missing_target + blocked_missing_grade
-                if blocked_total > 0:
-                    parts = []
-                    if blocked_missing_identity:
-                        parts.append(f"- Sin identidad (ID o nombre+apellidos): {blocked_missing_identity}")
-                    if blocked_unmatched:
-                        parts.append(f"- Alumno no encontrado en teoría: {blocked_unmatched}")
-                    if blocked_missing_target:
-                        parts.append(f"- Sin columna destino en teoría: {blocked_missing_target}")
-                    if blocked_missing_grade:
-                        parts.append(f"- Sin nota OCR válida: {blocked_missing_grade}")
-                    extra_path = integration_incidents_path or os.path.join(out_dir, "incidencias_integracion_ocr.xlsx")
-                    warning_msgs.append(
-                        "Durante la integración se bloquearon filas OCR:\n"
-                        + "\n".join(parts)
-                        + f"\nRevisa: {extra_path}"
-                    )
-
-                self.root.after(0, lambda: self.update_status("Corrigiendo… asistencias y cuestionarios."))
-                justif_result = AbsenceJustificationManager(
-                    attendance_xlsx_path=attendance, justifications_xlsx_path=justif,
-                    enrollment_xlsx_path=matric, schedule_xlsx_path=schedule,
-                    schedule_sheet=schedule_sheet, quizzes_xlsx_path=quizzes,
-                    attendance_header_row=pipeline_cols["attendance_header_row"],
-                    sender_col=pipeline_cols["sender_col"],
-                    subject_col=pipeline_cols["subject_col"],
-                    message_col=pipeline_cols["message_col"],
-                    first_name_col=pipeline_cols["first_name_col"],
-                    last_name_col=pipeline_cols["last_name_col"],
-                    id_col=pipeline_cols["id_col"],
-                    email_col=pipeline_cols["email_col"],
-                    justification_mode="extremo",
-                ).analyze()
-                attendance_quiz = justif_result.attendance_quiz_df
-
-                self.root.after(0, lambda: self.update_status("Corrigiendo… aplicando punto extra."))
-                TheoryBonusApplier(integrated, attendance_quiz, cap_to_10=True).apply(
-                    os.path.join(out_dir, "calificaciones_examen_teoria.xlsx"))
-
-                _, quiz_report = TheoryTopicReporter(attendance_quiz).build()
-                quiz_report.to_excel(
-                    os.path.join(out_dir, "cuestionarios_clase_y_punto_extra.xlsx"), index=False)
-
-                shutil.rmtree(work, ignore_errors=True)
-                msg = ("Corrección completada. Tablas generadas en:\n" + out_dir +
-                       "\n\n- incidencias_identificacion_respuestas.xlsx"
-                       "\n- cuestionarios_clase_y_punto_extra.xlsx"
-                       "\n- calificaciones_examen_teoria.xlsx")
-                if integration_incidents_path:
-                    msg += "\n- incidencias_integracion_ocr.xlsx"
-                self.root.after(0, lambda: self.update_status("Corrección completada."))
-                if warning_msgs:
-                    warning_text = "\n\n".join(warning_msgs)
-                    self.root.after(0, lambda t=warning_text: messagebox.showwarning("Avisos", t))
-                self.root.after(0, lambda: messagebox.showinfo("Corrección", msg))
-                try:
-                    os.startfile(out_dir)  # type: ignore[attr-defined]
-                except Exception:
-                    pass
-            except Exception as exc:
-                err = str(exc)
-                self.root.after(0, lambda: self.update_status("Error en la corrección."))
-                self.root.after(0, lambda: messagebox.showerror("Error", err))
-            finally:
-                self.root.after(0, self._grad_finish_job)
-
-        if not self._grad_try_start_job():
-            return
-        threading.Thread(target=worker, daemon=True).start()
+        self._grad_run_async("Corrigiendo… (pipeline completo, puede tardar)", work,
+                             done_msg="Corrección completada.")
 
     def toggle_pages_per_chunk_entry(self):
         """
@@ -1619,28 +1656,6 @@ class ExamApp:
         canvas_question.configure(yscrollcommand=scrollbar_question.set)
         scrollbar_question.pack(side="right", fill="y")
         canvas_question.pack(side="left", fill="both", expand=True)
-
-        def _on_question_mousewheel(event):
-            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
-            if delta_units == 0:
-                delta_units = -1 if event.delta > 0 else 1
-            canvas_question.yview_scroll(delta_units, "units")
-            return "break"
-
-        def _on_question_scroll_up(_event):
-            canvas_question.yview_scroll(-1, "units")
-            return "break"
-
-        def _on_question_scroll_down(_event):
-            canvas_question.yview_scroll(1, "units")
-            return "break"
-
-        def _bind_question_scroll_recursively(widget):
-            widget.bind("<MouseWheel>", _on_question_mousewheel)
-            widget.bind("<Button-4>", _on_question_scroll_up)
-            widget.bind("<Button-5>", _on_question_scroll_down)
-            for child in widget.winfo_children():
-                _bind_question_scroll_recursively(child)
 
         inner_frame_question = ttk.Frame(canvas_question)
         inner_frame_question.bind("<Configure>", lambda e: canvas_question.configure(scrollregion=canvas_question.bbox("all")))
@@ -1865,9 +1880,9 @@ class ExamApp:
         save_api_key_button.pack(side='left', padx=2)
         ToolTip(save_api_key_button, text="Guarda la clave de API actual en la configuración.")
 
-        load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
-        load_models_button.pack(side='left', padx=2)
-        ToolTip(load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
+        self.load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
+        self.load_models_button.pack(side='left', padx=2)
+        ToolTip(self.load_models_button, text="Usa la clave API para obtener la lista de modelos disponibles.")
 
         # Nueva tabla para los modelos
         models_table_frame = ttk.Frame(model_api_frame)
@@ -1938,35 +1953,32 @@ class ExamApp:
         ToolTip(output_dir_button, "Abrir diálogo para seleccionar el directorio de salida.")
 
         # Row 9: Generate Button
-        generate_button = ttk.Button(config_frame, text="Generar Preguntas", command=self.generate_questions)
-        generate_button.grid(row=9, column=0, columnspan=3, pady=10)
-        ToolTip(generate_button, "Iniciar el proceso de generación de preguntas con la configuración actual.")
+        self.generate_questions_button = ttk.Button(config_frame, text="Generar Preguntas", command=self.generate_questions)
+        self.generate_questions_button.grid(row=9, column=0, columnspan=3, pady=10)
+        ToolTip(self.generate_questions_button, "Iniciar el proceso de generación de preguntas con la configuración actual.")
 
         config_frame.columnconfigure(1, weight=1)
         inner_frame_question.columnconfigure(0, weight=1)
 
         # Bind wheel events after creating all child widgets in this scrollable tab.
-        _bind_question_scroll_recursively(canvas_question)
-        _bind_question_scroll_recursively(inner_frame_question)
+        self._bind_page_scroll(canvas_question, canvas_question)
 
     def populate_models_table(self):
         """
         Fetches available Gemini models using the provided API key and populates the Treeview table.
-        Adapted for the new google-genai library.
+        Adapted for the new google-genai library. The request runs in a background thread so the
+        window keeps responding; the table is filled in the main thread.
         """
         api_key = self.api_key_var.get()
         if not api_key or api_key == "TU_CLAVE_API":
             messagebox.showerror("Error", "Por favor, introduce una clave API de Gemini válida antes de cargar los modelos.")
             return
 
-        self.update_status("Cargando lista de modelos...")
-        self.root.update_idletasks()
-
         # Limpiar la tabla antes de llenarla
         for i in self.models_tree.get_children():
             self.models_tree.delete(i)
 
-        try:
+        def work():
             # Inicializamos el cliente con la nueva librería
             client = genai.Client(api_key=api_key)
 
@@ -1974,7 +1986,7 @@ class ExamApp:
             # Nota: La nueva librería maneja la paginación automáticamente
             models_pager = client.models.list()
 
-            count = 0
+            rows = []
             for model in models_pager:
                 # 1. FILTRO: Solo nos interesan los modelos que se llamen "gemini"
                 # Usamos getattr para mayor seguridad por si el objeto cambia
@@ -2000,8 +2012,7 @@ class ExamApp:
                 description = getattr(model, 'description', '') or ""
                 description = description.replace('\n', ' ')
 
-                # 3. INSERTAR EN LA TABLA
-                self.models_tree.insert("", "end", values=(
+                rows.append((
                     model_name,
                     display_name,
                     version,
@@ -2010,18 +2021,26 @@ class ExamApp:
                     methods_str,
                     description
                 ))
-                count += 1
+            return rows
 
-            if count == 0:
+        def on_success(rows):
+            # 3. INSERTAR EN LA TABLA (en el hilo principal)
+            for values in rows:
+                self.models_tree.insert("", "end", values=values)
+
+            if not rows:
                 messagebox.showwarning("Sin Modelos", "La API respondió, pero no se encontraron modelos 'gemini'.")
 
-            self.update_status(f"Se cargaron {count} modelos. Por favor, seleccione uno de la tabla.")
+            self.update_status(f"Se cargaron {len(rows)} modelos. Por favor, seleccione uno de la tabla.")
 
-        except Exception as e:
+        def on_error(e):
             messagebox.showerror("Error de API", f"No se pudo obtener la lista de modelos. Verifica tu clave API y conexión a internet.\n\nError: {e}")
             self.update_status("Error al cargar modelos.")
             # Imprimimos el error completo en consola para depuración si es necesario
             print(f"Error detallado al cargar modelos: {e}")
+
+        self._run_in_background("Cargando lista de modelos...", work, on_success, on_error,
+                                widgets=[self.load_models_button])
 
     # Nueva función para manejar la selección en la tabla
     def on_model_select(self, event=None):
@@ -2234,7 +2253,8 @@ class ExamApp:
             messagebox.showerror("Error", "El número máximo de intentos por fragmento debe ser un entero.")
             return
 
-        output_filename = self.output_filename_var.get()
+        # Empty name: the library default ('preguntas').
+        output_filename = self.output_filename_var.get().strip() or None
 
         # Obtenemos el modelo directamente de la variable que se actualiza con la tabla
         technical_model_name = self.selected_model_var.get()
@@ -2262,9 +2282,6 @@ class ExamApp:
         except Exception as e:
             messagebox.showerror("Error", f"Error al inicializar el generador de preguntas: {e}")
             return
-
-        self.update_status("Generando preguntas...")
-        self.root.update_idletasks()
 
         existing_bank_path_for_gen = self.existing_bank_for_gen_path.get()
         bank_prompt_scope_value = self.bank_in_prompt_scope_var.get()
@@ -2315,9 +2332,12 @@ class ExamApp:
         bank_prompt_scope_to_pass = bank_prompt_scope_value if existing_bank_path_for_gen else None
 
         output_dir_value = self.gen_questions_output_dir_var.get() or None
+        include_similar_questions_value = self.include_similar_questions_in_prompt_var.get()
+        generator = self.question_generator
 
-        try:
-            questions_df = self.question_generator.generate_multiple_choice_questions(
+        # The calls to Gemini can take minutes: they run in a worker thread (no Tk access there).
+        def work():
+            return generator.generate_multiple_choice_questions(
                 pdf_paths=pdf_paths,
                 prompt_type=selected_prompt_type,
                 num_questions_per_chunk_target=num_questions_target_per_chunk,
@@ -2334,9 +2354,11 @@ class ExamApp:
                 max_generation_attempts_per_chunk=max_attempts_value,
                 total_chunks=total_chunks_value,
                 chunking_mode=chunking_mode_value,
-                include_similar_questions_in_prompt=self.include_similar_questions_in_prompt_var.get(),
+                include_similar_questions_in_prompt=include_similar_questions_value,
                 input_mode=input_mode_value
             )
+
+        def on_success(questions_df):
             if questions_df is not None and not questions_df.empty:
                 self.update_status(f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
                 messagebox.showinfo("Éxito", f"Preguntas generadas y guardadas ({len(questions_df)} en total).")
@@ -2345,26 +2367,28 @@ class ExamApp:
                 self.update_status("No se generaron preguntas o ninguna pasó los filtros.")
                 messagebox.showinfo("Resultado", "No se generaron preguntas o ninguna pasó los filtros (ej. similitud, errores de API). Revisa la consola para más detalles.")
 
-        except QuotaExceededError as e:
-            title = "Límite de Cuota Excedido"
-            # El mensaje 'e' ya viene formateado desde QuestionGenerator
-            message = str(e)
+        def on_error(e):
+            if isinstance(e, QuotaExceededError):
+                title = "Límite de Cuota Excedido"
+                # El mensaje 'e' ya viene formateado desde QuestionGenerator
+                message = str(e)
 
-            self.update_status("Error: Límite de cuota de la API excedido.")
-            messagebox.showerror(title, message)
-            print(f"ERROR: {title}\n{message}")
+                self.update_status("Error: Límite de cuota de la API excedido.")
+                messagebox.showerror(title, message)
+                print(f"ERROR: {title}\n{message}")
+            elif isinstance(e, ServiceOverloadedError):
+                title = "Servidores de Google Saturados"
+                self.update_status("Error: Modelo de IA saturado.")
+                messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
+                print(f"ERROR: {title}\n{e}")
+            else:
+                self.update_status(f"Error durante la generación de preguntas: {e}")
+                messagebox.showerror("Error", f"Error: {e}")
+                import traceback
+                print("".join(traceback.format_exception(type(e), e, e.__traceback__)))
 
-        except ServiceOverloadedError as e:
-            title = "Servidores de Google Saturados"
-            self.update_status("Error: Modelo de IA saturado.")
-            messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
-            print(f"ERROR: {title}\n{e}")
-
-        except Exception as e:
-            self.update_status(f"Error durante la generación de preguntas: {e}")
-            messagebox.showerror("Error", f"Error: {e}")
-            import traceback
-            print(traceback.format_exc())
+        self._run_in_background("Generando preguntas...", work, on_success, on_error,
+                                widgets=[self.generate_questions_button])
 
     def create_exam_tab(self):
         """
@@ -2731,9 +2755,9 @@ class ExamApp:
         row += 1
 
         # Generate Exams Button (spans the width)
-        generate_button = ttk.Button(inner_frame_exam, text="Generar Exámenes", command=self.generate_exams)
-        generate_button.grid(row=row, column=0, columnspan=3, pady=20)
-        ToolTip(generate_button, "Genera los archivos de examen (docx y opcionalmente xml) con la configuración actual.")
+        self.generate_exams_button = ttk.Button(inner_frame_exam, text="Generar Exámenes", command=self.generate_exams)
+        self.generate_exams_button.grid(row=row, column=0, columnspan=3, pady=20)
+        ToolTip(self.generate_exams_button, "Genera los archivos de examen (docx y opcionalmente xml) con la configuración actual.")
 
         inner_frame_exam.columnconfigure(0, weight=1)
         inner_frame_exam.columnconfigure(1, weight=1)
@@ -2760,29 +2784,6 @@ class ExamApp:
 
         # Keep the inner frame width synced with the visible canvas width.
         canvas_manage.bind("<Configure>", lambda e: canvas_manage.itemconfigure(manage_window_id, width=e.width))
-
-        # Mouse wheel support (Windows/macOS + Linux) across the whole widget tree.
-        def _on_manage_mousewheel(event):
-            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
-            if delta_units == 0:
-                delta_units = -1 if event.delta > 0 else 1
-            canvas_manage.yview_scroll(delta_units, "units")
-            return "break"
-
-        def _on_manage_scroll_up(_event):
-            canvas_manage.yview_scroll(-1, "units")
-            return "break"
-
-        def _on_manage_scroll_down(_event):
-            canvas_manage.yview_scroll(1, "units")
-            return "break"
-
-        def _bind_manage_scroll_recursively(widget):
-            widget.bind("<MouseWheel>", _on_manage_mousewheel)
-            widget.bind("<Button-4>", _on_manage_scroll_up)
-            widget.bind("<Button-5>", _on_manage_scroll_down)
-            for child in widget.winfo_children():
-                _bind_manage_scroll_recursively(child)
 
         # --- Section to generate XLSX from a revised DOCX ---
         docx_xlsx_group = ttk.LabelFrame(inner_frame_manage, text="Generar XLSX desde DOCX revisado")
@@ -3017,9 +3018,9 @@ class ExamApp:
 
         unify_frame.columnconfigure(1, weight=1)
 
-        # Bind wheel events after creating all child widgets in the scrollable frame.
-        _bind_manage_scroll_recursively(canvas_manage)
-        _bind_manage_scroll_recursively(inner_frame_manage)
+        # Mouse wheel support (Windows/macOS + Linux) across the whole widget tree, bound after
+        # creating all child widgets in the scrollable frame.
+        self._bind_page_scroll(canvas_manage, canvas_manage)
 
     def select_unify_bank_files(self) -> None:
         """Opens a dialog to select several question bank XLSX files to unify."""
@@ -3327,6 +3328,9 @@ class ExamApp:
         usage_alert_enabled = self.usage_alert_enabled_var.get()
         usage_alert_threshold_str = self.usage_alert_threshold_var.get().strip()
 
+        if not excel_path.strip():
+            messagebox.showerror("Error", "Selecciona el archivo Excel del banco de preguntas.")
+            return
         if not os.path.exists(excel_path):
             messagebox.showerror("Error", f"El archivo Excel '{excel_path}' no se encuentra.")
             return
@@ -3408,16 +3412,20 @@ class ExamApp:
                 return
 
         output_dir_value = self.gen_exams_output_dir_var.get() or None
+        session_output_path = self.gen_session_output_var.get().strip() or None
+        # A generator per run: the instance keeps state while it works and the shared one may be in
+        # use by «Generar XML desde XLSX existente» while this run goes on in another thread.
+        generator = ExamGenerator()
 
         def confirm_usage_warning(_warning_df: pd.DataFrame, _threshold: int, message: str) -> bool:
-            return messagebox.askyesno(
+            # Called from the worker thread: the dialog is shown in the main thread.
+            return self._call_in_main_thread(lambda: messagebox.askyesno(
                 "Alerta de uso de preguntas",
                 f"{message}\n\nDeseas continuar con la generacion?"
-            )
+            ))
 
-        self.update_status("Generando exámenes...")
-        try:
-            self.exam_generator.generate_exam_from_excel(
+        def work():
+            generator.generate_exam_from_excel(
                 bank_excel_path=excel_path,
                 output_dir=output_dir_value,
                 exam_names=exam_name_list,
@@ -3441,35 +3449,41 @@ class ExamApp:
                 update_excel=update_excel,
                 answer_sheet_instructions=answer_sheet_instructions,
                 template_docx_path=template_docx_path,
-                session_output_path=(self.gen_session_output_var.get().strip() or None),
+                session_output_path=session_output_path,
                 usage_warning_enabled=usage_alert_enabled,
                 usage_warning_threshold=usage_alert_threshold,
                 usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None
             )
-            if getattr(self.exam_generator, "generation_cancelled", False):
+            return bool(getattr(generator, "generation_cancelled", False))
+
+        def on_success(cancelled):
+            if cancelled:
                 self.update_status("Generacion de examenes cancelada.")
                 messagebox.showinfo("Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
                 return
             self.update_status("Exámenes generados.")
             messagebox.showinfo("Éxito", "Exámenes generados correctamente.")
 
-        except (NoAcceptableQuestionsError, ValueError) as e:
-            # Capturamos nuestro error personalizado y el ValueError del bucle
-            error_message = (
-                "No se pudo generar el examen. Revisa el estado de las preguntas en tu banco.\n\n"
-                "Es posible que no haya preguntas 'Aceptables' o que estés solicitando más preguntas "
-                "de las disponibles para un tema."
-            )
-            detailed_error = f"Detalle del error: {e}"
+        def on_error(e):
+            if isinstance(e, (NoAcceptableQuestionsError, ValueError)):
+                # Capturamos nuestro error personalizado y el ValueError del bucle
+                error_message = (
+                    "No se pudo generar el examen. Revisa el estado de las preguntas en tu banco.\n\n"
+                    "Es posible que no haya preguntas 'Aceptables' o que estés solicitando más preguntas "
+                    "de las disponibles para un tema."
+                )
+                detailed_error = f"Detalle del error: {e}"
 
-            self.update_status("Error: No se encontraron preguntas aceptables o suficientes.")
-            messagebox.showerror("Error en el Banco de Preguntas", f"{error_message}\n\n{detailed_error}")
-            print(f"ERROR: {error_message}\n{detailed_error}")
+                self.update_status("Error: No se encontraron preguntas aceptables o suficientes.")
+                messagebox.showerror("Error en el Banco de Preguntas", f"{error_message}\n\n{detailed_error}")
+                print(f"ERROR: {error_message}\n{detailed_error}")
+            else:
+                # Mantenemos un bloque genérico para cualquier otro error inesperado
+                self.update_status(f"Error al generar exámenes: {e}")
+                messagebox.showerror("Error", f"Ocurrió un error inesperado al generar los exámenes: {e}")
 
-        except Exception as e:
-            # Mantenemos un bloque genérico para cualquier otro error inesperado
-            self.update_status(f"Error al generar exámenes: {e}")
-            messagebox.showerror("Error", f"Ocurrió un error inesperado al generar los exámenes: {e}")
+        self._run_in_background("Generando exámenes...", work, on_success, on_error,
+                                widgets=[self.generate_exams_button])
 
     def show_moodle_suggestions(self) -> None:
         """Shows recommended Moodle quiz names / columns so the exported xlsx is identifiable."""
@@ -3608,7 +3622,7 @@ class ExamApp:
         """
         self.update_exams_tree.delete(*self.update_exams_tree.get_children())
         for index, spec in enumerate(self.update_exam_specs):
-            column_name = self.question_bank_manager._usage_column_name(spec["label"], spec["path"])
+            column_name = self.question_bank_manager.usage_column_name(spec["label"], spec["path"])
             self.update_exams_tree.insert(
                 "", "end", iid=str(index),
                 values=(os.path.basename(spec["path"]), spec["label"], column_name)

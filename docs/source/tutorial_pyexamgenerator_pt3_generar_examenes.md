@@ -13,7 +13,8 @@ Para nuestro ejemplo, vamos a crear un examen de 5 preguntas (2 del tema `PRL - 
 
 ### Sección 2: Datos del examen
 
-Esta sección define la cabecera y la información básica que aparecerá en el examen.
+Esta sección define la cabecera y la información básica que aparecerá en el examen. Los campos
+empiezan vacíos (o con los valores de la plantilla que cargues): rellénalos antes de generar.
 
 *   **Asignatura:** El nombre de la materia.
     *   **Acción:** Escribe `Prevención de Riesgos Laborales`.
@@ -81,7 +82,7 @@ Aquí personalizas el aspecto visual de tu examen en el archivo de Word.
 
 *   **Directorio de Salida para Exámenes:** La carpeta donde se guardarán todos los archivos del examen.
 *   **Acción para nuestro ejemplo:** Crea una carpeta llamada **`examenes generados`** en tu carpeta de trabajo, y selecciónala.
-*   **Botón "Generar Exámenes":** ¡El momento de la verdad! Haz clic en este botón.
+*   **Botón "Generar Exámenes":** ¡El momento de la verdad! Haz clic en este botón. La generación se hace en segundo plano (el botón queda desactivado hasta que termina) y, si está activada la alerta de uso, te preguntará antes de continuar cuando haya preguntas muy usadas.
 
 ![](/_static/gifs/parte6_v01.gif)
 

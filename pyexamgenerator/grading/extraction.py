@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - depende del entorno
     _RAPIDOCR_BACKEND = "legacy"
 
 from pyexamgenerator.grading._ids import normalize_id
+from pyexamgenerator.grading._paths import prepare_output_path
 
 
 Point = Tuple[float, float]
@@ -1403,19 +1404,17 @@ class ImageExamGrader:
     ) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
         forced = {k: v for k, v in (forced_type_by_image or {}).items()}
 
-        output_base = Path(output_dir) if output_dir else None
-        if output_base is not None:
-            output_base.mkdir(parents=True, exist_ok=True)
-            output_answers = str(output_base / Path(output_answers).name)
-            output_grades = str(output_base / Path(output_grades).name)
-            if output_audit:
-                output_audit = str(output_base / Path(output_audit).name)
-            if output_incidents:
-                output_incidents = str(output_base / Path(output_incidents).name)
-            if output_review:
-                output_review = str(output_base / Path(output_review).name)
-            if output_manual_changes:
-                output_manual_changes = str(output_base / Path(output_manual_changes).name)
+        # Relative paths go to output_dir; absolute ones are kept.
+        output_answers = prepare_output_path(output_answers, output_dir)
+        output_grades = prepare_output_path(output_grades, output_dir)
+        if output_audit:
+            output_audit = prepare_output_path(output_audit, output_dir)
+        if output_incidents:
+            output_incidents = prepare_output_path(output_incidents, output_dir)
+        if output_review:
+            output_review = prepare_output_path(output_review, output_dir)
+        if output_manual_changes:
+            output_manual_changes = prepare_output_path(output_manual_changes, output_dir)
 
         sheet_results = self.extractor.process_batch(image_paths, skip_errors=True)
         # Sheets that could not be graded: reported as incidents instead of aborting the batch.

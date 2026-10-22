@@ -13,6 +13,9 @@ error completo: los diálogos de la aplicación tienen un botón **Copiar**).
 > respuestas) ni tu clave de API. Si necesitas un ejemplo, crea un fichero pequeño con datos
 > inventados que reproduzca el problema.
 
+Si se trata de un problema de **seguridad**, no abras un *issue* público: sigue
+[`SECURITY.md`](SECURITY.md).
+
 ## Proponer cambios
 
 1. Elige una tarea de [`TODO.md`](TODO.md) o abre antes un *issue* para comentarla.

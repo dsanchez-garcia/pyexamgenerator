@@ -64,6 +64,7 @@ pyexamgenerator/
   grading/                 corrección de exámenes (ver ARCHITECTURE.md)
     api.py                 ExamCorrectionAPI + dataclasses *Config
     _ids.py                normalize_id: comparar IDs de alumno (úsalo siempre)
+    _paths.py              prepare_output_path: rutas de salida (las absolutas se respetan)
     extraction.py          OCR (único módulo que importa cv2/numpy/rapidocr)
     graders.py, integrations.py, attendance.py, final_grade.py, comparison.py, data.py, session.py
 tests/                     pytest; todos los datos se generan en tmp_path
@@ -108,6 +109,9 @@ setup.py                   empaquetado (extra opcional [grading] para OCR)
   `usage_warning_callback` en `ExamGenerator`). Hay deuda existente (`ARC-7`).
 - **Tkinter desde hilos:** nunca leas variables (`*.get()`) ni toques widgets fuera del hilo
   principal. Lee los valores antes de lanzar el hilo y devuelve resultados con `root.after(0, ...)`.
+  Para tareas largas usa `ExamApp._run_in_background` (corrección: `_grad_run_async`, una tarea a la
+  vez); si el hilo necesita preguntar al usuario, `_call_in_main_thread` muestra el diálogo en el
+  hilo principal. `test_gui_smoke.py` comprueba que ningún hilo lee variables Tk.
 - `ExamCorrectionAPI` es la fachada pública de `grading`: cada flujo recibe un dataclass `*Config`.
   Si añades un flujo, añade su `Config`, su método en la fachada, regístralo en la sesión
   (`session.record_workflow`) y expórtalo en `grading/__init__.py` (`__all__`).
@@ -122,8 +126,9 @@ setup.py                   empaquetado (extra opcional [grading] para OCR)
 - Carpetas locales que **no debes leer, modificar ni versionar**: `prueba_error/` (datos de
   pruebas manuales), `deposito_rodin/`, `onedrive_backup` (enlace simbólico a OneDrive), `venv/`,
   `build/`, `dist/`, `.tox/`.
-- **Nunca** llames a la API real de Gemini en tests: simula `google.genai.Client`. No uses ni
-  imprimas `GEMINI_API_KEY`; no leas `config.json`.
+- **Nunca** llames a la API real de Gemini en tests: `tests/conftest.py` ya sustituye
+  `google.genai.Client` en todos los tests; para simular respuestas, asigna un cliente falso a
+  `generator.client`. No uses ni imprimas `GEMINI_API_KEY`; no leas `config.json`.
 - No uses `eval`, `exec` ni `pickle.load` sobre contenido externo (respuestas del modelo, ficheros
   del usuario). Las respuestas de Gemini se analizan con `QuestionGenerator._parse_question_literal`
   y las sesiones solo leen pickle con `allow_pickle=True`.
