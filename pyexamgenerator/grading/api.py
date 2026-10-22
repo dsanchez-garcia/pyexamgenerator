@@ -46,6 +46,9 @@ class ImageGradingConfig:
     forced_type_by_image: Dict[str, str] = field(default_factory=dict)
     forced_student_by_image: Dict[str, str] = field(default_factory=dict)
     prompt_missing_type: bool = True
+    # Ask the user through these instead of the console (see ImageExamGrader.grade_from_images).
+    exam_type_callback: Optional[Callable] = field(default=None, repr=False)
+    review_callback: Optional[Callable] = field(default=None, repr=False)
     debug_dir: Optional[str] = None
     temp_image_dir: Optional[str] = None
     min_mark_ratio: float = 0.17
@@ -447,6 +450,8 @@ class ExamCorrectionAPI:
             open_image_on_review=cfg.open_image_on_review,
             forced_type_by_image=cfg.forced_type_by_image,
             prompt_missing_type=cfg.prompt_missing_type,
+            exam_type_callback=cfg.exam_type_callback,
+            review_callback=cfg.review_callback,
         )
         self._export_step_dataframe(export_state, "answers_detected", answers_df)
         self._export_step_dataframe(export_state, "grades_generated", grades_df)

@@ -78,7 +78,7 @@ los botones.
 
 - `generate_exam_from_excel(bank_excel_path, output_dir, subject, exam, course, num_exams | exam_names,
   selection_method, questions_per_topic | total_questions + total_distribution, export_moodle_xml,
-  update_excel, template_docx_path, session_output_path, check, ...)`:
+  update_excel, template_docx_path, session_output_path, check, review_callback, ...)`:
   1. Lee el banco (en cada llamada) y filtra `Estado == "aceptable"`
      (sin distinguir mayúsculas); si no hay ninguna, `NoAcceptableQuestionsError`.
      Tras seleccionar, exige que cada pregunta tenga `Respuesta correcta` A-D (acepta `B)`, ` b `,
@@ -91,6 +91,8 @@ los botones.
      impar con columna `NC`; profesor: `_completo`), el `_completo.xlsx` y el XML de Moodle.
   5. Opcionalmente actualiza el uso en el banco y escribe una sesión de corrección.
 - `generate_moodle_xml_from_existing_exam_xlsx(...)`: XML a partir de un `_completo.xlsx`.
+- `check=True` genera una previsualización y pide confirmación con `review_callback(ruta)`; sin
+  callback, pregunta por consola solo desde un terminal (si no, `ValueError` antes de generar).
 - `suggest_moodle_config(...)`: nombres de cuestionario/categoría coherentes con lo que espera
   `grading`.
 - Penalizaciones de Moodle normalizadas a fracciones válidas (`_MOODLE_GRADE_OPTIONS_PERCENT`).

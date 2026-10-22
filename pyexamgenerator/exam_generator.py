@@ -29,6 +29,7 @@ import re
 import os
 from typing import Callable, Iterable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
 
+from pyexamgenerator._console import ask_yes_no, stdin_is_interactive
 from pyexamgenerator._text import safe_filename_part, strip_accents
 
 
@@ -870,7 +871,8 @@ class ExamGenerator:
             usage_warning_enabled: bool = True,
             usage_warning_threshold: int = 3,
             usage_warning_callback: Optional[Callable[[pd.DataFrame, int, str], bool]] = None,
-            verbose: bool = False
+            verbose: bool = False,
+            review_callback: Optional[Callable[[str], bool]] = None,
     ):
         """
         Generates multiple exams in .docx format with varied question and answer orders.
@@ -904,7 +906,9 @@ class ExamGenerator:
             xml_cat_additional_text (Optional[str]): Additional text for the Moodle XML category.
             penalty (float): Penalty for incorrect answers in the Moodle XML export.
             xml_use_answer_text (bool): If True, XML stores full question and answer text instead of a/b/c/d.
-            check (bool): If True, generates a preview and waits for user confirmation before creating all exams.
+            check (bool): If True, generates a preview and waits for confirmation before creating all
+                exams: from ``review_callback`` or, without it, by asking in the console (only from an
+                interactive terminal; elsewhere a ``ValueError`` is raised before generating anything).
             update_excel (bool): If True, updates the source Excel file with usage statistics.
             answer_sheet_instructions (Optional[str]): Text with instructions for the answer sheet.
             template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
@@ -916,10 +920,16 @@ class ExamGenerator:
             usage_warning_callback (Optional[Callable]): Optional callback that receives
                 ``(warning_df, threshold, message)`` and returns True to continue or False to cancel.
             verbose (bool): If True, prints detailed progress messages to the console.
+            review_callback (Optional[Callable]): With ``check=True``, receives the path of the preview
+                DOCX and returns True to generate the exams or False to cancel.
         """
         # Start a fresh list of generated-exam records for this run.
         self.generated_exams = []
         self.generation_cancelled = False
+
+        if check and review_callback is None and not stdin_is_interactive():
+            # input() would block or fail in a GUI, a notebook or CI.
+            raise ValueError("check=True necesita review_callback cuando no se ejecuta desde un terminal.")
 
         if template_docx_path and not os.path.exists(template_docx_path):
             # Silently falling back to a blank document would hide a wrong path.
@@ -1040,19 +1050,23 @@ class ExamGenerator:
             preview_paragraph = preview_document.add_paragraph(preview_full_exam_text)
             preview_paragraph.runs[0].font.size = Pt(font_size)
             preview_document = self.add_page_number(preview_document)
-            preview_document.save(f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx')
+            preview_path = f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx'
+            preview_document.save(preview_path)
 
-            print(
-                f"Se ha generado un examen de previsualización: examen_previsualizacion_{subject}_{exam}_{course}_completo.docx")
-            review = input("¿El examen es correcto? (sí/no): ").lower()
+            print(f"Se ha generado un examen de previsualización: {preview_path}")
+            if review_callback is not None:
+                approved = bool(review_callback(os.path.abspath(preview_path)))
+            else:
+                approved = ask_yes_no("¿El examen es correcto? (sí/no): ")
 
-            if review == 'sí':
+            if approved:
                 try:
-                    os.remove(f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx')
+                    os.remove(preview_path)
                     print("Archivo de previsualización eliminado.")
                 except OSError as e:
                     print(f"Error al eliminar el archivo de previsualización: {e}")
             else:
+                self.generation_cancelled = True
                 print("Generación de exámenes cancelada.")
                 return
 

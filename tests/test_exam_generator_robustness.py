@@ -1,5 +1,6 @@
 """Regresiones de robustez de `ExamGenerator` (BUG-3, BUG-4, BUG-5, BUG-8)."""
 
+import os
 import random
 import xml.etree.ElementTree as ET
 
@@ -177,11 +178,8 @@ def test_invalid_correct_letter_raises_clear_error(tmp_path):
 def test_preview_that_cannot_be_deleted_is_reported(tmp_path, monkeypatch, capsys):
     """`check=True`: si no se podía borrar la previsualización, el primero de dos `except` repetidos
     decía «Archivo de previsualización eliminado.» (encontrado por ruff, DEV-1)."""
-    import os
-
     monkeypatch.chdir(tmp_path)
     _bank().to_excel(tmp_path / "banco.xlsx", index=False)
-    monkeypatch.setattr("builtins.input", lambda _prompt="": "sí")
 
     real_remove = os.remove
 
@@ -192,9 +190,50 @@ def test_preview_that_cannot_be_deleted_is_reported(tmp_path, monkeypatch, capsy
 
     monkeypatch.setattr(os, "remove", remove)
 
-    _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True)
+    _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True, review_callback=lambda path: True)
 
     output = capsys.readouterr().out
     assert "Error al eliminar el archivo de previsualización: el fichero está abierto en Word" in output
     assert "Archivo de previsualización eliminado." not in output
     assert list((tmp_path / "salida").glob("*_A.docx"))  # the generation goes on
+
+
+def test_check_preview_is_reviewed_through_a_callback(tmp_path, monkeypatch):
+    """ARC-7: `check=True` preguntaba con input(), que bloquea fuera de un terminal (GUI, notebooks)."""
+    monkeypatch.chdir(tmp_path)
+    _bank().to_excel(tmp_path / "banco.xlsx", index=False)
+    reviewed = []
+
+    def reject(preview_path):
+        reviewed.append(preview_path)
+        assert os.path.exists(preview_path)
+        return False
+
+    generator = _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True, review_callback=reject)
+
+    assert len(reviewed) == 1 and os.path.isabs(reviewed[0])
+    assert generator.generation_cancelled
+    assert not list((tmp_path / "salida").glob("*.docx"))
+
+
+def test_check_without_a_terminal_or_callback_fails_before_generating(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _bank().to_excel(tmp_path / "banco.xlsx", index=False)
+    monkeypatch.setattr("pyexamgenerator.exam_generator.stdin_is_interactive", lambda: False)
+
+    with pytest.raises(ValueError, match="review_callback"):
+        _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True)
+
+    assert not list(tmp_path.glob("examen_previsualizacion_*"))
+
+
+def test_check_in_a_terminal_accepts_si_without_accent(tmp_path, monkeypatch):
+    """ARC-7: la consola solo aceptaba exactamente «sí»."""
+    monkeypatch.chdir(tmp_path)
+    _bank().to_excel(tmp_path / "banco.xlsx", index=False)
+    monkeypatch.setattr("pyexamgenerator.exam_generator.stdin_is_interactive", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": " Si ")
+
+    _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True)
+
+    assert list((tmp_path / "salida").glob("*_A.docx"))

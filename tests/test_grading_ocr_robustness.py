@@ -133,3 +133,61 @@ def test_default_temp_dir_is_not_the_desktop():
 
     assert "Desktop" not in default.parts
     assert default.parent == Path(tempfile.gettempdir())
+
+
+def test_missing_exam_type_is_asked_through_a_callback(tmp_path):
+    """ARC-7: el tipo de examen no detectado solo se podía preguntar con input()."""
+    sheets = [
+        SheetResult("sin_tipo.jpg", None, None, None, None, "Leo Ruiz", "222", {"Pregunta 01": "a"}, []),
+        SheetResult("otra.jpg", None, None, None, None, "Eva Sanz", "333", {"Pregunta 01": "a"}, []),
+    ]
+    grader = _grader(sheets, failed=[])
+    asked = []
+
+    def choose_type(image_name, available_types, suggestion):
+        asked.append((image_name, available_types, suggestion))
+        return "b" if image_name == "sin_tipo.jpg" else None  # None: not decided
+
+    _answers, grades, _audit = grader.grade_from_images(
+        image_paths=["sin_tipo.jpg", "otra.jpg"], output_answers="respuestas.xlsx",
+        output_grades="calificaciones.xlsx", output_dir=str(tmp_path), exam_type_callback=choose_type,
+    )
+
+    assert asked == [("sin_tipo.jpg", ["A", "B"], "A"), ("otra.jpg", ["A", "B"], "A")]
+    assert grades["Imagen"].tolist() == ["sin_tipo.jpg"]
+    assert grades["Tipo_Examen"].tolist() == ["B"]
+    assert [s["Tipo"] for s in grader.skipped_sheets] == ["EXAM_TYPE_UNRESOLVED"]
+
+
+def test_doubtful_answers_are_reviewed_through_a_callback(tmp_path):
+    """ARC-7: la revisión interactiva de respuestas dudosas solo funcionaba con input()."""
+    audit = [{"Pregunta": "Pregunta 01", "Seleccionada": "-", "Decision": "", "Score_a": 0.10, "Score_b": 0.35}]
+    sheets = [SheetResult("hoja.jpg", "A", None, None, None, "Ana Gil", "111", {"Pregunta 01": "-"}, audit)]
+    grader = _grader(sheets, failed=[])
+    reviewed = []
+
+    def review(image_path, question, current, suggested, margin):
+        reviewed.append((image_path, question, current, suggested))
+        return "A"
+
+    grader.grade_from_images(
+        image_paths=["hoja.jpg"], output_answers="respuestas.xlsx", output_grades="calificaciones.xlsx",
+        output_dir=str(tmp_path), output_manual_changes="cambios.xlsx",
+        interactive_review=True, open_image_on_review=False, review_callback=review,
+    )
+
+    assert reviewed == [("hoja.jpg", "Pregunta 01", "-", "b")]
+    assert sheets[0].answers["Pregunta 01"] == "a"
+    changes = pd.read_excel(tmp_path / "cambios.xlsx")
+    assert changes[["Valor_Anterior", "Valor_Final"]].values.tolist() == [["-", "a"]]
+
+
+def test_interactive_review_without_a_terminal_needs_a_callback(tmp_path, monkeypatch):
+    monkeypatch.setattr(extraction, "stdin_is_interactive", lambda: False)
+    grader = _grader([], failed=[])
+
+    with pytest.raises(ValueError, match="review_callback"):
+        grader.grade_from_images(
+            image_paths=[], output_answers="respuestas.xlsx", output_grades="calificaciones.xlsx",
+            output_dir=str(tmp_path), interactive_review=True,
+        )
