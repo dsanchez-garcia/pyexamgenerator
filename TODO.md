@@ -335,6 +335,9 @@ búscalas por nombre de función si no coinciden.
   (restos de lógica sustituida, sin efecto) y 6 imports sin uso. Buen punto de partida: activar `F`.*
   — hecho en `d1c6542`: reglas `F` en la CI y pre-commit (además, un `except` repetido que daba un
   mensaje falso). *Pendiente: aplicar `ruff format` en un PR aparte y ampliar las reglas.*
+  *`ruff format` aplicado en `5916315` (decidido por el mantenedor el 2026-10-22: comillas tal como
+  estaban, Markdown excluidos; mismo AST antes y después); la CI y pre-commit lo exigen y el commit
+  está en `.git-blame-ignore-revs`. Queda ampliar las reglas de lint.*
 - [x] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
   `grading/api.py` y los dataclasses de configuración. — hecho en `b08fab8` (job `mypy` en la CI;
   ir añadiendo módulos a `[tool.mypy]`).

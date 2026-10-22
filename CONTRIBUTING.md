@@ -22,7 +22,8 @@ Si se trata de un problema de **seguridad**, no abras un *issue* público: sigue
 2. Crea una rama desde `master` (`fix/...`, `feat/...`, `docs/...`, `test/...`).
 3. Escribe primero un test que reproduzca el problema (con datos sintéticos en `tmp_path`) y después
    el arreglo mínimo.
-4. Ejecuta toda la suite y el lint: `python -m pytest -q` y `python -m ruff check .`.
+4. Ejecuta toda la suite, el lint y el formateador: `python -m pytest -q`, `python -m ruff check .`
+   y `python -m ruff format .` (o instala `pre-commit`, que lo hace en cada commit).
 5. Añade una entrada en `CHANGELOG.md`, bajo `## [Unreleased]`, en español.
 6. Si la tarea venía de `TODO.md`, márcala y cita su identificador en el commit
    (p. ej. `fix(exam): ... (BUG-3)`).
@@ -34,7 +35,7 @@ Si se trata de un problema de **seguridad**, no abras un *issue* público: sigue
   preferentemente en inglés, siguiendo el código que rodea al cambio.
 - No renombres columnas de los Excel (`Pregunta`, `Respuesta A`, `Número de ID`…): son el formato de
   los bancos y de las exportaciones de Moodle que ya usan los docentes.
-- No reformatees ficheros completos: limita el diff a lo que cambias.
+- El formato lo pone `ruff format` (la CI lo exige): no lo ajustes a mano.
 
 ## Licencia
 

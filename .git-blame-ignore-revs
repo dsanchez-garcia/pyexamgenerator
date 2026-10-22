@@ -1,0 +1,5 @@
+# Commits que `git blame` debe saltarse: solo cambian el formato, no el código.
+# GitHub lo aplica solo; en local: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: formatear el código con ruff format (DEV-1)
+5916315bdf3b4d5e88187482ab068abab41bb0a1
