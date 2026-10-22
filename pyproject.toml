@@ -113,6 +113,7 @@ files = [
     "pyexamgenerator/credentials.py",
     "pyexamgenerator/gui_logic.py",
     "pyexamgenerator/grading/_ids.py",
+    "pyexamgenerator/grading/_names.py",
     "pyexamgenerator/grading/_paths.py",
     "pyexamgenerator/grading/_text.py",
     "pyexamgenerator/grading/api.py",

@@ -25,9 +25,15 @@ con otras y dejarla en la forma que Moodle espera.
 El **hilo conductor** es la matrícula. Primero se fusionan los listados de los distintos grupos
 (`EnrollmentMerger`) en un único *roster* que actúa de "fuente de la verdad": de él salen el nombre
 oficial, el número de ID y el correo de cada alumno, y a él se reconducen todas las notas. Cuando una
-hoja manuscrita o un correo no traen el ID, el sistema empareja por **nombre normalizado** (sin
-tildes, en minúsculas) o por coincidencia aproximada; por eso es importante que la matrícula esté
-completa.
+hoja manuscrita o un correo no traen el ID, el sistema empareja por nombre; por eso es importante
+que la matrícula esté completa. Un **correo de justificación** o una fila de un **xlsx de
+respuestas** solo se asignan si coinciden con seguridad: por la dirección de correo, por el **mismo
+nombre** en cualquier orden y sin importar tildes ni mayúsculas («GARCÍA LÓPEZ, MARÍA»), o con el
+**único alumno** que contiene todas sus palabras («María García» si no hay otra María García). Un
+nombre solo *parecido* no se asigna, porque el parecido no distingue una errata de otra persona
+(«Mario» y «María»): queda para revisar, con el alumno más parecido como candidato. Las hojas
+manuscritas del OCR sí se emparejan por aproximación, porque el nombre está escrito a mano; si no
+encuentra al alumno, la hoja sale en la tabla de incidencias (`MISSING_ID`).
 
 A partir de ahí, **las notas pueden entrar por dos caminos**. Si tienes las hojas en papel, el OCR
 (`ImageExamGrader`) lee las marcas, detecta el **tipo de examen** (1A, 1B…) usando como plantilla de
@@ -165,7 +171,9 @@ propio botón, para que ejecutes solo el paso que necesites:
    nombres de columna de tus xlsx (Nº de ID, Nombre, Apellidos, Correo, Nota total, y Remitente /
    Asunto / Mensaje de las justificaciones). Si tus ficheros usan otros nombres, indícalos aquí.
 2. **Corregir examen(es):** desde **imágenes** (OCR) o desde un xlsx de **respuestas** ya
-   digitalizadas.
+   digitalizadas. En el segundo caso, las filas cuyo nombre no coincide con un único alumno no se
+   corrigen y, junto con dos filas del mismo alumno, aparecen en
+   `incidencias_correccion_respuestas.xlsx` con el alumno más parecido; la aplicación lo avisa.
 3. **Asistencia + justificaciones (opcional):** paso aparte; útil cuando la asistencia **no es
    obligatoria** en la asignatura. Solo se usa para cruzar/descartar y no condiciona la corrección.
 4. **Integrar notas** (Moodle + OCR).
@@ -273,6 +281,24 @@ Motivo de la ausencia:
 ```
 
 La fecha se interpreta como `mm/dd/aaaa` (se tolera `dd/mm/aaaa` cuando el primer número es > 12).
+
+### Qué correos justifican faltas
+
+En el modo `extremo` (el que usan la aplicación y el pipeline completo), un correo asignado a un
+alumno justifica **todas** sus faltas, salvo que su texto no parezca una justificación: una consulta,
+una duda sobre el examen o un agradecimiento (`Mensaje_Clasificacion = no_justifica`) no justifican
+nada. En el modo `normal` se aplica la misma regla, pero solo a las faltas claras.
+
+`justificaciones_resumen.xlsx` tiene tres columnas para revisarlo:
+
+- `Revisar = si`: el correo no se ha asignado a ningún alumno (el remitente no coincide con la
+  matrícula o encaja con varios alumnos). `Candidato_Mas_Parecido` indica el alumno más parecido.
+  Si es él, corrige el remitente en el Excel de justificaciones (nombre completo o su correo de la
+  matrícula) y vuelve a ejecutar.
+- `Cuenta_Para_Justificar`: `si` si el correo justifica faltas; `no` si no está asignado o no parece
+  una justificación.
+
+La aplicación avisa al terminar si hay correos sin asignar o que no cuentan.
 
 ## Nombres recomendados para Moodle
 

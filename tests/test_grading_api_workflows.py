@@ -165,7 +165,7 @@ def full_pipeline(tmp_path, monkeypatch):
             state["justification_kwargs"] = kwargs
 
         def analyze(self):
-            return SimpleNamespace(attendance_quiz_df=state["analyze"]())
+            return SimpleNamespace(attendance_quiz_df=state["analyze"](), summary_df=pd.DataFrame())
 
     monkeypatch.setattr("pyexamgenerator.grading.attendance.AbsenceJustificationManager", FakeJustificationManager)
 

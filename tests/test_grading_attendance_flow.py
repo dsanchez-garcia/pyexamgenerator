@@ -128,3 +128,52 @@ def test_facade_exports_every_table_and_the_steps_manifest(course):
     for step in manifest["steps"]:
         assert (run_dir / step["file"]).exists()
     assert manifest["outputs"]["summary_output"].endswith("justificaciones_resumen.xlsx")
+
+
+def _write_justifications(course, *emails):
+    pd.DataFrame([{"FECHA": "11/03/2026", "REMITENTE": sender, "ASUNTO": subject, "MENSAJE": message}
+                  for sender, subject, message in emails]).to_excel(course / "justificaciones.xlsx", index=False)
+
+
+def test_a_similar_name_does_not_justify_another_students_absences(course):
+    """GRD-6: «Lea Ruiz» (no matriculada) se asignaba a Leo Ruiz por parecido (0,86 con umbral 0,55)
+    y le justificaba las faltas; ahora no se asigna y queda para revisar, con Leo como candidato."""
+    _write_justifications(course, ('"Lea Ruiz" <lea.ruiz@otra-universidad.es>', "Justificación de falta",
+                                   "Adjunto el justificante médico de mi ausencia."))
+
+    result = _manager(course).analyze()
+
+    summary = result.summary_df.iloc[0]
+    assert summary["Alumno_Matcheado"] == ""
+    assert (summary["Revisar"], summary["Candidato_Mas_Parecido"]) == ("si", "Leo Ruiz")
+    assert summary["Cuenta_Para_Justificar"] == "no"
+    bonus = result.attendance_quiz_df.set_index("Nombre")
+    assert bonus.loc["Leo", "Tiene_Punto_Adicional_Teoria"] == "no"
+
+
+@pytest.mark.parametrize("sender", ["RUIZ, LEO <leo.personal@correo.es>", "Leo Ruiz <leo.personal@correo.es>"])
+def test_student_writing_from_another_address_is_matched_by_name(course, sender):
+    """GRD-6: la dirección se quedaba dentro del nombre del remitente («Leo Ruiz <leo.personal@…>»),
+    así que un alumno que escribía desde otro correo no se asignaba a nadie y perdía la justificación."""
+    _write_justifications(course, (sender, "Justificación de falta", "Adjunto el justificante médico de mi ausencia."))
+
+    result = _manager(course).analyze()
+
+    summary = result.summary_df.iloc[0]
+    assert (summary["Alumno_Matcheado"], summary["Tipo_Match"], summary["Revisar"]) == ("Leo Ruiz", "name_exact", "no")
+    assert result.attendance_quiz_df.set_index("Nombre").loc["Leo", "Tiene_Punto_Adicional_Teoria"] == "si"
+
+
+@pytest.mark.parametrize("mode", ["extremo", "normal"])
+def test_an_email_that_does_not_justify_anything_does_not_count(course, mode):
+    """GRD-6: en modo extremo, cualquier correo (también una consulta sobre el examen) justificaba
+    todas las faltas de quien lo enviaba; el modo normal tampoco miraba la clasificación."""
+    _write_justifications(course, ("Leo Ruiz <leo@uca.es>", "Duda", "Tengo una duda sobre el examen del tema 3, gracias."))
+
+    result = _manager(course, justification_mode=mode).analyze()
+
+    summary = result.summary_df.iloc[0]
+    assert (summary["Alumno_Matcheado"], summary["Mensaje_Clasificacion"]) == ("Leo Ruiz", "no_justifica")
+    assert summary["Cuenta_Para_Justificar"] == "no"
+    assert result.attendance_quiz_df.set_index("Nombre").loc["Leo", "Tiene_Punto_Adicional_Teoria"] == "no"
+    assert result.extreme_justified_absences_df.empty

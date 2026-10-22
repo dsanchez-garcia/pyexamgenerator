@@ -219,6 +219,49 @@ _MINIMAL_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+def _answers_grading(tmp_path, names):
+    from pyexamgenerator.grading.api import ExcelGradingConfig
+
+    xml_path = tmp_path / "exam.xml"
+    xml_path.write_text(_MINIMAL_XML, encoding="utf-8")
+    enrollment = tmp_path / "enrollment.xlsx"
+    _write(enrollment, [
+        {"Apellido(s)": "García López", "Nombre": "María", "Número de ID": "111", "Dirección de correo": "m@x.com"},
+        {"Apellido(s)": "Gil Ruiz", "Nombre": "Ana", "Número de ID": "222", "Dirección de correo": "a@x.com"},
+    ])
+    answers = tmp_path / "answers.xlsx"
+    _write(answers, [{"Nombre_Alumno_Generado": name, "Pregunta 01": "a"} for name in names])
+    api = ExamCorrectionAPI()
+    result = api.grade_from_excel(ExcelGradingConfig(
+        exam_xml_path=str(xml_path), answers_xlsx_path=str(answers), enrollment_xlsx_path=str(enrollment),
+        output_dir=str(tmp_path / "salida"),
+    ))
+    return api, result
+
+
+def test_exam_grader_does_not_give_a_grade_to_a_similar_name(tmp_path):
+    """GRD-6: con umbral 0,6, «Mario García López» (no matriculado) recibía en silencio la nota en la
+    fila de María; ahora no se asigna y aparece en las incidencias con María como candidata."""
+    api, result = _answers_grading(tmp_path, ["Mario García López", "GIL RUIZ, ANA"])
+
+    assert result["Nombre"].tolist() == ["Ana"]
+    incidents = pd.read_excel(tmp_path / "salida" / "incidencias_correccion_respuestas.xlsx")
+    assert incidents[["Fila", "Nombre_Escrito", "Tipo", "Candidato"]].values.tolist() == [
+        [2, "Mario García López", "UNMATCHED_STUDENT", "María García López"],
+    ]
+    assert len(api.results["answers_grading_incidents"]) == 1
+
+
+def test_exam_grader_reports_two_rows_of_the_same_student(tmp_path):
+    api, result = _answers_grading(tmp_path, ["Ana Gil", "Ana Gil Ruiz", "María García López"])
+
+    assert result["Nombre"].tolist() == ["Ana", "Ana", "María"]
+    incidents = api.results["answers_grading_incidents"]
+    assert incidents[["Fila", "Tipo", "Candidato"]].values.tolist() == [
+        [2, "DUPLICATE_STUDENT", "Ana Gil Ruiz"], [3, "DUPLICATE_STUDENT", "Ana Gil Ruiz"],
+    ]
+
+
 def test_exam_grader_respects_custom_column_names(tmp_path):
     xml_path = tmp_path / "exam.xml"
     xml_path.write_text(_MINIMAL_XML, encoding="utf-8")

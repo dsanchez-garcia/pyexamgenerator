@@ -1203,8 +1203,16 @@ class ExamApp:
                 last_name_col=cols["last_name_col"], first_name_col=cols["first_name_col"],
                 id_col=cols["id_col"], email_col=cols["email_col"],
             )
-            self._grad_api(out).grade_from_excel(cfg)
-            return f"Corrección desde respuestas completada. Resultados en:\n{out}"
+            api = self._grad_api(out)
+            api.grade_from_excel(cfg)
+            incidents = api.results.get("answers_grading_incidents")
+            return {
+                "info": f"Corrección desde respuestas completada. Resultados en:\n{out}",
+                "warnings": gui_logic.answer_grading_warnings(
+                    len(incidents) if isinstance(incidents, pd.DataFrame) else 0,
+                    api.results.get("answers_grading_incidents_path", ""),
+                ),
+            }
 
         self._grad_run_async("Corrigiendo desde respuestas…", work)
 
@@ -1237,8 +1245,15 @@ class ExamApp:
                 first_name_col=cols["first_name_col"], last_name_col=cols["last_name_col"],
                 id_col=cols["id_col"], email_col=cols["email_col"],
             )
-            self._grad_api(out).process_absence_justifications(cfg)
-            return f"Asistencia/justificaciones analizadas. Resultados en:\n{out}"
+            summary_df, _detail = self._grad_api(out).process_absence_justifications(cfg)
+            summary_path = os.path.join(out, "justificaciones_resumen.xlsx")
+            return {
+                "info": f"Asistencia/justificaciones analizadas. Resultados en:\n{out}",
+                "warnings": gui_logic.justification_warnings(
+                    summary_df.to_dict("records"),
+                    f"Revisa: {summary_path} (columnas «Revisar», «Candidato_Mas_Parecido» y «Cuenta_Para_Justificar»).",
+                ),
+            }
 
         self._grad_run_async("Analizando asistencia y justificaciones…", work)
 
@@ -1566,6 +1581,12 @@ class ExamApp:
                 api.results.get("ocr_integration_summary"),
                 integration_incidents_path or os.path.join(out_dir, "incidencias_integracion_ocr.xlsx"),
             )
+            justifications = api.results.get("justifications_summary")
+            if isinstance(justifications, pd.DataFrame):
+                warning_msgs += gui_logic.justification_warnings(
+                    justifications.to_dict("records"),
+                    "Para ver cuáles, usa «Analizar asistencia / justificaciones» (sección 2).",
+                )
 
             msg = ("Corrección completada. Tablas generadas en:\n" + out_dir +
                    "\n\n- incidencias_identificacion_respuestas.xlsx"

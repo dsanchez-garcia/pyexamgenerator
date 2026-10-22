@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -11,6 +10,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
+from pyexamgenerator.grading._names import match_name
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import find_column, normalize_key, normalize_text, parse_decimal
 
@@ -181,6 +181,10 @@ class AbsenceJustificationManager:
         quoted = re.search(r'"([^"]+)"', text)
         if quoted:
             text = quoted.group(1)
+        # The address is not part of the name ("Leo Ruiz <leo@uca.es>" is "Leo Ruiz"): it used to stay
+        # in it, and a student writing from another address was matched to nobody.
+        text = re.sub(r"<[^>]*>", "", text)
+        text = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "", text)
         text = re.sub(r"\(.*?\)", "", text).strip()
         text = re.sub(r"\s+", " ", text)
         return text
@@ -393,25 +397,25 @@ class AbsenceJustificationManager:
         sender_name: str,
         sender_email: str,
         enrollment_df: pd.DataFrame,
-    ) -> Tuple[Optional[pd.Series], str, float]:
+    ) -> Tuple[Optional[pd.Series], str, float, str]:
+        """The enrolled student who sent a justification, only when the match is safe (GRD-6).
+
+        By email address, or by name with the rules of :func:`~pyexamgenerator.grading._names.match_name`
+        (a similarity threshold assigned other students' emails, e.g. «Lea» to «Leo»). Returns
+        ``(row, match_type, score, candidate)``: ``row`` is None when nobody is assigned, and
+        ``candidate`` is then the most similar student, to review by hand.
+        """
         if sender_email:
             email_matches = enrollment_df[enrollment_df["_email_norm"] == sender_email]
             if not email_matches.empty:
-                return email_matches.iloc[0], "email", 1.0
+                return email_matches.iloc[0], "email", 1.0, ""
 
-        sender_norm = self._normalize(sender_name)
-        if not sender_norm:
-            return None, "none", 0.0
-
-        names = enrollment_df["_full_name_norm"].tolist()
-        best = difflib.get_close_matches(sender_norm, names, n=1, cutoff=0.55)
-        if not best:
-            return None, "none", 0.0
-
-        match_norm = best[0]
-        row = enrollment_df[enrollment_df["_full_name_norm"] == match_norm].iloc[0]
-        score = difflib.SequenceMatcher(None, sender_norm, match_norm).ratio()
-        return row, "name_fuzzy", float(score)
+        full_names = enrollment_df["_full_name"].tolist()
+        match = match_name(sender_name, full_names)
+        if match.position is not None:
+            return enrollment_df.iloc[match.position], match.kind, float(match.score), ""
+        candidate = full_names[match.candidate] if match.candidate is not None else ""
+        return None, match.kind, float(match.score), str(candidate)
 
     def _build_attendance_lookup(self) -> Tuple[pd.DataFrame, List[str], str, str, str]:
         attendance_df = pd.read_excel(self.attendance_xlsx_path, sheet_name=self.attendance_sheet, header=self.attendance_header_row)
@@ -771,7 +775,7 @@ class AbsenceJustificationManager:
         for _, row in summary_df.iterrows():
             student_id = normalize_id(row.get("ID_Alumno", ""))
             student_name = str(row.get("Alumno_Matcheado", "")).strip()
-            if not student_name:
+            if not student_name or row.get("Cuenta_Para_Justificar") != "si":
                 continue
             student_name_norm = self._normalize(student_name)
             key = f"{student_id}|{student_name_norm}"
@@ -868,7 +872,17 @@ class AbsenceJustificationManager:
                 "Justif_Subgrupo_Practicas": structured.get("subgrupo_practicas", "") if structured else "",
                 "Justif_Motivo": structured.get("motivo", "") if structured else "",
             }
-            enrollment_match, match_type, match_score = self._match_sender_to_enrollment(sender_name, sender_email, enrollment_df)
+            enrollment_match, match_type, match_score, candidate = self._match_sender_to_enrollment(
+                sender_name, sender_email, enrollment_df
+            )
+            # Only an email assigned to a student and not classified as unrelated (a question about
+            # the exam, thanks…) justifies absences, in either mode (GRD-6).
+            counts = "si" if enrollment_match is not None and message_class != "no_justifica" else "no"
+            review_cols = {
+                "Cuenta_Para_Justificar": counts,
+                "Revisar": "no" if enrollment_match is not None else "si",
+                "Candidato_Mas_Parecido": candidate,
+            }
 
             student_name = ""
             student_id = ""
@@ -922,6 +936,7 @@ class AbsenceJustificationManager:
                             "Email_Alumno": student_email,
                             "Tipo_Match": match_type,
                             "Score_Match": round(match_score, 4),
+                            **review_cols,
                             "Fecha_Asistencia_Col": str(date_col),
                             "Clase_Label": col_label,
                             "Valor_Asistencia": value_text,
@@ -947,6 +962,7 @@ class AbsenceJustificationManager:
                         "Email_Alumno": "",
                         "Tipo_Match": match_type,
                         "Score_Match": round(match_score, 4),
+                        **review_cols,
                         "Fecha_Asistencia_Col": "",
                         "Clase_Label": "",
                         "Valor_Asistencia": "",
@@ -972,6 +988,7 @@ class AbsenceJustificationManager:
                     "Email_Alumno": student_email,
                     "Tipo_Match": match_type,
                     "Score_Match": round(match_score, 4),
+                    **review_cols,
                     "Tiene_Faltas_Claras": "si" if absences else "no",
                     "Num_Faltas_Claras": len(absences),
                     "Fechas_Faltas_Claras": " | ".join(absences),
@@ -1027,10 +1044,11 @@ class AbsenceJustificationManager:
         sender_absence_check_df = pd.DataFrame(sender_check_rows)
         justified_classes_by_student: Dict[str, Set[str]] = {}
         if self.justification_mode == "extremo":
-            # Modo extremo: cualquier alumno que haya escrito queda con todas las faltas justificadas.
+            # Modo extremo: cualquier alumno que haya escrito una justificación (no una consulta o un
+            # agradecimiento: Cuenta_Para_Justificar) queda con todas las faltas justificadas.
             for _, row in summary_df.iterrows():
                 full_name = str(row.get("Alumno_Matcheado", "")).strip()
-                if not full_name:
+                if not full_name or row.get("Cuenta_Para_Justificar") != "si":
                     continue
                 student_id = normalize_id(row.get("ID_Alumno", ""))
                 first_name = ""
@@ -1044,6 +1062,8 @@ class AbsenceJustificationManager:
         else:
             for _, row in detailed_df.iterrows():
                 if str(row.get("Es_Falta_Clara", "")).strip().lower() != "si":
+                    continue
+                if row.get("Cuenta_Para_Justificar") != "si":
                     continue
                 class_label = str(row.get("Clase_Label", "")).strip()
                 if not class_label:

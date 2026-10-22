@@ -140,3 +140,26 @@ def test_integration_warnings_mention_overwritten_grades():
 def test_integration_warnings_without_a_summary():
     assert gui_logic.integration_warnings(None, "x.xlsx") == []
     assert gui_logic.integration_warnings({}, "x.xlsx") == []
+
+
+def test_justification_warnings_count_unassigned_and_not_counted_emails():
+    rows = [
+        {"Revisar": "si", "Cuenta_Para_Justificar": "no"},
+        {"Revisar": "no", "Cuenta_Para_Justificar": "no"},
+        {"Revisar": "no", "Cuenta_Para_Justificar": "si"},
+        {"Revisar": "si", "Cuenta_Para_Justificar": "no"},
+    ]
+
+    warnings = gui_logic.justification_warnings(rows, "Revisa: resumen.xlsx")
+
+    assert len(warnings) == 2
+    assert warnings[0].startswith("2 correo(s) de justificación no se han asignado")
+    assert warnings[1].startswith("1 correo(s) de alumnos no justifican")
+    assert all(w.endswith("Revisa: resumen.xlsx") for w in warnings)
+    assert gui_logic.justification_warnings([{"Revisar": "no", "Cuenta_Para_Justificar": "si"}], "x") == []
+
+
+def test_answer_grading_warnings():
+    assert gui_logic.answer_grading_warnings(0, "incidencias.xlsx") == []
+    (warning,) = gui_logic.answer_grading_warnings(3, "incidencias.xlsx")
+    assert warning.startswith("3 fila(s)") and warning.endswith("Revisa: incidencias.xlsx")
