@@ -54,7 +54,11 @@ los botones.
 - Escribe `<nombre>_pendiente_de_revisar.xlsx/.docx` y `<nombre>_similares_descartadas.docx`.
 - `build_generation_prompts(...)`: mismos prompts sin llamar a la API (modo manual en AI Studio).
 - `filter_generated_questions_duplicates(...)`: filtra preguntas externas contra un banco.
-- Excepciones públicas: `QuotaExceededError` (429), `ServiceOverloadedError`.
+- Llamadas a Gemini en `_generate_content`: los errores temporales (429 y 5xx, leídos de
+  `google.genai.errors.APIError.code`) se reintentan tras 2, 4 y 8 s (o la espera que sugiera la
+  API, hasta 1 min). Excepciones públicas: `QuotaExceededError` (429 persistente),
+  `ServiceOverloadedError` (5xx persistente) y `GeminiRequestError` (401/403 clave, 404 modelo
+  retirado; sin reintentos). Los mensajes no nombran modelos concretos: Google los retira.
 - Los «tipos de prompt» (p. ej. `PRL`, `PM`) los define la GUI
   (`ExamApp.load_default_prompt_types`) y los personalizados se guardan en `custom_prompts.json`.
 

@@ -72,14 +72,14 @@ Esta es la parte más importante, donde personalizamos la tarea.
 *   **Modelo y Clave API:**
     *   **Clave API de Gemini:** Si configuraste la variable de entorno, la aplicación ya la habrá detectado. Si no, pega aquí tu clave API.
     *   **Botón "Cargar Modelos":** **¡Este paso es crucial!** Haz clic en este botón. La aplicación usará tu clave para conectarse a Google y obtener una lista de los "cerebros" de IA disponibles.
-    *   **Tabla de Modelos:** Después de cargar, la tabla se llenará. Verás modelos como `gemini-2.5-flash-latest` o `gemini-2.5-pro-latest` con todos sus detalles. Te explicamos las columnas:
+    *   **Tabla de Modelos:** Después de cargar, la tabla se llenará con los modelos que tu clave puede usar en ese momento (por ejemplo, variantes «Flash» y «Pro» de la generación actual de Gemini), con todos sus detalles. Google renueva los modelos y retira los antiguos, por eso la lista se obtiene cada vez. Te explicamos las columnas:
         *   **Nombre Técnico:** El nombre "oficial" que usa el programa para comunicarse con la IA.
         *   **Nombre:** Un nombre más amigable y fácil de leer.
         *   **Versión:** La versión específica del modelo.
         *   **Tokens Entrada/Salida:** Piensa en esto como la "memoria" o la capacidad de la IA. Números más altos significan que puede procesar documentos más largos y generar respuestas más extensas de una sola vez.
         *   **Métodos Soportados:** Las tareas que el modelo puede realizar (para nosotros, lo importante es que incluya `generateContent`).
         *   **Descripción:** Una breve explicación de Google sobre para qué es mejor cada modelo.
-    *   **Acción para nuestro ejemplo:** Haz clic en una de las filas de la tabla para seleccionar un modelo. Una excelente opción es **`gemini-2.5-flash`**, que es rápido y muy potente.
+    *   **Acción para nuestro ejemplo:** Haz clic en una de las filas de la tabla para seleccionar un modelo. Una buena opción es el modelo **«Flash»** más reciente de la lista, que es rápido y económico. Si eliges un modelo que Google ya ha retirado, la aplicación te avisará y te mostrará los disponibles.
 
 *   **Imprimir respuesta cruda de Gemini (depuración):**
     *   **Qué es:** Esta es una opción para usuarios avanzados o para cuando algo no funciona bien. Si la marcas, en la ventana negra de la línea de comandos (la que usaste para iniciar el programa) se imprimirá el texto exacto que devuelve la IA, sin ningún formato. Es útil para diagnosticar problemas.

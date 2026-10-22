@@ -18,7 +18,9 @@ import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 import pandas as pd
-from pyexamgenerator.question_generator import QuestionGenerator, QuotaExceededError, ServiceOverloadedError
+from pyexamgenerator.question_generator import (
+    QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
+)
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
@@ -2054,7 +2056,7 @@ class ExamApp:
             selected_item = selected_items[0]
             # Obtenemos los valores de la fila seleccionada
             item_values = self.models_tree.item(selected_item, 'values')
-            # El primer valor es el nombre técnico (ej. 'models/gemini-2.5-pro')
+            # El primer valor es el nombre técnico (ej. 'models/gemini-...-flash')
             technical_name = item_values[0]
 
             self.selected_model_var.set(technical_name)
@@ -2381,6 +2383,10 @@ class ExamApp:
                 self.update_status("Error: Modelo de IA saturado.")
                 messagebox.showwarning(title, str(e)) # Usamos warning porque es temporal
                 print(f"ERROR: {title}\n{e}")
+            elif isinstance(e, GeminiRequestError):
+                # Invalid key or retired model: the message says what to change.
+                self.update_status("Error: la API de Gemini ha rechazado la petición.")
+                messagebox.showerror("Error de la API de Gemini", str(e))
             else:
                 self.update_status(f"Error durante la generación de preguntas: {e}")
                 messagebox.showerror("Error", f"Error: {e}")

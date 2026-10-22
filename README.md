@@ -64,7 +64,7 @@ Aquí es donde se crea el contenido inicial a partir de tus documentos.
 3.  **Configura la Generación**:
     *   Define cuántas **preguntas objetivo** quieres por cada PDF.
     *   (Opcional) Activa el **filtro de duplicados** seleccionando tu banco de preguntas principal para evitar generar preguntas repetidas.
-4.  **Carga y Selecciona un Modelo**: Haz clic en **"Cargar Modelos"** y selecciona uno de la tabla (ej. `gemini-2.5-flash`).
+4.  **Carga y Selecciona un Modelo**: Haz clic en **"Cargar Modelos"** y selecciona uno de la tabla (por ejemplo, el modelo «Flash» más reciente, que es rápido y económico). Google renueva sus modelos y retira los antiguos, así que elige siempre de la lista.
 5.  **Genera**: Haz clic en **"Generar Preguntas"**. La aplicación creará un archivo `.xlsx` y un `.docx` con las nuevas preguntas, marcadas como "pendiente de revisar".
 
 #### Fase 2: Gestionar el Banco de Preguntas (Pestaña "Gestionar Banco de Preguntas")
@@ -131,7 +131,10 @@ import os
 
 PDF_FILES = ['ruta/a/tu/TEMA_01.pdf', 'ruta/a/tu/TEMA_02.pdf']
 OUTPUT_FILENAME = "banco_generado_script"
-MODEL_NAME = 'models/gemini-2.5-flash' # O el modelo que prefieras
+# Nombre técnico de un modelo actual: Google retira los antiguos. Consulta los disponibles con
+#   from google import genai; print([m.name for m in genai.Client().models.list()])
+# o con el botón «Cargar Modelos» de la aplicación (p. ej. el «Flash» más reciente).
+MODEL_NAME = 'models/NOMBRE-DEL-MODELO'
 
 # --- Lógica del Script ---
 if __name__ == '__main__':
