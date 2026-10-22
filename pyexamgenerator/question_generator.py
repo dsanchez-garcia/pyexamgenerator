@@ -17,6 +17,7 @@
 from google import genai
 from google.genai import types # Opcional, útil para tipado, pero no estricto
 import PyPDF2
+import ast
 import json
 import re
 import os
@@ -440,10 +441,16 @@ class QuestionGenerator:
 
             json_like_str = "{" + match.group(1) + "}"
             try:
-                # Use eval() to parse the string as a Python dictionary.
-                question_data = eval(json_like_str)
+                # Parse the literal safely: the model output must never be executed as code.
+                question_data = self._parse_question_literal(json_like_str)
                 if not isinstance(question_data, dict) or "Pregunta" not in question_data:
                     continue
+
+                options = question_data.get("Opciones", [])
+                if not isinstance(options, (list, tuple)):
+                    options = []
+                options = [str(option) for option in options][:4]
+                options += [""] * (4 - len(options))
 
                 # Check for similarity against the existing bank.
                 is_similar, sim_score, matched_text = self._is_similar_question(question_data["Pregunta"])
@@ -453,11 +460,11 @@ class QuestionGenerator:
                     "Tema": f"{topic_number}",
                     "Estado": "Pendiente de revisar",
                     "Pregunta": question_data.get("Pregunta", ""),
-                    "Respuesta A": question_data.get("Opciones", [""] * 4)[0],
-                    "Respuesta B": question_data.get("Opciones", [""] * 4)[1],
-                    "Respuesta C": question_data.get("Opciones", [""] * 4)[2],
-                    "Respuesta D": question_data.get("Opciones", [""] * 4)[3],
-                    "Respuesta correcta": question_data.get("Respuesta correcta", "").strip().upper(),
+                    "Respuesta A": options[0],
+                    "Respuesta B": options[1],
+                    "Respuesta C": options[2],
+                    "Respuesta D": options[3],
+                    "Respuesta correcta": str(question_data.get("Respuesta correcta", "")).strip().upper(),
                     "Texto relevante": question_data.get("Texto relevante", "")
                 }
 
@@ -470,10 +477,30 @@ class QuestionGenerator:
                     # If not similar, add it to the accepted list for this batch.
                     accepted_questions.append(question_dict)
 
-            except (SyntaxError, TypeError, NameError):
+            except (SyntaxError, TypeError, ValueError, AttributeError):
                 print(f"Error al evaluar la estructura como diccionario: {json_like_str}")
 
         return accepted_questions
+
+    @staticmethod
+    def _parse_question_literal(text: str):
+        """
+        Safely parses a question dictionary written by the model.
+
+        Accepts Python literal syntax (as requested in the prompt) and JSON (``true``/``null``...).
+        Unlike ``eval``, it never executes code: anything that is not a plain literal raises
+        ``ValueError`` or ``SyntaxError``.
+
+        Args:
+            text (str): The dictionary-like text extracted from the response.
+
+        Returns:
+            The parsed object (normally a dict).
+        """
+        try:
+            return ast.literal_eval(text)
+        except (ValueError, SyntaxError):
+            return json.loads(text)
 
     def save_questions_to_excel(
             self,
@@ -591,7 +618,7 @@ class QuestionGenerator:
 
     def _is_similar_question(self,
                              new_question_text: str
-                             ) -> tuple[bool, float, Optional[str]]:
+                             ) -> Tuple[bool, float, Optional[str]]:
         """
         Checks if the new question is similar to any existing one in the bank,
         comparing ONLY the question statements for filtering purposes.

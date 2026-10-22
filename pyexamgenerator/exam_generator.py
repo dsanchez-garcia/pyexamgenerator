@@ -858,8 +858,9 @@ class ExamGenerator:
         self.generated_exams = []
         self.generation_cancelled = False
 
-        if self.df is None:
-            self.df = self.read_questions_from_excel(bank_excel_path)
+        # Always re-read the bank: a cached DataFrame from a previous call could belong to another
+        # file (or an outdated version of this one) and, with update_excel=True, overwrite it.
+        self.df = self.read_questions_from_excel(bank_excel_path)
 
         if self.df is None:
             return
@@ -1199,11 +1200,9 @@ class ExamGenerator:
             if usage_column_name not in self.df.columns:
                 self.df[usage_column_name] = 0
 
-            used_question_numbers = self.exam_df['Número de pregunta'].tolist()
-            for question_number in used_question_numbers:
-                original_index = self.df[self.df['Número de pregunta'] == question_number].index
-                if not original_index.empty:
-                    self.df.loc[original_index, usage_column_name] = 1
+            # The selection keeps the bank's row labels, so mark exactly those rows. 'Número de
+            # pregunta' is not unique after merging banks and would mark unrelated questions.
+            self.df.loc[self.exam_df.index, usage_column_name] = 1
 
             usage_columns = [col for col in self.df.columns if col.endswith('_uso')]
 

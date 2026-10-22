@@ -1,0 +1,61 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.os }}, py${{ matrix.python-version }}, ${{ matrix.extras || 'base' }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Versión mínima declarada en setup.py, sin y con el extra OCR.
+          - { os: ubuntu-latest, python-version: "3.9", extras: "" }
+          - { os: ubuntu-latest, python-version: "3.9", extras: "grading" }
+          # Versión de desarrollo habitual (Windows, Python 3.14) y Linux equivalente.
+          - { os: ubuntu-latest, python-version: "3.14", extras: "grading" }
+          - { os: windows-latest, python-version: "3.14", extras: "grading" }
+          - { os: windows-latest, python-version: "3.14", extras: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Instalar el paquete
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -n "${{ matrix.extras }}" ]; then
+            python -m pip install ".[${{ matrix.extras }}]" pytest
+          else
+            python -m pip install . pytest
+          fi
+      - name: Importar el paquete
+        run: python -c "import pyexamgenerator as p; print(p.__version__, 'HAS_OCR =', p.grading.HAS_OCR)"
+      - name: Ejecutar tests
+        run: python -m pytest -q -rs
+
+  docs:
+    name: sphinx -W
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Misma versión que .readthedocs.yaml, para reproducir su build.
+          python-version: "3.9"
+          cache: pip
+      - name: Instalar dependencias de la documentación
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . -r docs/requirements.txt
+      - name: Compilar con avisos como errores (igual que Read the Docs)
+        run: python -m sphinx -W -b html docs/source docs/build/html

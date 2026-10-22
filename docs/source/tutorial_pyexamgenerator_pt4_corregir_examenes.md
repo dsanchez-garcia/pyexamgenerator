@@ -153,6 +153,11 @@ corrección"* de la pestaña Generar Exámenes, o el parámetro `session_output_
 Corregir Exámenes, **Cargar sesión** rellena rutas y columnas (incluidos los XML de los exámenes
 generados).
 
+Al cargar, siempre se usa el `.json`. Abrir un `.pkl` puede ejecutar código, así que solo se lee si
+no existe el `.json` y lo autorizas expresamente (en la GUI, confirmando el aviso; en scripts, con
+`GradingSession.load(ruta, allow_pickle=True)`). Hazlo únicamente con sesiones creadas por ti, nunca
+con ficheros recibidos de terceros.
+
 ```python
 from pyexamgenerator.grading import GradingSession
 

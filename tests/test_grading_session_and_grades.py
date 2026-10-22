@@ -1,4 +1,8 @@
+import os
+import pickle
+
 import pandas as pd
+import pytest
 
 from pyexamgenerator.exam_generator import ExamGenerator
 from pyexamgenerator.grading.session import GradingSession
@@ -25,7 +29,7 @@ def test_grading_session_roundtrip_pkl_and_json_are_equivalent(tmp_path):
     pkl_path, json_path = session.save(str(tmp_path / "sess"))
     assert pkl_path.endswith(".pkl") and json_path.endswith(".json")
 
-    from_pkl = GradingSession.load(pkl_path)
+    from_pkl = GradingSession.load(pkl_path, allow_pickle=True)
     from_json = GradingSession.load(json_path)
 
     assert from_pkl.to_dict() == from_json.to_dict()
@@ -41,6 +45,45 @@ def test_grading_session_load_prefers_base_name(tmp_path):
     # Loading by base name (no extension) finds the pickle/json.
     loaded = GradingSession.load(str(tmp_path / "base"))
     assert loaded.generated_xml_paths() == ["only.xml"]
+
+
+class _ExecutesOnUnpickle:
+    """Objeto que, al deserializarse, crea un fichero marcador (simula un pickle malicioso)."""
+
+    def __init__(self, marker):
+        self.marker = str(marker)
+
+    def __reduce__(self):
+        import pathlib
+        return (pathlib.Path.touch, (pathlib.Path(self.marker),))
+
+
+def test_grading_session_load_ignores_pickle_when_json_exists(tmp_path):
+    """SEC-2: con un .json disponible nunca se deserializa el .pkl."""
+    session = GradingSession(name="segura")
+    session.save(str(tmp_path / "sess"))
+    marker = tmp_path / "pwned.txt"
+    with open(tmp_path / "sess.pkl", "wb") as handle:
+        pickle.dump(_ExecutesOnUnpickle(marker), handle)
+
+    loaded = GradingSession.load(str(tmp_path / "sess.pkl"))
+
+    assert loaded.name == "segura"
+    assert not marker.exists()
+
+
+def test_grading_session_load_refuses_lone_pickle_unless_allowed(tmp_path):
+    """SEC-2: un .pkl sin .json solo se abre con allow_pickle=True."""
+    session = GradingSession(name="solo_pkl")
+    pkl_path, json_path = session.save(str(tmp_path / "sess"))
+    os.remove(json_path)
+
+    with pytest.raises(ValueError):
+        GradingSession.load(pkl_path)
+    with pytest.raises(ValueError):
+        ExamCorrectionAPI().load_session(str(tmp_path / "sess"))
+
+    assert GradingSession.load(pkl_path, allow_pickle=True).name == "solo_pkl"
 
 
 def test_exam_generator_writes_session_with_generated_paths(tmp_path):
