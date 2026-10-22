@@ -184,7 +184,8 @@ class AbsenceJustificationManager:
     @staticmethod
     def _is_attendance_date_column(column_name: str) -> bool:
         text = str(column_name)
-        return "2026" in text and "Todos los estudiantes" in text
+        # Any academic year (not only 2026): Moodle names these columns '<date> ... Todos los estudiantes'.
+        return "Todos los estudiantes" in text and re.search(r"\b(19|20)\d{2}\b", text) is not None
 
     @staticmethod
     def _is_present_value(value: object) -> bool:
@@ -1435,6 +1436,9 @@ class PIRBonusCalculator:
 
         topics = sorted({s.topic for s in sessions})
         groups = ["GIM", "GITI-GIE-GIEI"]
+        if not topics:
+            # all([]) is True: without this guard every student would receive the bonus.
+            warnings.append("No attendance session matched the schedule: no PIR bonus is awarded.")
 
         if not {"Apellido(s)", "Nombre"}.issubset(set(attendance_df.columns)):
             raise ValueError("Attendance file must include 'Apellido(s)' and 'Nombre'.")
@@ -1499,7 +1503,7 @@ class PIRBonusCalculator:
                 valid_topic_scores[topic] >= self.min_quiz_grade for topic in topics
             )
 
-            bonus_applies = attended_all_topics and completed_all_valid_quizzes and meets_min_grades
+            bonus_applies = bool(topics) and attended_all_topics and completed_all_valid_quizzes and meets_min_grades
             bonus = self.bonus_points if bonus_applies else 0.0
 
             summary_rows.append(
