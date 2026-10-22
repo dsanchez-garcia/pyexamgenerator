@@ -4,6 +4,7 @@ Necesitan una pantalla para Tk; donde no la hay (p. ej. CI en Linux) se saltan.
 """
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -199,3 +200,121 @@ def test_only_one_grading_job_runs_at_a_time(app):
     assert [kind for kind, _title, _message in app.shown_messages].count("warning") == 1
     assert ("info", "Corrección", "hecho") in app.shown_messages
     assert not app._grad_job_running
+
+
+def _run_in_mainloop(app, action, timeout_ms=15000):
+    """Calls ``action`` inside mainloop and keeps it running until the grading job ends.
+
+    Worker threads talk to Tk with ``root.after``, which only works while mainloop is running.
+    """
+
+    def poll():
+        if getattr(app, "_grad_job_running", False):
+            app.root.after(20, poll)
+        else:
+            app.root.quit()
+
+    def start():
+        action()
+        poll()
+
+    app.root.after(0, start)
+    watchdog = app.root.after(timeout_ms, app.root.quit)  # never hang the test run
+    app.root.mainloop()
+    app.root.after_cancel(watchdog)
+
+
+@pytest.fixture
+def grading_backend(app, tmp_path, monkeypatch):
+    """Grading inputs filled in and the grading library replaced by fakes (no files are read)."""
+    import threading
+
+    import pyexamgenerator.grading as grading
+    from pyexamgenerator.grading import EnrollmentMerger, ExamCorrectionAPI
+
+    calls = {}
+    # Every Tk variable read from a thread other than the main one is recorded (GUI-2).
+    reads_outside_main_thread = []
+    for cls in (tk.Variable, tk.StringVar, tk.IntVar, tk.DoubleVar, tk.BooleanVar):
+        original = cls.__dict__.get("get")
+        if original is None:
+            continue
+
+        def checked_get(self, _original=original):
+            if threading.current_thread() is not threading.main_thread():
+                reads_outside_main_thread.append(str(self))
+            return _original(self)
+
+        monkeypatch.setattr(cls, "get", checked_get)
+
+    def fake(name, result=None):
+        def method(self, cfg, *args, **kwargs):
+            calls[name] = cfg
+            progress = kwargs.get("progress_callback")
+            if progress is not None:
+                progress("paso simulado")
+            return result
+
+        return method
+
+    summary = {"changed_cells": 0, "changed_students": 0, "added": 0, "removed": 0}
+    for name in ("grade_from_images", "grade_from_excel", "process_absence_justifications",
+                 "integrate_ocr_grades", "apply_theory_bonus", "compute_final_grade", "run_full_pipeline"):
+        monkeypatch.setattr(ExamCorrectionAPI, name, fake(name))
+    monkeypatch.setattr(ExamCorrectionAPI, "compare_results",
+                        fake("compare_results", SimpleNamespace(summary=summary)))
+    monkeypatch.setattr(EnrollmentMerger, "export", lambda self, path: calls.setdefault("merged", path))
+    monkeypatch.setattr(grading, "HAS_OCR", True)
+    monkeypatch.setattr(app, "_open_folder", lambda path: calls.setdefault("opened", path), raising=False)
+
+    out = str(tmp_path / "salida")
+    for var, value in [
+        (app.grad_enrollment_var, "matricula_GIM.xlsx"), (app.grad_xmls_var, "examen_1A.xml"),
+        (app.grad_images_var, "hoja1.jpg;hoja2.jpg"), (app.grad_answers_var, "respuestas.xlsx"),
+        (app.grad_theory_var, "teoria.xlsx"), (app.grad_attendance_var, "asistencias.xlsx"),
+        (app.grad_schedule_var, "horario.xlsx"), (app.grad_justif_var, "justificaciones.xlsx"),
+        (app.grad_quizzes_var, "cuestionarios.xlsx"), (app.grad_out_var, out),
+        (app.grad_final_files_var, "notas.xlsx|1"), (app.grad_cmp_existing_var, "antes.xlsx"),
+        (app.grad_cmp_new_var, "despues.xlsx"), (app.grad_forced_var, "hoja2.jpg=1B"),
+    ]:
+        var.set(value)
+    return SimpleNamespace(calls=calls, reads_outside_main_thread=reads_outside_main_thread, out=out)
+
+
+GRADING_ACTIONS = [
+    ("grade_exams_from_images", "grade_from_images"),
+    ("grade_exams_from_answers", "grade_from_excel"),
+    ("run_attendance_analysis", "process_absence_justifications"),
+    ("run_integrate_grades", "integrate_ocr_grades"),
+    ("run_apply_bonus", "apply_theory_bonus"),
+    ("run_final_grade", "compute_final_grade"),
+    ("run_compare_results", "compare_results"),
+    ("run_grading", "run_full_pipeline"),
+]
+
+
+def test_grading_jobs_read_tk_variables_only_in_the_main_thread(app, grading_backend):
+    """GUI-2: los hilos de corrección leían variables Tk (`*_var.get()`), lo que no es seguro."""
+    for action, library_call in GRADING_ACTIONS:  # one window for all: building it is slow
+        app.shown_messages.clear()
+        method = getattr(app, action)
+        _run_in_mainloop(app, (lambda: method(False)) if action == "run_compare_results" else method)
+
+        assert library_call in grading_backend.calls, action
+        assert grading_backend.reads_outside_main_thread == [], action
+        assert [kind for kind, _title, _message in app.shown_messages] == ["info"], action
+
+
+def test_full_pipeline_button_uses_the_library_pipeline(app, grading_backend):
+    """GUI-7: «Pipeline completo» delega en `ExamCorrectionAPI.run_full_pipeline`."""
+    app.grad_att_header_var.set("4")
+
+    _run_in_mainloop(app, app.run_grading)
+
+    cfg = grading_backend.calls["run_full_pipeline"]
+    assert cfg.output_dir == grading_backend.out
+    assert cfg.image_paths == ["hoja1.jpg", "hoja2.jpg"]
+    assert cfg.forced_type_by_image == {"hoja2.jpg": "1B"}
+    assert cfg.attendance_header_row == 4
+    assert grading_backend.calls["opened"] == grading_backend.out
+    assert app.status_text.get() == "Corrección completada."
