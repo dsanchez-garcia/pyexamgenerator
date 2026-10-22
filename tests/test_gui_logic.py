@@ -92,6 +92,41 @@ def test_parse_questions_per_topic():
         gui_logic.parse_questions_per_topic("Tema 01-2")
 
 
+def test_trailing_comma_in_exam_names_does_not_add_an_exam():
+    """Con «1A, 1B,» se generaba una tercera versión del examen, sin nombre."""
+    assert gui_logic.parse_exam_names("1A, 1B,") == ["1A", "1B"]
+    assert gui_logic.parse_exam_names("1A,,1B") == ["1A", "1B"]
+    assert gui_logic.parse_exam_names(" , ") is None
+
+
+def test_questions_per_topic_accepts_a_trailing_comma_and_colons_in_the_topic():
+    """Una coma final o un «:» en el nombre del tema daban «Formato incorrecto»."""
+    assert gui_logic.parse_questions_per_topic("Tema 01:2, Tema 02:3,") == {"Tema 01": 2, "Tema 02": 3}
+    assert gui_logic.parse_questions_per_topic("Tema 1: Introducción:2") == {"Tema 1: Introducción": 2}
+
+
+@pytest.mark.parametrize("text", ["Tema 01:-2", ":3", "Tema 01:", "Tema 01:dos"])
+def test_questions_per_topic_rejects_negative_counts_and_empty_topics(text):
+    """Antes se aceptaban un número negativo de preguntas o un tema vacío."""
+    with pytest.raises(ValueError):
+        gui_logic.parse_questions_per_topic(text)
+
+
+@pytest.mark.parametrize("text", ["nan", "inf", "-inf"])
+def test_penalty_and_weights_must_be_finite_numbers(text):
+    """`float()` aceptaba «nan» o «inf»: la penalización o la nota final salían como NaN."""
+    with pytest.raises(ValueError):
+        gui_logic.parse_penalty(text)
+    with pytest.raises(ValueError, match="teoria.xlsx"):
+        gui_logic.parse_weight(text, "teoria.xlsx")
+
+
+def test_weights_cannot_be_negative():
+    assert gui_logic.parse_weight("0", "teoria.xlsx") == 0.0
+    with pytest.raises(ValueError, match="teoria.xlsx"):
+        gui_logic.parse_weight("-0,5", "teoria.xlsx")
+
+
 def test_integration_warnings_mention_overwritten_grades():
     """GRD-12: la GUI avisa cuando la nota OCR sustituye a una nota que ya existía."""
     warnings = gui_logic.integration_warnings(

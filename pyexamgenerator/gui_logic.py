@@ -4,6 +4,7 @@ It lives apart from ``main_app.py`` so it can be tested without a display. Nothi
 ``tkinter``; the window reads its widgets and passes the text to these functions.
 """
 
+import math
 import os
 from typing import Any, Dict, List, Optional
 
@@ -21,20 +22,31 @@ def split_paths(text: Optional[str]) -> List[str]:
     return parts
 
 
+def _parse_number(text: str) -> float:
+    """A number with ',' or '.' as decimal separator; ValueError for anything else ('nan' and 'inf' too)."""
+    value = float(str(text).strip().replace(",", "."))
+    if not math.isfinite(value):
+        raise ValueError(f"No es un número: {text!r}")
+    return value
+
+
 def parse_penalty(raw_penalty: Optional[str], default: float = -25.0) -> float:
     """Penalty typed in the exam tab, with ',' or '.' as decimal separator (``default`` if empty)."""
     cleaned = (raw_penalty or "").strip()
     if not cleaned:
         return default
-    return float(cleaned.replace(',', '.'))
+    return _parse_number(cleaned)
 
 
 def parse_weight(text: str, owner: str) -> float:
-    """Parses a weight written with ',' or '.' as decimal separator; ValueError with a clear message."""
+    """Parses a weight (>= 0) written with ',' or '.' as decimal separator; ValueError with a clear message."""
     try:
-        return float(str(text).strip().replace(",", "."))
+        weight = _parse_number(text)
     except ValueError:
         raise ValueError(f"Peso no válido para '{owner}': '{str(text).strip()}'. Usa un número, p. ej. 0,4.") from None
+    if weight < 0:
+        raise ValueError(f"El peso de '{owner}' no puede ser negativo: '{str(text).strip()}'.")
+    return weight
 
 
 def parse_final_grade_files(text: Optional[str]) -> List[Dict[str, Any]]:
@@ -83,17 +95,29 @@ def parse_forced_types(raw_text: Optional[str]) -> Dict[str, str]:
 
 
 def parse_exam_names(text: Optional[str]) -> Optional[List[str]]:
-    """Names of the exam versions, separated by ',' (None if the field is empty)."""
-    return [name.strip() for name in text.split(',')] if text else None
+    """Names of the exam versions, separated by ',' (None if there are none).
+
+    Empty names are skipped: a trailing comma ('1A, 1B,') used to add a version without a name.
+    """
+    names = [name.strip() for name in str(text or "").split(',') if name.strip()]
+    return names or None
 
 
 def parse_questions_per_topic(text: Optional[str]) -> Dict[str, int]:
-    """``Topic:count`` pairs separated by ','; ValueError if one is not written that way."""
+    """``Topic:count`` pairs separated by ','; ValueError if one is not written that way.
+
+    The count is what follows the last ':', so a topic may contain ':' ('Tema 1: Leyes:2'); it must
+    be a whole number >= 0. Empty items (a trailing comma) are skipped.
+    """
     questions_per_topic: Dict[str, int] = {}
-    if text:
-        for item in text.split(','):
-            topic, quantity = item.strip().split(':')
-            questions_per_topic[topic.strip()] = int(quantity.strip())
+    for item in str(text or "").split(','):
+        if not item.strip():
+            continue
+        topic, separator, quantity = item.strip().rpartition(':')
+        count = int(quantity.strip())
+        if not separator or not topic.strip() or count < 0:
+            raise ValueError(f"Se esperaba 'Tema:número' y se ha encontrado {item.strip()!r}.")
+        questions_per_topic[topic.strip()] = count
     return questions_per_topic
 
 

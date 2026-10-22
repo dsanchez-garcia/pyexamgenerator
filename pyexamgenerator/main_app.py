@@ -3377,7 +3377,7 @@ class ExamApp:
     def show_moodle_suggestions(self) -> None:
         """Shows recommended Moodle quiz names / columns so the exported xlsx is identifiable."""
         exam = self.exam_name.get().strip() or "Examen"
-        exam_types = [name.strip() for name in self.exam_names.get().split(',') if name.strip()] or ["1A"]
+        exam_types = gui_logic.parse_exam_names(self.exam_names.get()) or ["1A"]
 
         lines = [
             "Usa estos nombres al crear los cuestionarios en Moodle para que las columnas del",
