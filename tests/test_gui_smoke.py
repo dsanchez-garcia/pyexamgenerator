@@ -30,9 +30,6 @@ def app(tk_root, tmp_path, monkeypatch):
     # Aislar de la configuración del usuario: config.json y custom_prompts.json se leen del CWD.
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    # ExamApp sustituye estos diálogos para todo el proceso; se restauran al terminar el test.
-    for name in ("showinfo", "showwarning", "showerror"):
-        monkeypatch.setattr(messagebox, name, getattr(messagebox, name))
     root = tk.Toplevel(tk_root)
     root.withdraw()
 
@@ -542,3 +539,13 @@ def test_integration_warnings_mention_overwritten_grades():
     assert len(warnings) == 2
     assert "Alumno no encontrado en teoría: 1" in warnings[0]
     assert "2 alumno(s)" in warnings[1] and "incidencias_integracion_ocr.xlsx" in warnings[1]
+
+
+def test_standard_messageboxes_are_not_replaced_for_the_whole_process(app):
+    """GUI-9: ExamApp sustituía `tkinter.messagebox.show*` para todo el proceso (también para
+    cualquier otro código Tk); ahora solo los diálogos de la aplicación usan la versión copiable."""
+    import pyexamgenerator.main_app as main_app
+
+    assert messagebox.showinfo.__module__ == "tkinter.messagebox"
+    main_app.messagebox.showwarning("Aviso", "Texto que se puede copiar")
+    assert app.shown_messages == [("warning", "Aviso", "Texto que se puede copiar")]
