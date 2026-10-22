@@ -25,9 +25,15 @@ def _now_iso() -> str:
 
 
 def _to_plain(value: Any) -> Any:
-    """Converts dataclasses / nested containers into JSON-serializable primitives."""
+    """Converts dataclasses / nested containers into JSON-serializable primitives.
+
+    Callables (e.g. the callbacks of a config) are not data and become None. Dataclass fields are
+    read directly: ``asdict`` would deep-copy them, including whatever a callback is bound to.
+    """
     if is_dataclass(value) and not isinstance(value, type):
-        return {k: _to_plain(v) for k, v in asdict(value).items()}
+        return {f.name: _to_plain(getattr(value, f.name)) for f in fields(value)}
+    if callable(value):
+        return None
     if isinstance(value, dict):
         return {str(k): _to_plain(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):

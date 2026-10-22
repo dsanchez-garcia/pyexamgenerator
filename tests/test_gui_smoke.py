@@ -392,6 +392,30 @@ def test_question_generation_runs_in_the_background(app, monkeypatch, tmp_path):
     assert app.shown_messages == [("info", "Éxito", "Preguntas generadas y guardadas (2 en total).")]
 
 
+def test_rejected_gemini_request_is_shown_with_its_own_title(app, monkeypatch, tmp_path):
+    """ARC-11/PKG-8: una clave no válida o un modelo retirado se explican en un diálogo propio."""
+    import pyexamgenerator.main_app as main_app
+    from pyexamgenerator import GeminiRequestError
+
+    class RetiredModelGenerator:
+        def __init__(self, api_key, model_name):
+            pass
+
+        def generate_multiple_choice_questions(self, **kwargs):
+            raise GeminiRequestError("El modelo 'models/viejo' no existe o ya no está disponible (Error 404).")
+
+    monkeypatch.setattr(main_app, "QuestionGenerator", RetiredModelGenerator)
+    app.api_key_var.set("clave-de-prueba")
+    app.selected_model_var.set("models/viejo")
+    app.pdf_files_var.set(str(tmp_path / "tema1.pdf"))
+
+    _run_in_mainloop(app, app.generate_questions, done=lambda: bool(app.shown_messages))
+
+    assert app.shown_messages == [("error", "Error de la API de Gemini",
+                                   "El modelo 'models/viejo' no existe o ya no está disponible (Error 404).")]
+    assert str(app.generate_questions_button.cget("state")) == "normal"
+
+
 def test_model_list_is_loaded_in_the_background(app, monkeypatch):
     """GUI-3: «Cargar Modelos» esperaba a la red con la ventana congelada."""
     import threading

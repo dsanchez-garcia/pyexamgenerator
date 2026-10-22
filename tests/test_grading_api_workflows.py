@@ -305,3 +305,29 @@ def test_explicit_absolute_output_paths_are_respected(tmp_path):
     assert sorted(p.name for p in (tmp_path / "salida").iterdir()) == ["matricula.xlsx"]  # relative: as before
     outputs = api.session.results_summary["integrate_ocr_grades"]["outputs"]
     assert outputs["output_path"] == str(elsewhere / "teoria.xlsx")
+
+
+def test_session_leaves_out_config_callbacks():
+    """ARC-7: los callbacks de un config no son datos; antes `asdict` los copiaba en profundidad
+    (con un método de la GUI, la ventana entera) y fallaba con objetos que no se pueden copiar."""
+    import threading
+
+    from pyexamgenerator.grading.api import ImageGradingConfig
+    from pyexamgenerator.grading.session import GradingSession
+
+    class Window:
+        def __init__(self):
+            self.lock = threading.Lock()  # cannot be deep-copied
+
+        def review(self, *args):
+            return None
+
+    cfg = ImageGradingConfig(xml_paths=["examen_1A.xml"], image_paths=["hoja.jpg"], enrollment_path=None,
+                             review_callback=Window().review)
+    session = GradingSession()
+
+    session.record_workflow("grade_from_images", config=cfg)
+
+    stored = session.workflow_configs["grade_from_images"]
+    assert stored["review_callback"] is None and stored["exam_type_callback"] is None
+    assert stored["xml_paths"] == ["examen_1A.xml"]

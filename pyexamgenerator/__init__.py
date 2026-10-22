@@ -8,7 +8,9 @@ __version__ = "0.3.0"  # 0.3.0: integración del subpaquete de corrección `grad
 # Esto permite a los usuarios importarlas directamente desde 'pyexamgenerator'.
 
 from .exam_generator import ExamGenerator, NoAcceptableQuestionsError
-from .question_generator import QuestionGenerator, QuotaExceededError, ServiceOverloadedError
+from .question_generator import (
+    QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
+)
 from .question_bank_manager import QuestionBankManager
 
 # Subpaquete de corrección de exámenes (complementa la generación). El OCR es opcional:
@@ -23,6 +25,7 @@ __all__ = [
     'QuestionGenerator',
     'QuotaExceededError',
     'ServiceOverloadedError',
+    'GeminiRequestError',
     'QuestionBankManager',
     'grading',
     '__version__',

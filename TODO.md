@@ -116,10 +116,11 @@ búscalas por nombre de función si no coinciden.
   `prompt_missing_type=True` por defecto llama a `input()` (bloquea fuera de terminal). — hecho en `9ae14f6`.
 - [x] **GRD-9 (P2)** Nombres compuestos rompen la búsqueda de justificaciones —
   `grading/attendance.py:1046-1049,1063-1066` («María José García» → `maria_josegarcia`). — hecho en `45dd6f5`.
-- [ ] **GRD-10 (P2)** Detección de temas distinta entre PIR (`"ley 31_95"`, `attendance.py:1269`) y
-  asistencia (`ley3195`, `:239`).
-- [ ] **GRD-11 (P2)** Reglas del bonus ignoran la config — `attendance.py:1836` (solo `T02..T11`),
-  `:1764` (+1.0 fijo), `:742,746` (7.5 fijo) frente a `bonus_points`/`min_quiz_grade`.
+- [x] **GRD-10 (P2)** Detección de temas distinta entre PIR (`"ley 31_95"`, `attendance.py:1269`) y
+  asistencia (`ley3195`, `:239`). — hecho en `59fa202` (`_topic_key`).
+- [x] **GRD-11 (P2)** Reglas del bonus ignoran la config — `attendance.py:1836` (solo `T02..T11`),
+  `:1764` (+1.0 fijo), `:742,746` (7.5 fijo) frente a `bonus_points`/`min_quiz_grade`. — hecho en
+  `0ab8970`. *La GUI aún no expone estos dos valores (usa los de por defecto).*
 - [x] **GRD-12 (P2)** `_name_match` fija `Nombre`/`Apellido(s)` — `grading/integrations.py:615-622`;
   `:865` sobrescribe una nota Moodle existente sin incidencia.
   *Parcial (`45dd6f5`): `_name_match` usa las columnas detectadas y exige nombre y apellidos (con
@@ -193,18 +194,20 @@ búscalas por nombre de función si no coinciden.
   *Parcial (`d1c6542`): quitados los imports repetidos a mitad de fichero.*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
-- [ ] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
+- [x] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
   acepta exactamente `"sí"`), `grading/extraction.py:1030,1265`. Sustituir por callbacks, como
-  `usage_warning_callback`.
+  `usage_warning_callback`. — hecho en `b53bbcd` (la consola queda como opción por defecto en un
+  terminal, en `_console.py`).
 - [ ] **ARC-8 (P2)** 134 `print()` y 0 usos de `logging`. Introducir `logging.getLogger(__name__)` en
   la librería; la GUI puede añadir un handler.
 - [ ] **ARC-9 (P2)** ~34 `except Exception`/`except:` que tragan errores (p. ej.
   `exam_generator.py:436,1236`). Revisar uno a uno.
 - [ ] **ARC-10 (P2)** Valores institucionales fijos en código (grupos `GIM`, `GITI-GIE-GIEI`, regla
   PIR, temas `LPRL`/`RSP`, columnas mojibake `"Nmero de ID"`). Moverlos a configuración.
-- [ ] **ARC-11 (P2)** `QuestionGenerator`: errores de cuota/sobrecarga detectados por subcadena
+- [x] **ARC-11 (P2)** `QuestionGenerator`: errores de cuota/sobrecarga detectados por subcadena
   (`"429"`, `question_generator.py:980,994`) y `time.sleep(1)` fijo. Usar
-  `google.genai.errors.APIError.code` y reintentos con backoff exponencial.
+  `google.genai.errors.APIError.code` y reintentos con backoff exponencial. — hecho en `f61113a`
+  (y `GeminiRequestError` para 401/403/404).
 - [ ] **ARC-12 (P2)** Ubicación de ficheros de configuración inconsistente (`config.json` y
   `custom_prompts.json` en CWD; plantilla en CWD → `%APPDATA%`, solo Windows). Un único
   `config_dir()` con `platformdirs`. Hay además un `pyexamgenerator/custom_prompts.json` suelto e
@@ -236,9 +239,11 @@ búscalas por nombre de función si no coinciden.
 - [x] **PKG-7 (P3)** La versión está en 3 sitios (`__init__.py`, `CITATION.cff`, `.zenodo.json`) más
   la fecha en `CHANGELOG.md`. Añadir un test que compruebe que coinciden (o un script de *bump*).
   — hecho en `ae5ba96`.
-- [ ] **PKG-8 (P3)** Modelos Gemini fijados en mensajes y docs (`gemini-2.5-flash/pro` en
+- [x] **PKG-8 (P3)** Modelos Gemini fijados en mensajes y docs (`gemini-2.5-flash/pro` en
   `question_generator.py:60,986,998`, README). Verificar vigencia y sacar la sugerencia de
-  configuración o de `client.models.list()`.
+  configuración o de `client.models.list()`. — hecho en `f61113a`: a 2026-10-22, `gemini-2.5-flash`
+  solo lo pueden usar quienes ya lo usaban; los mensajes remiten a la lista de modelos y un 404
+  sugiere los disponibles.
 
 ## 6. Tests y CI
 
@@ -266,7 +271,8 @@ búscalas por nombre de función si no coinciden.
   asistencia de 2027 (GRD-2). OCR: fixture sintético de hoja de respuestas con `RapidOCR` simulado.
   *Parcial: ya cubiertos el PIR sin sesiones, la deduplicación por ID, la nota final y la comparación
   con IDs float, la matrícula fusionada, las claves de justificación y el flujo OCR con hojas fallidas
-  (extractor simulado). Faltan `AbsenceJustificationManager.analyze` completo, `export_steps_dir` y un
+  (extractor simulado), la detección de temas y la regla de cuestionarios del punto extra (`59fa202`,
+  `0ab8970`). Faltan `AbsenceJustificationManager.analyze` completo, `export_steps_dir` y un
   fixture sintético de hoja de respuestas.*
 - [ ] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
   *Parcial: `tests/test_gui_smoke.py` construye la ventana real (Windows y Linux con xvfb) y prueba

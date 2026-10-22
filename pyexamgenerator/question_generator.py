@@ -43,10 +43,60 @@ class ServiceOverloadedError(Exception):
     """Excepción para cuando los servidores de Google están saturados (Error 503)."""
     pass
 
+class GeminiRequestError(Exception):
+    """Error de la API de Gemini que no se arregla reintentando: clave de API no válida o sin
+    permiso (401/403), o modelo que no existe o que Google ya ha retirado (404)."""
+    pass
+
+
+# Seconds to wait before each new try after a temporary Gemini error (rate limit, overloaded or
+# unavailable servers). A longer wait suggested by the API is used instead, up to
+# _MAX_SUGGESTED_DELAY; a longer suggestion means the quota is used up for now.
+_RETRY_DELAYS = (2, 4, 8)
+_MAX_SUGGESTED_DELAY = 60
+_RETRYABLE_CODES = {429, 500, 502, 503, 504}
+_NOT_RETRYABLE_CODES = {401, 403, 404}
+
+
+def _api_error_code(error: BaseException) -> Optional[int]:
+    """HTTP status of a Gemini API error (``google.genai.errors.APIError.code``).
+
+    For other exceptions (wrapped errors, older clients), looks for the codes that used to be
+    detected in the message, as before.
+    """
+    code = getattr(error, "code", None)
+    if isinstance(code, int):
+        return code
+    text = str(error)
+    if "429" in text:
+        return 429
+    if "503" in text or "overloaded" in text.lower():
+        return 503
+    return None
+
+
+def _suggested_retry_delay(error: BaseException) -> Optional[float]:
+    """Seconds the API asks to wait before retrying (``RetryInfo.retryDelay``, e.g. ``'37s'``)."""
+    details = getattr(error, "details", None)
+    payload = details.get("error", details) if isinstance(details, dict) else None
+    items = payload.get("details", []) if isinstance(payload, dict) else []
+    for item in items if isinstance(items, list) else []:
+        delay = item.get("retryDelay") if isinstance(item, dict) else None
+        if isinstance(delay, str) and delay.endswith("s"):
+            try:
+                return float(delay[:-1])
+            except ValueError:
+                return None
+    return None
+
+
 class QuestionGenerator:
     """
     Generates multiple-choice questions from PDF files using the Gemini model.
     """
+
+    # Waits (seconds) before retrying a temporary Gemini error (see _generate_content).
+    retry_delays = _RETRY_DELAYS
 
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         """
@@ -55,14 +105,20 @@ class QuestionGenerator:
         Args:
             api_key (Optional[str]): The API key for the Gemini model. If omitted, the
                                      ``GEMINI_API_KEY`` environment variable is used.
-            model_name (str): The name of the Gemini model to use (e.g., 'models/gemini-2.5-pro').
-                              This is a required argument.
+            model_name (str): The technical name of the Gemini model to use (``models/...``), as
+                              listed by ``client.models.list()`` or the app's «Cargar Modelos».
+                              Google retires old models, so check the list. This is a required
+                              argument.
 
         Raises:
             ValueError: If ``model_name`` is not given.
         """
         if not model_name:
-            raise ValueError("Debes indicar model_name (p. ej. 'models/gemini-2.5-flash').")
+            raise ValueError(
+                "Debes indicar model_name: el nombre técnico de un modelo de Gemini ('models/...'). "
+                "Los disponibles se listan con «Cargar Modelos» en la aplicación o con "
+                "`client.models.list()`."
+            )
         # Without an explicit key, use GEMINI_API_KEY (the google-genai client may still find
         # GOOGLE_API_KEY by itself when neither is given).
         self.client = genai.Client(api_key=api_key or os.getenv("GEMINI_API_KEY"))
@@ -787,6 +843,80 @@ class QuestionGenerator:
 
         return pd.DataFrame(prompts_rows)
 
+    def _generate_content(self, contents):
+        """Calls Gemini and retries temporary errors with increasing waits.
+
+        A rate limit or quota error (429) and overloaded or unavailable servers (5xx) are retried
+        after the waits in ``retry_delays`` (or the longer one the API suggests, up to a minute).
+        If the error persists, raises :class:`QuotaExceededError` or
+        :class:`ServiceOverloadedError`. An invalid key (401/403) or a model that does not exist or
+        was retired (404) raises :class:`GeminiRequestError` at once. Other errors propagate.
+        """
+        pending_delays = list(self.retry_delays)
+        while True:
+            try:
+                return self.client.models.generate_content(model=self.model_name, contents=contents)
+            except Exception as error:
+                code = _api_error_code(error)
+                if code in _NOT_RETRYABLE_CODES:
+                    raise self._request_error(code, error) from error
+                if code not in _RETRYABLE_CODES:
+                    raise
+                suggested = _suggested_retry_delay(error)
+                if not pending_delays or (suggested is not None and suggested > _MAX_SUGGESTED_DELAY):
+                    raise self._persistent_error(code, len(self.retry_delays) - len(pending_delays)) from error
+                delay = pending_delays.pop(0)
+                if suggested is not None and suggested > delay:
+                    delay = suggested
+                print(f"    Gemini no responde ahora mismo (error {code}); nuevo intento en {delay:g} s...")
+                time.sleep(delay)
+
+    @staticmethod
+    def _persistent_error(code: int, retries: int) -> Exception:
+        """The exception for a temporary error (429/5xx) that persisted after ``retries`` retries."""
+        retried = f" (se ha reintentado {retries} veces)" if retries else ""
+        if code == 429:
+            return QuotaExceededError(
+                f"Has excedido el límite de solicitudes a la API de Gemini (Error 429){retried}.\n\n"
+                "Sugerencias para solucionarlo:\n"
+                "1. Espera unos minutos: la cuota gratuita se reinicia cada cierto tiempo.\n"
+                "2. Cambia de modelo: los modelos «Pro» son más potentes pero consumen la cuota más "
+                "rápido. Prueba un modelo «Flash» de la tabla de modelos («Cargar Modelos»), que es "
+                "más rápido y económico."
+            )
+        return ServiceOverloadedError(
+            f"Los servidores de Google para este modelo están saturados o no disponibles (Error {code})"
+            f"{retried}.\n\n"
+            "Sugerencias para solucionarlo:\n"
+            "1. Espera unos minutos e inténtalo de nuevo.\n"
+            "2. Cambia de modelo: prueba otro de la tabla de modelos («Cargar Modelos»); los «Flash» "
+            "suelen tener mayor disponibilidad."
+        )
+
+    def _request_error(self, code: int, error: BaseException) -> GeminiRequestError:
+        """The exception for an error that retrying does not fix (401/403/404)."""
+        if code == 404:
+            available = self._available_model_names()
+            suggestion = (f"\n\nModelos disponibles ahora con tu clave: {', '.join(available)}." if available else "")
+            return GeminiRequestError(
+                f"El modelo '{self.model_name}' no existe o ya no está disponible (Error 404): Google "
+                "retira los modelos antiguos. Elige otro en la tabla de modelos («Cargar Modelos»)."
+                f"{suggestion}\n\nDetalle: {error}"
+            )
+        return GeminiRequestError(
+            f"La API de Gemini ha rechazado la petición (Error {code}): la clave de API no es válida "
+            f"o no tiene permiso para usar el modelo '{self.model_name}'. Revisa la clave (variable "
+            f"de entorno GEMINI_API_KEY o «Guardar Clave»).\n\nDetalle: {error}"
+        )
+
+    def _available_model_names(self, limit: int = 10) -> List[str]:
+        """Names of the Gemini models the key can use now (best effort: empty if listing fails)."""
+        try:
+            names = [str(getattr(model, "name", "")) for model in self.client.models.list()]
+        except Exception:  # noqa: BLE001 - only a suggestion for an error message
+            return []
+        return [name for name in names if "gemini" in name][:limit]
+
     def generate_multiple_choice_questions(
             self,
             pdf_paths: List[str],
@@ -984,11 +1114,11 @@ class QuestionGenerator:
                         else:
                             contents = prompt
 
-                        response = self.client.models.generate_content(model=self.model_name, contents=contents)
+                        # Temporary errors (429/5xx) are retried inside, with increasing waits.
+                        response = self._generate_content(contents)
                         if print_raw_gemini_answer:
                             print(f"    Respuesta cruda de Gemini (Fragmento {i + 1}, Intento {attempts_for_this_chunk}):\n    >>>\n{response.text}\n    <<<\n    ---")
 
-                        time.sleep(1)
                         newly_accepted_this_attempt = self._analyze_gemini_response(response.text or "", current_pdf_topic)
 
                         # Filter out duplicates that might have been generated within the same chunk attempt
@@ -1007,40 +1137,14 @@ class QuestionGenerator:
                         print(
                             f"    Intento {attempts_for_this_chunk}: {len(unique_newly_accepted)} preguntas nuevas aceptadas para este fragmento. Total para fragmento: {len(questions_accepted_for_this_chunk)}/{num_questions_per_chunk_target}")
 
+                    except (QuotaExceededError, ServiceOverloadedError, GeminiRequestError):
+                        # Already retried or not fixable by retrying (see _generate_content): stop here.
+                        raise
                     except Exception as e_gen:
-                        error_str = str(e_gen)
-                        # Comprobamos si el error es por límite de cuota
-                        if "429" in error_str and "quota" in error_str:
-                            # Construimos el mensaje de error mejorado
-                            suggestion = (
-                                "\n\nSugerencias para solucionarlo:\n"
-                                "1. Espera unos minutos: La cuota gratuita se reinicia cada cierto tiempo.\n"
-                                "2. Cambia de modelo: Los modelos 'Pro' son más potentes pero consumen la cuota más rápido. "
-                                "Prueba a cambiar a un modelo 'Flash' (como 'gemini-2.5-flash'), que es más rápido y económico."
-                            )
-                            message = (
-                                "Has excedido el límite de solicitudes a la API de Gemini (Error 429).\n"
-                                f"{suggestion}"
-                            )
-                            # Lanzamos nuestra excepción personalizada con el mensaje mejorado
-                            raise QuotaExceededError(message) from e_gen
-                        elif "503" in error_str or "overloaded" in error_str:
-                            suggestion = (
-                                "\n\nSugerencias para solucionarlo:\n"
-                                "1. Cambia de modelo: El modelo que estás intentando usar está saturado actualmente. "
-                                "Intenta usar 'gemini-2.5-flash', que suele tener mayor disponibilidad.\n"
-                                "2. Espera unos minutos e inténtalo de nuevo."
-                            )
-                            message = (
-                                "Los servidores de Google para este modelo están saturados (Error 503).\n"
-                                f"{suggestion}"
-                            )
-                            raise ServiceOverloadedError(message) from e_gen
-                        else:
-                            # Si es otro error, lo imprimimos para depuración pero no detenemos el proceso
-                            print(f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}")
-                            import traceback
-                            print(traceback.format_exc())
+                        # Si es otro error, lo imprimimos para depuración pero no detenemos el proceso
+                        print(f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}")
+                        import traceback
+                        print(traceback.format_exc())
 
                 if len(questions_accepted_for_this_chunk) < num_questions_per_chunk_target:
                     print(

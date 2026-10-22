@@ -110,7 +110,8 @@ pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [d
   `question_bank_manager.py`, `exam_generator.py` ni `grading/` importa `tkinter`. La lógica nueva
   va en la librería; `main_app.py` solo lee widgets, llama a la librería y muestra resultados.
 - **No añadas `input()` ni prompts interactivos** a la librería: usa callbacks opcionales (como
-  `usage_warning_callback` en `ExamGenerator`). Hay deuda existente (`ARC-7`).
+  `usage_warning_callback` o `review_callback` en `ExamGenerator`, `exam_type_callback` en el OCR).
+  Sin callback, solo se pregunta por consola desde un terminal (`pyexamgenerator/_console.py`).
 - **Tkinter desde hilos:** nunca leas variables (`*.get()`) ni toques widgets fuera del hilo
   principal. Lee los valores antes de lanzar el hilo y devuelve resultados con `root.after(0, ...)`.
   Para tareas largas usa `ExamApp._run_in_background` (corrección: `_grad_run_async`, una tarea a la

@@ -3,13 +3,12 @@ import difflib
 import os
 import re
 import shutil
-import sys
 import tempfile
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -27,6 +26,7 @@ except ImportError:  # pragma: no cover - depende del entorno
 
     _RAPIDOCR_BACKEND = "legacy"
 
+from pyexamgenerator._console import stdin_is_interactive
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
 
@@ -777,12 +777,39 @@ class AnswerSheetExtractor:
         return results
 
 
-def _stdin_is_interactive() -> bool:
-    """True when input() can ask the user (a terminal), False under a GUI, notebook or CI."""
-    try:
-        return bool(sys.stdin) and sys.stdin.isatty()
-    except (AttributeError, ValueError):
-        return False
+_REVIEW_ANSWERS = {"a", "b", "c", "d", "nc", "-"}
+
+
+def _ask_exam_type_in_console(image_name: str, available_types: Sequence[str], suggestion: Optional[str]) -> str:
+    """Default ``exam_type_callback`` from a terminal: asks until a valid type (Enter = suggestion)."""
+    options = ", ".join(available_types)
+    prompt = (
+        f"Exam type not detected for '{image_name}'. "
+        f"Options [{options}]"
+        + (f" (suggested: {suggestion})" if suggestion else "")
+        + ": "
+    )
+    while True:
+        selected = input(prompt).strip().upper()
+        if not selected and suggestion:
+            return suggestion
+        if selected in available_types:
+            return selected
+        print(f"Invalid value. Must be one of: {options}")
+
+
+def _ask_review_in_console(image_path: str, question: str, current: str, suggested: str, margin: float) -> str:
+    """Default ``review_callback`` from a terminal: asks until a valid answer (Enter keeps it)."""
+    while True:
+        answer = input(
+            f"{question} | current={current} | suggested={suggested} "
+            f"(margin={margin:.3f}) -> "
+        ).strip().lower()
+        if answer == "":
+            return current
+        if answer in _REVIEW_ANSWERS:
+            return answer
+        print("Invalid value. Use: a/b/c/d/nc/- or Enter.")
 
 
 def results_to_dataframe(results: Sequence[SheetResult]) -> pd.DataFrame:
@@ -1005,6 +1032,7 @@ class ImageExamGrader:
         sheet: SheetResult,
         forced_type_by_image: Dict[str, str],
         prompt_if_missing: bool,
+        exam_type_callback: Optional[Callable[[str, List[str], Optional[str]], Optional[str]]] = None,
     ) -> str:
         image_name = Path(sheet.image).name
         normalized_forced: Dict[str, str] = {}
@@ -1034,29 +1062,22 @@ class ImageExamGrader:
             if only_type in self.questions_by_exam_type:
                 return only_type
 
-        # Never block on input() without an interactive terminal (GUI, notebooks, CI).
-        if not prompt_if_missing or not _stdin_is_interactive():
-            raise ValueError(
-                f"Could not determine exam type for {image_name}. "
-                f"Available types: {', '.join(self.available_exam_types)}"
-            )
+        not_determined = (
+            f"Could not determine exam type for {image_name}. "
+            f"Available types: {', '.join(self.available_exam_types)}"
+        )
+        if exam_type_callback is None:
+            # Never block on input() without an interactive terminal (GUI, notebooks, CI).
+            if not prompt_if_missing or not stdin_is_interactive():
+                raise ValueError(not_determined)
+            exam_type_callback = _ask_exam_type_in_console
 
         suggestion = self._suggest_exam_type_from_answers(sheet.answers)
-        options = ", ".join(self.available_exam_types)
-        prompt = (
-            f"Exam type not detected for '{image_name}'. "
-            f"Options [{options}]"
-            + (f" (suggested: {suggestion})" if suggestion else "")
-            + ": "
-        )
-
-        while True:
-            selected = input(prompt).strip().upper()
-            if not selected and suggestion:
-                return suggestion
-            if selected in self.questions_by_exam_type:
-                return selected
-            print(f"Invalid value. Must be one of: {options}")
+        selected = str(exam_type_callback(image_name, list(self.available_exam_types), suggestion) or "")
+        selected = selected.strip().upper()
+        if selected in self.questions_by_exam_type:
+            return selected
+        raise ValueError(not_determined)
 
     def _suggest_exam_type_from_answers(self, answers: Dict[str, str]) -> Optional[str]:
         if not answers:
@@ -1264,7 +1285,16 @@ class ImageExamGrader:
         self,
         sheet_results: Sequence[SheetResult],
         open_image_on_review: bool = True,
+        review_callback: Optional[Callable[[str, str, str, str, float], Optional[str]]] = None,
     ) -> Tuple[int, List[Dict[str, object]]]:
+        """Confirms the doubtful answers of each sheet with ``review_callback``.
+
+        The callback receives ``(image_path, question, current, suggested, margin)`` and returns the
+        answer to keep (a/b/c/d/nc/-), or None to keep the current one. Without a callback the console
+        asks (only from an interactive terminal).
+        """
+        if review_callback is None:
+            review_callback = _ask_review_in_console
         print("Interactive OCR review enabled. Confirming doubtful answers...")
         updated = 0
         changes: List[Dict[str, object]] = []
@@ -1294,16 +1324,10 @@ class ImageExamGrader:
                 suggested, top_score, second_score = self._best_option_from_audit_row(row)
                 margin = top_score - second_score
 
-                while True:
-                    answer = input(
-                        f"{question} | current={current} | suggested={suggested} "
-                        f"(margin={margin:.3f}) -> "
-                    ).strip().lower()
-                    if answer == "":
-                        answer = current
-                    if answer in {"a", "b", "c", "d", "nc", "-"}:
-                        break
-                    print("Invalid value. Use: a/b/c/d/nc/- or Enter.")
+                answer = review_callback(image_path, question, current, suggested, margin)
+                answer = current if answer is None else str(answer).strip().lower()
+                if answer not in _REVIEW_ANSWERS:
+                    raise ValueError(f"Respuesta de revisión no válida para {question}: '{answer}' (usa a/b/c/d/nc/-).")
 
                 if answer != current:
                     sheet.answers[question] = answer
@@ -1397,7 +1421,20 @@ class ImageExamGrader:
         open_image_on_review: bool = True,
         forced_type_by_image: Optional[Dict[str, str]] = None,
         prompt_missing_type: bool = True,
+        exam_type_callback: Optional[Callable[[str, List[str], Optional[str]], Optional[str]]] = None,
+        review_callback: Optional[Callable[[str, str, str, str, float], Optional[str]]] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
+        """OCR + grading of the answer sheets in ``image_paths``.
+
+        The user is asked through optional callbacks instead of ``input()``:
+        ``exam_type_callback(image_name, available_types, suggestion)`` returns the type of a sheet
+        whose type could not be detected (or None: the sheet is reported as an incident), and
+        ``review_callback`` confirms doubtful answers when ``interactive_review=True`` (see
+        :meth:`_run_interactive_review`). Without callbacks, ``prompt_missing_type`` and
+        ``interactive_review`` ask in the console, only from an interactive terminal.
+        """
+        if interactive_review and review_callback is None and not stdin_is_interactive():
+            raise ValueError("interactive_review=True necesita review_callback cuando no se ejecuta desde un terminal.")
         forced = {k: v for k, v in (forced_type_by_image or {}).items()}
 
         # Relative paths go to output_dir; absolute ones are kept.
@@ -1420,7 +1457,9 @@ class ImageExamGrader:
         ]
         manual_changes: List[Dict[str, object]] = []
         if interactive_review:
-            _updated, manual_changes = self._run_interactive_review(sheet_results, open_image_on_review=open_image_on_review)
+            _updated, manual_changes = self._run_interactive_review(
+                sheet_results, open_image_on_review=open_image_on_review, review_callback=review_callback,
+            )
 
         answers_df = results_to_dataframe(sheet_results)
 
@@ -1434,7 +1473,7 @@ class ImageExamGrader:
 
         for sheet in sheet_results:
             try:
-                exam_type = self._resolve_exam_type(sheet, forced, prompt_missing_type)
+                exam_type = self._resolve_exam_type(sheet, forced, prompt_missing_type, exam_type_callback)
             except ValueError as exc:
                 resolved_types.append("")
                 skipped.append(
