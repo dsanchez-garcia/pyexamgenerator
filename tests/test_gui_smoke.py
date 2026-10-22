@@ -466,3 +466,14 @@ def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app,
         ("info", "Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
     ]
     assert str(app.generate_exams_button.cget("state")) == "normal"
+
+
+def test_mouse_wheel_scrolls_tables_and_text_boxes_inside_the_tabs(app):
+    """GUI-6: la rueda del ratón se enlazaba a todos los widgets de la pestaña con "break", así que
+    la tabla de modelos, el texto del prompt y la tabla de exámenes no se desplazaban."""
+    for widget in (app.models_tree, app.prompt_text_display, app.update_exams_tree):
+        assert widget.bind("<MouseWheel>") == ""
+        assert widget.bind("<Button-4>") == ""
+
+    # The rest of the tab still scrolls the page from any widget.
+    assert app.pdf_entry.bind("<MouseWheel>") != ""

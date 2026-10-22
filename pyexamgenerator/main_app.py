@@ -483,6 +483,43 @@ class ExamApp:
         """
         self.status_text.set(message)
 
+    # Widgets that scroll their own content with the mouse wheel.
+    _SELF_SCROLLING_WIDGETS = (tk.Text, tk.Listbox, tk.Canvas, ttk.Treeview, tk.Scrollbar, ttk.Scrollbar)
+
+    @classmethod
+    def _bind_page_scroll(cls, canvas: tk.Canvas, widget: tk.Misc) -> None:
+        """Scrolls the tab ``canvas`` with the mouse wheel over ``widget`` and its descendants.
+
+        Widgets that scroll their own content (tables, text boxes...) keep their wheel: binding
+        them as well, with "break", stopped them from scrolling (models table, prompt text...).
+        """
+
+        def on_mousewheel(event):
+            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
+            if delta_units == 0:
+                delta_units = -1 if event.delta > 0 else 1
+            canvas.yview_scroll(delta_units, "units")
+            return "break"
+
+        def on_scroll_up(_event):
+            canvas.yview_scroll(-1, "units")
+            return "break"
+
+        def on_scroll_down(_event):
+            canvas.yview_scroll(1, "units")
+            return "break"
+
+        def bind_recursively(current):
+            if current is not canvas and isinstance(current, cls._SELF_SCROLLING_WIDGETS):
+                return
+            current.bind("<MouseWheel>", on_mousewheel)
+            current.bind("<Button-4>", on_scroll_up)
+            current.bind("<Button-5>", on_scroll_down)
+            for child in current.winfo_children():
+                bind_recursively(child)
+
+        bind_recursively(widget)
+
     def _run_in_background(self, status_msg: str, work_fn, on_success, on_error, widgets=()) -> None:
         """Runs ``work_fn()`` in a worker thread so the window keeps responding.
 
@@ -1612,28 +1649,6 @@ class ExamApp:
         scrollbar_question.pack(side="right", fill="y")
         canvas_question.pack(side="left", fill="both", expand=True)
 
-        def _on_question_mousewheel(event):
-            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
-            if delta_units == 0:
-                delta_units = -1 if event.delta > 0 else 1
-            canvas_question.yview_scroll(delta_units, "units")
-            return "break"
-
-        def _on_question_scroll_up(_event):
-            canvas_question.yview_scroll(-1, "units")
-            return "break"
-
-        def _on_question_scroll_down(_event):
-            canvas_question.yview_scroll(1, "units")
-            return "break"
-
-        def _bind_question_scroll_recursively(widget):
-            widget.bind("<MouseWheel>", _on_question_mousewheel)
-            widget.bind("<Button-4>", _on_question_scroll_up)
-            widget.bind("<Button-5>", _on_question_scroll_down)
-            for child in widget.winfo_children():
-                _bind_question_scroll_recursively(child)
-
         inner_frame_question = ttk.Frame(canvas_question)
         inner_frame_question.bind("<Configure>", lambda e: canvas_question.configure(scrollregion=canvas_question.bbox("all")))
         canvas_question.create_window((0, 0), window=inner_frame_question, anchor="nw")
@@ -1938,8 +1953,7 @@ class ExamApp:
         inner_frame_question.columnconfigure(0, weight=1)
 
         # Bind wheel events after creating all child widgets in this scrollable tab.
-        _bind_question_scroll_recursively(canvas_question)
-        _bind_question_scroll_recursively(inner_frame_question)
+        self._bind_page_scroll(canvas_question, canvas_question)
 
     def populate_models_table(self):
         """
@@ -2762,29 +2776,6 @@ class ExamApp:
         # Keep the inner frame width synced with the visible canvas width.
         canvas_manage.bind("<Configure>", lambda e: canvas_manage.itemconfigure(manage_window_id, width=e.width))
 
-        # Mouse wheel support (Windows/macOS + Linux) across the whole widget tree.
-        def _on_manage_mousewheel(event):
-            delta_units = int(-1 * (event.delta / 120)) if event.delta else 0
-            if delta_units == 0:
-                delta_units = -1 if event.delta > 0 else 1
-            canvas_manage.yview_scroll(delta_units, "units")
-            return "break"
-
-        def _on_manage_scroll_up(_event):
-            canvas_manage.yview_scroll(-1, "units")
-            return "break"
-
-        def _on_manage_scroll_down(_event):
-            canvas_manage.yview_scroll(1, "units")
-            return "break"
-
-        def _bind_manage_scroll_recursively(widget):
-            widget.bind("<MouseWheel>", _on_manage_mousewheel)
-            widget.bind("<Button-4>", _on_manage_scroll_up)
-            widget.bind("<Button-5>", _on_manage_scroll_down)
-            for child in widget.winfo_children():
-                _bind_manage_scroll_recursively(child)
-
         # --- Section to generate XLSX from a revised DOCX ---
         docx_xlsx_group = ttk.LabelFrame(inner_frame_manage, text="Generar XLSX desde DOCX revisado")
         docx_xlsx_group.pack(padx=5, pady=5, fill='x')
@@ -3018,9 +3009,9 @@ class ExamApp:
 
         unify_frame.columnconfigure(1, weight=1)
 
-        # Bind wheel events after creating all child widgets in the scrollable frame.
-        _bind_manage_scroll_recursively(canvas_manage)
-        _bind_manage_scroll_recursively(inner_frame_manage)
+        # Mouse wheel support (Windows/macOS + Linux) across the whole widget tree, bound after
+        # creating all child widgets in the scrollable frame.
+        self._bind_page_scroll(canvas_manage, canvas_manage)
 
     def select_unify_bank_files(self) -> None:
         """Opens a dialog to select several question bank XLSX files to unify."""
