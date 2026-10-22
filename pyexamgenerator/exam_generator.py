@@ -29,7 +29,7 @@ import re
 import os
 from typing import Callable, Iterable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
 
-from pyexamgenerator._text import strip_accents
+from pyexamgenerator._text import safe_filename_part, strip_accents
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -107,14 +107,20 @@ class ExamGenerator:
             suggestions["class_quiz_name"] = class_quiz_name
             suggestions["class_grade_column"] = f"Cuestionario:{class_quiz_name}"
 
-        category = "$course$/top/Examen"
-        if exam:
-            category += f" {exam} -"
-        if exam_type:
-            category += f" {exam_type} -"
-        suggestions["category_name"] = category.rstrip(" -")
+        suggestions["category_name"] = ExamGenerator._moodle_category_text(exam, exam_type)
 
         return suggestions
+
+    @staticmethod
+    def _moodle_category_text(exam: Optional[str] = None, exam_type: Optional[str] = None,
+                              additional_text: Optional[str] = None) -> str:
+        """Moodle question category of an exam: ``$course$/top/Examen <exam> - <type> - <extra>``.
+
+        Shared by the XML export and :meth:`suggest_moodle_config` so both always agree.
+        """
+        parts = [str(part).strip() for part in (exam, exam_type, additional_text)
+                 if part is not None and str(part).strip()]
+        return "$course$/top/Examen" + (" " + " - ".join(parts) if parts else "")
 
     @staticmethod
     def _format_question_number(question_number: int) -> str:
@@ -350,7 +356,12 @@ class ExamGenerator:
         """Adds repeated student identification blanks to the student document header."""
         section = document.sections[0]
         header = section.header
-        header_paragraph = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        # Reuse the first header paragraph only when it is empty: a template header (institution
+        # name, logo...) must be kept, not overwritten.
+        if header.paragraphs and not header.paragraphs[0].runs:
+            header_paragraph = header.paragraphs[0]
+        else:
+            header_paragraph = header.add_paragraph()
         header_paragraph.text = f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name}"
         header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         for run in header_paragraph.runs:
@@ -706,16 +717,7 @@ class ExamGenerator:
             self._nearest_moodle_grade_option_percent(penalty)
         )
 
-        # Build the category text dynamically.
-        category_text = "$course$/top/Examen"
-        if exam:
-            category_text += f" {exam} -"
-        if exam_type:
-            category_text += f" {exam_type} -"
-        if xml_cat_additional_text:
-            category_text += f" {xml_cat_additional_text}"
-
-        self.text.text = category_text
+        self.text.text = self._moodle_category_text(exam, exam_type, xml_cat_additional_text)
         for _, row in df.iterrows():
             correct_answer = (self._normalize_correct_letter(row.get('Respuesta correcta')) or '').lower()
 
@@ -919,6 +921,10 @@ class ExamGenerator:
         self.generated_exams = []
         self.generation_cancelled = False
 
+        if template_docx_path and not os.path.exists(template_docx_path):
+            # Silently falling back to a blank document would hide a wrong path.
+            raise FileNotFoundError(f"No se encuentra la plantilla DOCX: {template_docx_path}")
+
         # Always re-read the bank: a cached DataFrame from a previous call could belong to another
         # file (or an outdated version of this one) and, with update_excel=True, overwrite it.
         self.df = self.read_questions_from_excel(bank_excel_path)
@@ -1076,7 +1082,10 @@ class ExamGenerator:
                 "exam_type": exam_type_name or "",
             }
 
-            base_filename = f'examen_{subject}_{exam}_{course}_{exam_type_name}'
+            # '/', ':' or '?' in the subject or exam name would break the path (and None gave 'None').
+            base_filename = 'examen_' + '_'.join(
+                safe_filename_part(part) for part in (subject, exam, course, exam_type_name)
+            )
 
             docx_path = os.path.join(output_dir, f'{base_filename}.docx')
             full_docx_path = os.path.join(output_dir, f'{base_filename}_completo.docx')
@@ -1228,7 +1237,11 @@ class ExamGenerator:
             full_section.right_margin = Inches(right_margin)
 
             full_header = full_section.header
-            full_header_paragraph = full_header.paragraphs[0]
+            # Keep a template header (institution, logo...): only reuse the first paragraph if empty.
+            if full_header.paragraphs and not full_header.paragraphs[0].runs:
+                full_header_paragraph = full_header.paragraphs[0]
+            else:
+                full_header_paragraph = full_header.add_paragraph()
             full_header_paragraph.text = f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name} - Completo"
             full_header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             full_header_paragraph.runs[0].font.size = Pt(font_size)
@@ -1335,15 +1348,32 @@ class ExamGenerator:
             for paragraph in paragraphs:
                 for key, value in values.items():
                     token = f"{{{{{key}}}}}"
-                    if token in paragraph.text:
-                        for run in paragraph.runs:
-                            run.text = run.text.replace(token, str(value))
+                    if token not in paragraph.text:
+                        continue
+                    for run in paragraph.runs:
+                        run.text = run.text.replace(token, str(value))
+                    if token in paragraph.text and paragraph.runs:
+                        # Word split the token across several runs (formatting, spell check...):
+                        # write the whole paragraph text in its first run.
+                        full_text = paragraph.text.replace(token, str(value))
+                        paragraph.runs[0].text = full_text
+                        for run in paragraph.runs[1:]:
+                            run.text = ""
 
-        replace_in_paragraphs(document.paragraphs)
-        for table in document.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    replace_in_paragraphs(cell.paragraphs)
+        def replace_in_container(container):
+            replace_in_paragraphs(container.paragraphs)
+            for table in container.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        replace_in_paragraphs(cell.paragraphs)
+
+        replace_in_container(document)
+        for section in document.sections:
+            for part in (section.header, section.footer, section.first_page_header,
+                         section.first_page_footer, section.even_page_header, section.even_page_footer):
+                # A linked header has no content of its own (and touching it would create one).
+                if not part.is_linked_to_previous:
+                    replace_in_container(part)
 
 ## Example of use
 
