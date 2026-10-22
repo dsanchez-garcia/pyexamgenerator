@@ -368,7 +368,7 @@ Para ver una lista detallada de los cambios, mejoras y correcciones de errores e
 
 ## Contribución
 
-Las contribuciones son bienvenidas. Si encuentras un error o tienes una idea para una nueva funcionalidad, por favor, abre un "issue" en el repositorio de GitHub.
+Las contribuciones son bienvenidas. Si encuentras un error o tienes una idea para una nueva funcionalidad, por favor, abre un "issue" en el repositorio de GitHub (sin adjuntar datos reales de alumnos). Antes de proponer cambios, consulta la [guía de contribución](https://github.com/dsanchez-garcia/pyexamgenerator/blob/master/CONTRIBUTING.md).
 
 ## Licencia
 

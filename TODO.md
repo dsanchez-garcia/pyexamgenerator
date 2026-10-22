@@ -279,6 +279,9 @@ búscalas por nombre de función si no coinciden.
 
 - [ ] **DEV-1 (P2)** Sin linter/formateador. Añadir `ruff` (lint + format) con una configuración
   inicial permisiva y `pre-commit`. Aplicar el formateo en un PR aparte, sin cambios funcionales.
+  *Análisis previo (2026-10-22, `ruff check --select F`): ningún nombre sin definir (F821); 18 imports
+  repetidos por la concatenación de módulos de `grading` (ARC-5), 7 variables asignadas sin uso
+  (restos de lógica sustituida, sin efecto) y 6 imports sin uso. Buen punto de partida: activar `F`.*
 - [ ] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
   `grading/api.py` y los dataclasses de configuración.
 - [ ] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa
@@ -301,8 +304,8 @@ búscalas por nombre de función si no coinciden.
   `api_key: Optional[str] = None` con *fallback* a la variable de entorno (y test). — hecho en `9607102`.
 - [x] **REPO-5 (P3)** Docstring de `generate_question_text` dice que devuelve 3 valores y devuelve 2
   (`exam_generator.py:439,520`); además muta su entrada. — hecho en `f40b1b3`.
-- [ ] **REPO-6 (P3)** Añadir `CONTRIBUTING.md` (o enlazar `docs/dev/DEVELOPMENT.md` desde el README)
-  y plantillas de issue/PR en `.github/`.
+- [x] **REPO-6 (P3)** Añadir `CONTRIBUTING.md` (o enlazar `docs/dev/DEVELOPMENT.md` desde el README)
+  y plantillas de issue/PR en `.github/`. — hecho en la rama `fix/p2-correcciones`.
 - [ ] **REPO-7 (P3)** Mezcla de idiomas en identificadores y comentarios (inglés/español). Fijar la
   convención documentada en `AGENTS.md` y aplicarla progresivamente, sin PRs masivos.
 

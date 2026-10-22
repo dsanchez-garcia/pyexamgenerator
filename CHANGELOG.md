@@ -14,6 +14,7 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **Más pruebas de regresión:** generación con datos reales (respuestas numéricas o vacías, letras como `B)`), lectura del DOCX revisado, nombres de columnas de uso, matrícula y asistencias con IDs vacíos o numéricos, y flujo OCR con hojas ilegibles o sin tipo de examen.
 - **Pruebas del flujo de generación de preguntas** con un cliente de Gemini simulado (sin llamadas a la API), de los ficheros de examen (nombres, categoría de Moodle, plantillas) y de la fachada de corrección.
 - **La CI prueba la GUI también en Linux** (pantalla virtual `xvfb`), y `pytest.ini` limita la recogida de tests a `tests/`.
+- **Guía de contribución y plantillas:** `CONTRIBUTING.md`, plantilla de *pull request* y de informe de error (con el aviso de no adjuntar datos de alumnos), enlazadas desde el README.
 
 ### Cambiado
 - **OCR: una hoja problemática ya no detiene la corrección:** si una imagen no se puede leer o no se puede deducir su tipo de examen, la hoja se omite y aparece en las incidencias con severidad alta (`UNREADABLE_IMAGE` / `EXAM_TYPE_UNRESOLVED`); el resto de hojas se corrige. `ExamCorrectionAPI` expone siempre las incidencias en `results["ocr_incidents"]` y, sin un terminal interactivo, nunca pregunta el tipo con `input()`.
