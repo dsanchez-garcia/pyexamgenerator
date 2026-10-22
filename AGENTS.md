@@ -161,9 +161,11 @@ Antes de dar una tarea por terminada:
   `grading` buscan columnas de forma tolerante (`_find_column`). Reutilízalos.
 - Los tipos de examen pueden ser `A`/`B` o `1A`/`1B`; el tipo se infiere del sufijo del nombre del
   XML (`..._1A.xml`).
-- La GUI no tiene tests funcionales; `tests/test_package_smoke.py` solo compila los módulos. Si
-  cambias `main_app.py`, verifica al menos que `import pyexamgenerator.main_app` funciona y describe
-  qué no pudiste probar manualmente.
+- La GUI tiene pruebas de humo en `tests/test_gui_smoke.py`: construyen la ventana real sin mostrarla
+  y se saltan donde no hay pantalla (p. ej. la CI de Linux). Usa su fixture `app`: crea una sola raíz
+  Tk por módulo (crear `tk.Tk()` varias veces en un proceso falla de forma intermitente en Windows con
+  «Can't find a usable tk.tcl») y registra los diálogos en `app.shown_messages` en lugar de quedarse
+  bloqueada en ellos. Si cambias `main_app.py`, ejecútalas y describe lo que no pudiste probar a mano.
 - Si editas ficheros con un script (heredoc de Python en Bash), cuidado con las barras invertidas:
   `\n` o `\b` pueden acabar como saltos de línea o caracteres de control dentro del código. Prefiere la
   herramienta de edición y compila después (`pytest tests/test_package_smoke.py`).

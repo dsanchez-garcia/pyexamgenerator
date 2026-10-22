@@ -77,6 +77,8 @@ los botones.
   update_excel, template_docx_path, session_output_path, check, ...)`:
   1. Lee el banco (en cada llamada) y filtra `Estado == "aceptable"`
      (sin distinguir mayúsculas); si no hay ninguna, `NoAcceptableQuestionsError`.
+     Tras seleccionar, exige que cada pregunta tenga `Respuesta correcta` A-D (acepta `B)`, ` b `,
+     `(c)`); si no, `ValueError` con las preguntas afectadas.
   2. Selecciona preguntas: `azar`, `primeras` o `menos usadas`; por tema, número fijo o total
      (`equitativo`/`azar`).
   3. Para cada tipo construye una variante barajada con un **orden canónico único**
@@ -177,6 +179,7 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | Fichero | Ubicación | Contenido |
 |---|---|---|
 | `config.json` | directorio actual | clave de API (texto plano, `SEC-3`) |
+| copias temporales del OCR | `<temp del sistema>/pyexamgenerator_temp` (configurable) | solo si falla la lectura directa; se borran al terminar |
 | `custom_prompts.json` | directorio actual | prompts personalizados |
 | `exam_generation_template.json` | directorio actual → `%APPDATA%\pyexamgenerator` | plantilla de la pestaña de exámenes |
 | sesión `.json` + `.pkl` | ruta elegida por el usuario | sesión de corrección (se carga el `.json`; el `.pkl` solo con `allow_pickle=True`) |
@@ -187,10 +190,14 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 |---|---|
 | `test_exam_order_unit.py` | orden canónico y respuesta correcta tras barajar |
 | `test_exam_order_integration.py` | DOCX vs XML con un banco sintético realista |
-| `test_exam_generator_bank.py` | relectura del banco y registro de uso por fila |
-| `test_question_generator_parsing.py` | análisis seguro de la respuesta de Gemini |
+| `test_exam_generator_bank.py` | relectura del banco, registro de uso por fila y nombre de la columna de uso |
+| `test_exam_generator_robustness.py` | banco sin carpeta, XML con respuestas numéricas o vacías, «menos usadas», letras como `B)` |
+| `test_question_bank_docx.py` | lectura del DOCX revisado (ida y vuelta) y fusión de bancos |
+| `test_question_generator_parsing.py` | análisis seguro de la respuesta de Gemini; `api_key` desde el entorno |
 | `test_grading_bonus_and_attendance.py` | punto extra PIR y columnas de asistencia |
-| `test_grading_ids.py` | `normalize_id`, nota final/comparación con IDs float, deduplicación |
+| `test_grading_ids.py` | `normalize_id`; nota final, comparación, matrícula y asistencias con IDs float o vacíos |
+| `test_grading_ocr_robustness.py` | emparejamiento OCR, hojas ilegibles o sin tipo, carpeta temporal (requiere `[grading]`) |
+| `test_gui_smoke.py` | ventana real de la GUI, diálogo de prompts y clave de API (se salta sin pantalla) |
 | `test_package_smoke.py` | compila todos los módulos (incluida la GUI) |
 | `test_image_mode_unit.py` | utilidades de `input_mode='image'` |
 | `test_v023_features.py` | estado sin mayúsculas, XML no blanco, placeholders de plantilla DOCX |

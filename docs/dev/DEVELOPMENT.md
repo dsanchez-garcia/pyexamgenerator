@@ -28,8 +28,10 @@ venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
 venv/Scripts/python.exe -m tox                            # matriz py39 / py310 / py314 (tox.ini)
 ```
 
-Estado a 2026-10-22: 117 tests pasan en Python 3.14 con `[grading]`. La CI
-(`.github/workflows/tests.yml`) repite la suite en Ubuntu y Windows, con y sin el extra.
+Estado a 2026-10-22: 149 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
+pruebas de la GUI, que necesitan pantalla). La CI (`.github/workflows/tests.yml`) repite la suite en
+Ubuntu y Windows, con y sin el extra; en Linux las pruebas de GUI y, sin `[grading]`, las de OCR se
+saltan.
 
 Convenciones para tests nuevos:
 

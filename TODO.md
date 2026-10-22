@@ -32,10 +32,13 @@ búscalas por nombre de función si no coinciden.
 - [ ] **SEC-3 (P1)** Clave de API en texto plano en `config.json` del directorio actual —
   `main_app.py:2149,2162`. Además se puede guardar el marcador `"TU_CLAVE_API"` como clave. Usar
   `keyring` o una carpeta de configuración por usuario (`platformdirs`) y rechazar el marcador.
-- [ ] **SEC-4 (P1)** Imágenes de alumnos copiadas al Escritorio por defecto —
+  *Parcial (`dac098a`): ya no se guarda el marcador `TU_CLAVE_API` ni una clave vacía, y se ignora
+  si una versión anterior lo guardó. Pendiente de decisión: dónde guardar la clave (keyring o
+  carpeta de configuración por usuario).*
+- [x] **SEC-4 (P1)** Imágenes de alumnos copiadas al Escritorio por defecto —
   `grading/extraction.py:658`, `main_app.py:617` (`~/Desktop/pyexamgenerator_temp`). En Windows el
   Escritorio suele sincronizarse con OneDrive (datos personales en la nube, RGPD). Usar
-  `tempfile.gettempdir()` y limpiar también `debug_dir` (`extraction.py:604`).
+  `tempfile.gettempdir()` y limpiar también `debug_dir` (`extraction.py:604`). — hecho en `9ae14f6`.
 - [ ] **SEC-5 (P2)** Añadir `SECURITY.md` con cómo reportar vulnerabilidades y una nota sobre datos
   personales de alumnos (no subir nunca xlsx reales, ni a issues).
 
@@ -52,28 +55,28 @@ búscalas por nombre de función si no coinciden.
   `exam_generator.py:1202-1206`. `add_questions_without_duplicates` (`question_bank_manager.py:186`)
   y `unify_question_banks` (`:653`) concatenan sin renumerar. Una pregunta puede marcar varias filas.
   Emparejar por enunciado (como hace `QuestionBankManager`) o renumerar al fusionar. — hecho en `d41d15f`.
-- [ ] **BUG-3 (P1)** Ruta de banco sin carpeta (`"banco.xlsx"`) rompe la generación —
+- [x] **BUG-3 (P1)** Ruta de banco sin carpeta (`"banco.xlsx"`) rompe la generación —
   `exam_generator.py:986-988`, `question_bank_manager.py:738-741`: `os.makedirs('')` lanza
-  `FileNotFoundError`. Usar `os.path.dirname(os.path.abspath(p))`.
-- [ ] **BUG-4 (P1)** Exportación Moodle falla con respuestas numéricas o vacías —
+  `FileNotFoundError`. Usar `os.path.dirname(os.path.abspath(p))`. — hecho en `f40b1b3`.
+- [x] **BUG-4 (P1)** Exportación Moodle falla con respuestas numéricas o vacías —
   `exam_generator.py:678-699` con `xml_use_answer_text=True`: `TypeError: cannot serialize 25`.
-  Convertir a `str()` y NaN a `''`.
-- [ ] **BUG-5 (P1)** `menos usadas` lanza `KeyError` si el banco no tiene `Veces usada en examen` —
-  `exam_generator.py:368`. Tratar la columna ausente como 0.
-- [ ] **BUG-6 (P1)** Dos esquemas de nombre para la columna `<etiqueta>_uso` —
+  Convertir a `str()` y NaN a `''`. — hecho en `f40b1b3`.
+- [x] **BUG-5 (P1)** `menos usadas` lanza `KeyError` si el banco no tiene `Veces usada en examen` —
+  `exam_generator.py:368`. Tratar la columna ausente como 0. — hecho en `f40b1b3`.
+- [x] **BUG-6 (P1)** Dos esquemas de nombre para la columna `<etiqueta>_uso` —
   `exam_generator.py:189` (sustituye tildes por `_`) vs `question_bank_manager.py:202-210` (las
-  elimina). Registrar el mismo examen por ambas vías duplica columnas y el conteo. Un único helper.
-- [ ] **BUG-7 (P1)** Lectura de DOCX revisado frágil — `question_bank_manager.py:54-92`:
+  elimina). Registrar el mismo examen por ambas vías duplica columnas y el conteo. Un único helper. — hecho en `8111c5b`.
+- [x] **BUG-7 (P1)** Lectura de DOCX revisado frágil — `question_bank_manager.py:54-92`:
   `split(":")[1]` corta enunciados con `:`; `.replace("A)", "")` borra `A)` dentro del texto;
   la variable `state` no se usa y se pierden párrafos de continuación; un `except` amplio devuelve
-  `None` para todo el archivo. Usar `split(":", 1)` y quitar solo el prefijo.
-- [ ] **BUG-8 (P1)** Respuesta correcta en formato inesperado (`"B)"`, `"b "`) provoca `KeyError` o
+  `None` para todo el archivo. Usar `split(":", 1)` y quitar solo el prefijo. — hecho en `8111c5b`.
+- [x] **BUG-8 (P1)** Respuesta correcta en formato inesperado (`"B)"`, `"b "`) provoca `KeyError` o
   deja la pregunta sin respuesta correcta en Moodle sin avisar — `exam_generator.py:161-178`.
-  Normalizar a `[A-D]` y avisar/lanzar si no hay coincidencia.
+  Normalizar a `[A-D]` y avisar/lanzar si no hay coincidencia. — hecho en `f40b1b3`.
 - [x] **BUG-9 (P2)** Una pregunta mal formada descarta toda la respuesta de Gemini —
   `question_generator.py:456-473` (`IndexError`/`AttributeError` no capturados por pregunta). — hecho en `7d7fabb`.
-- [ ] **BUG-10 (P2)** `generate_excel_from_docx` devuelve una ruta distinta de la que escribe —
-  `question_bank_manager.py:778-781`. Devolver lo que devuelve `save_dataframe_to_excel`.
+- [x] **BUG-10 (P2)** `generate_excel_from_docx` devuelve una ruta distinta de la que escribe —
+  `question_bank_manager.py:778-781`. Devolver lo que devuelve `save_dataframe_to_excel`. — hecho en `8111c5b`.
 - [ ] **BUG-11 (P2)** Nombres de archivo de examen sin sanear — `exam_generator.py:1002`.
   `/`, `:` o `?` en asignatura/examen rompen en Windows; `None` produce `examen_None_...`.
 - [ ] **BUG-12 (P2)** Categoría Moodle con `" -"` final en el XML pero no en
@@ -92,26 +95,24 @@ búscalas por nombre de función si no coinciden.
 - [x] **GRD-2 (P0)** Columnas de asistencia limitadas a 2026 — `grading/attendance.py:187`
   (`"2026" in text`). A partir de 2027 no se detecta ninguna columna. Detectar por
   `_parse_attendance_date(col) is not None`. — hecho en `5a8b9e1`.
-- [ ] **GRD-3 (P0)** IDs leídos como float dividen a un alumno en dos filas —
+- [x] **GRD-3 (P0)** IDs leídos como float dividen a un alumno en dos filas —
   `grading/final_grade.py:100`, `grading/comparison.py:140-141`, `grading/data.py:108,184`,
   `grading/attendance.py:432,528`: `read_excel` sin `dtype` → `"12345678.0"` y ceros iniciales
   perdidos. Leer con `dtype=object` y un único `normalize_id()` (reutilizar
-  `OcrGradeIntegrator._normalize_id`).
-  *Parcial (`cdceb49`): `grading._ids.normalize_id` se usa en `final_grade.py`, `comparison.py` y
-  `integrations.py`. Falta aplicarlo en `data.py` y `attendance.py`.*
+  `OcrGradeIntegrator._normalize_id`). — hecho en `cdceb49` y `c81276a`.
 - [x] **GRD-4 (P0)** Deduplicación fusiona a todos los alumnos sin ID — `grading/integrations.py:335`.
   Deduplicar solo filas con ID no vacío. — hecho en `cdceb49`.
-- [ ] **GRD-5 (P1)** Marcas de tiempo falsas en la corrección desde Excel — `grading/graders.py:82-84`
-  escribe `"20 de abril de 2026 17:05"` y una duración fija en todas las filas.
+- [x] **GRD-5 (P1)** Marcas de tiempo falsas en la corrección desde Excel — `grading/graders.py:82-84`
+  escribe `"20 de abril de 2026 17:05"` y una duración fija en todas las filas. — hecho en `929e4f6`.
 - [ ] **GRD-6 (P1)** Modo `extremo` + emparejamiento difuso pueden justificar faltas al alumno
   equivocado — `grading/attendance.py:1037-1051`, `:410` (`cutoff=0.55`); `graders.py:56`
   (`cutoff=0.6`) asigna la nota al nombre más parecido en silencio. Subir umbrales, respetar
   `message_class` y reportar coincidencias < 0.9 como incidencias.
-- [ ] **GRD-7 (P1)** Índice vs posición en el emparejamiento OCR — `grading/extraction.py:282-293`
+- [x] **GRD-7 (P1)** Índice vs posición en el emparejamiento OCR — `grading/extraction.py:282-293`
   (`best_idx` de `iterrows()` usado con `.iloc`); `:295` fija `"Número de ID"` en vez de
-  `self.id_col`.
-- [ ] **GRD-8 (P1)** Una imagen ilegible aborta todo el lote OCR — `grading/extraction.py:703,759`;
-  `prompt_missing_type=True` por defecto llama a `input()` (bloquea fuera de terminal).
+  `self.id_col`. — hecho en `9ae14f6`.
+- [x] **GRD-8 (P1)** Una imagen ilegible aborta todo el lote OCR — `grading/extraction.py:703,759`;
+  `prompt_missing_type=True` por defecto llama a `input()` (bloquea fuera de terminal). — hecho en `9ae14f6`.
 - [ ] **GRD-9 (P2)** Nombres compuestos rompen la búsqueda de justificaciones —
   `grading/attendance.py:1046-1049,1063-1066` («María José García» → `maria_josegarcia`).
 - [ ] **GRD-10 (P2)** Detección de temas distinta entre PIR (`"ley 31_95"`, `attendance.py:1269`) y
@@ -134,10 +135,10 @@ búscalas por nombre de función si no coinciden.
 
 ## 3. GUI (`main_app.py`)
 
-- [ ] **GUI-1 (P1)** Métodos definidos dos veces (gana la segunda copia): `save_prompt_types`
+- [x] **GUI-1 (P1)** Métodos definidos dos veces (gana la segunda copia): `save_prompt_types`
   (344/370), `add_edit_prompt_type` (380/468), `delete_prompt_type` (429/516),
   `update_prompt_type_options` (448/531). Bug visible: «Editar» abre el prompt vacío. Borrar la
-  segunda copia (468-539).
+  segunda copia (468-539). — hecho en `0fa3771`.
 - [ ] **GUI-2 (P1)** Variables Tkinter leídas desde hilos de trabajo — `main_app.py` ~1100-1537
   (`self.grad_*_var.get()` dentro de `work()`). Leer todo en el hilo principal antes de lanzar el
   hilo y devolver resultados solo con `root.after`.
@@ -177,6 +178,8 @@ búscalas por nombre de función si no coinciden.
 - [ ] **ARC-5 (P2)** Módulos de `grading` que son concatenaciones de ficheros antiguos (imports a
   mitad de fichero, bloques `if __name__ == "__main__"` intermedios en `integrations.py:1108`,
   `extraction.py:841`). Dividir `attendance.py` (1.890 líneas) y `extraction.py` (1.590).
+  *Nota: `extraction.py` también define dos veces las funciones de módulo `_parse_args` y `main`
+  (restos de la concatenación); gana la segunda.*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
 - [ ] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
@@ -239,11 +242,22 @@ búscalas por nombre de función si no coinciden.
   `QuestionBankManager.read_questions_from_docx`, `generate_excel_from_docx`,
   `add_reviewed_questions_to_existing_excel`; `ExamGenerator` con `update_excel=True`, `check=True`,
   `primeras`, `menos usadas`, `questions_per_topic`, `NoAcceptableQuestionsError`.
+  *Parcial: ya cubiertos `_analyze_gemini_response`, `read_questions_from_docx` (con ida y vuelta),
+  `add_reviewed_questions_to_existing_excel`, `update_excel=True`, `menos usadas`, `questions_per_topic`
+  y respuestas numéricas o vacías en el XML. Faltan `generate_multiple_choice_questions` con cliente
+  simulado, `filter_generated_questions_duplicates`, `check=True`, `primeras` y
+  `NoAcceptableQuestionsError`.*
 - [ ] **TST-4 (P2)** Sin tests en `grading`: `PIRBonusCalculator` (incluido GRD-1),
   `AbsenceJustificationManager.analyze`, `MoodleGradeIntegrator.deduplicate_by_id` (GRD-4),
   `FinalGradeCalculator` con IDs mixtos/NaN (GRD-3), `export_steps_dir` + `manifest.json`,
   asistencia de 2027 (GRD-2). OCR: fixture sintético de hoja de respuestas con `RapidOCR` simulado.
+  *Parcial: ya cubiertos el PIR sin sesiones, la deduplicación por ID, la nota final y la comparación
+  con IDs float, la matrícula fusionada, las claves de justificación y el flujo OCR con hojas fallidas
+  (extractor simulado). Faltan `AbsenceJustificationManager.analyze` completo, `export_steps_dir` y un
+  fixture sintético de hoja de respuestas.*
 - [ ] **TST-5 (P2)** Sin tests de GUI. Tras ARC-1, testear `gui_logic.py` sin pantalla.
+  *Parcial (`0fa3771`, `dac098a`): `tests/test_gui_smoke.py` construye la ventana real y prueba el
+  diálogo de prompts y la clave de API (se salta sin pantalla). Falta extraer `gui_logic.py`.*
 - [ ] **TST-6 (P3)** Añadir configuración de pytest (`testpaths = tests`, marcadores `ocr` e
   `integration`, `filterwarnings`).
 - [ ] **TST-7 (P3)** Renombrar `test_v023_features.py` / `test_v030_features.py` por funcionalidad
@@ -274,11 +288,11 @@ búscalas por nombre de función si no coinciden.
   puede confundir a pytest y a las herramientas. Eliminar. — hecho en `07e3e4d`.
 - [ ] **REPO-3 (P3)** PDFs de ejemplo en la raíz (`RD 31-95 LPRL*.pdf`, `RD 39-97 RSP*.pdf`, ~1 MB).
   Moverlos a `examples/` y enlazarlos desde los tutoriales.
-- [ ] **REPO-4 (P2)** README: `QuestionGenerator(model_name=MODEL_NAME)` (`README.md:139`) lanza
+- [x] **REPO-4 (P2)** README: `QuestionGenerator(model_name=MODEL_NAME)` (`README.md:139`) lanza
   `TypeError` porque `api_key` es obligatorio y el código no lee `GEMINI_API_KEY`. Hacer
-  `api_key: Optional[str] = None` con *fallback* a la variable de entorno (y test).
-- [ ] **REPO-5 (P3)** Docstring de `generate_question_text` dice que devuelve 3 valores y devuelve 2
-  (`exam_generator.py:439,520`); además muta su entrada.
+  `api_key: Optional[str] = None` con *fallback* a la variable de entorno (y test). — hecho en `9607102`.
+- [x] **REPO-5 (P3)** Docstring de `generate_question_text` dice que devuelve 3 valores y devuelve 2
+  (`exam_generator.py:439,520`); además muta su entrada. — hecho en `f40b1b3`.
 - [ ] **REPO-6 (P3)** Añadir `CONTRIBUTING.md` (o enlazar `docs/dev/DEVELOPMENT.md` desde el README)
   y plantillas de issue/PR en `.github/`.
 - [ ] **REPO-7 (P3)** Mezcla de idiomas en identificadores y comentarios (inglés/español). Fijar la
