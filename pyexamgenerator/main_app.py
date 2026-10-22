@@ -26,6 +26,7 @@ from docx import Document
 import os
 import json
 import shutil
+import tempfile
 import threading
 from ttkwidgets.frames import ScrolledFrame
 from google import genai
@@ -614,7 +615,8 @@ class ExamApp:
         self.grad_sched_sheet_var = tk.StringVar(value="0")
         self.grad_att_header_var = tk.StringVar(value="3")
         self.grad_forced_var = tk.StringVar()
-        self.grad_ocr_temp_dir_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Desktop", "pyexamgenerator_temp"))
+        # System temp folder, not the Desktop (often synced to the cloud): these are students' scans.
+        self.grad_ocr_temp_dir_var = tk.StringVar(value=os.path.join(tempfile.gettempdir(), "pyexamgenerator_temp"))
         self.grad_ocr_grades_var = tk.StringVar()
         self.grad_integrated_var = tk.StringVar()
         self.grad_attquiz_var = tk.StringVar()
