@@ -95,3 +95,61 @@ def test_unreadable_duplicates_bank_stops_before_calling_gemini(tmp_path):
         )
 
     assert calls == []
+
+
+def _pages_pdf(path, pages):
+    document = fitz.open()
+    for text in pages:
+        document.new_page().insert_text((72, 72), text)
+    document.save(str(path))
+    document.close()
+    return str(path)
+
+
+def test_pdf_split_into_page_chunks_for_the_prompts(tmp_path):
+    """Troceo de un PDF por páginas (sin llamar a Gemini): fragmentos de N páginas, un número total de
+    fragmentos equilibrados, y el mismo resultado al reutilizar el generador con otro PDF (ARC-13)."""
+    five_pages = _pages_pdf(tmp_path / "Tema 1.pdf", [f"Contenido de la pagina {n}" for n in range(1, 6)])
+    two_pages = _pages_pdf(tmp_path / "Tema 2.pdf", ["Primera", "Segunda"])
+    generator = QuestionGenerator(api_key="dummy", model_name="models/test")
+
+    def chunk_count(pdf, **kwargs):
+        prompts = generator.build_generation_prompts(
+            pdf_paths=[pdf], prompt_type="PRL", process_by_pages=True, include_similar_questions_in_prompt=False,
+            **kwargs,
+        )
+        return len(prompts)
+
+    assert chunk_count(five_pages, pages_per_chunk=2) == 3
+    assert chunk_count(five_pages, total_chunks=2) == 2
+    assert chunk_count(two_pages, pages_per_chunk=2) == 1
+    assert chunk_count(five_pages, pages_per_chunk=1) == 5
+
+
+def test_generators_keep_no_scratch_state_between_runs(tmp_path):
+    """ARC-13: el XML de Moodle y el texto de los PDF se construían en atributos de la instancia
+    (`self.quiz`, `self.answer_a`, `self.page_texts`…): dos trabajos con la misma instancia (p. ej.
+    desde la GUI, en hilos) se pisaban."""
+    import random
+
+    from pyexamgenerator.exam_generator import ExamGenerator
+
+    pdf = _pages_pdf(tmp_path / "Tema 1.pdf", ["Uno", "Dos", "Tres"])
+    question_generator = QuestionGenerator(api_key="dummy", model_name="models/test")
+    question_generator.build_generation_prompts(pdf_paths=[pdf], prompt_type="PRL", process_by_pages=True,
+                                                include_similar_questions_in_prompt=False)
+    assert not any(hasattr(question_generator, name) for name in ("page_texts", "text", "num_pages"))
+
+    bank = tmp_path / "banco.xlsx"
+    pd.DataFrame([{"Número de pregunta": n, "Tema": "Tema 01", "Estado": "Aceptable", "Pregunta": f"¿{n}?",
+                   "Respuesta A": "a", "Respuesta B": "b", "Respuesta C": "c", "Respuesta D": "d",
+                   "Respuesta correcta": "a", "Texto relevante": ""} for n in (1, 2)]).to_excel(bank, index=False)
+    exam_generator = ExamGenerator()
+    random.seed(7)
+    exam_generator.generate_exam_from_excel(bank_excel_path=str(bank), output_dir=str(tmp_path / "salida"),
+                                            subject="Asig", exam="Parcial", course="25-26", exam_names=["A"],
+                                            export_moodle_xml=True)
+    scratch = ("quiz", "category", "category_name", "text", "question", "name",
+               "answer_a", "answer_b", "answer_c", "answer_d", "exam_text", "full_exam_text")
+    assert [name for name in scratch if hasattr(exam_generator, name)] == []
+    assert list((tmp_path / "salida").glob("*_A.xml"))

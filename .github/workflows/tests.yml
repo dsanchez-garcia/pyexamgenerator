@@ -64,6 +64,21 @@ jobs:
       - name: Comprobar el código
         run: ruff check --output-format=github .
 
+  typing:
+    name: mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      # The package is installed so pandas and the other dependencies bring their own types.
+      - name: Instalar el paquete y mypy
+        run: python -m pip install . mypy==2.4.0
+      - name: Comprobar tipos (módulos listados en pyproject.toml)
+        run: mypy
+
   docs:
     name: sphinx -W
     runs-on: ubuntu-latest

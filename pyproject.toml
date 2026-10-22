@@ -64,6 +64,7 @@ dev = [
     "twine",
     "ruff",
     "pre-commit",
+    "mypy",
 ]
 # Compilar la documentación. Read the Docs y la CI usan las versiones fijadas en docs/requirements.txt.
 docs = [
@@ -96,6 +97,21 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["F"]
+
+[tool.mypy]
+# Non-strict type checking (DEV-2), starting with the grading facade, its configs and small helpers.
+# Add modules to `files` as they are typed.
+python_version = "3.10"
+files = [
+    "pyexamgenerator/_console.py",
+    "pyexamgenerator/_text.py",
+    "pyexamgenerator/grading/_ids.py",
+    "pyexamgenerator/grading/_paths.py",
+    "pyexamgenerator/grading/api.py",
+    "pyexamgenerator/grading/session.py",
+]
+ignore_missing_imports = true
+follow_imports = "silent"
 
 [tool.pytest.ini_options]
 # Only the project's tests (never a copy of the repository such as the OneDrive backup link).

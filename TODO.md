@@ -216,8 +216,8 @@ búscalas por nombre de función si no coinciden.
   `custom_prompts.json` en CWD; plantilla en CWD → `%APPDATA%`, solo Windows). Un único
   `config_dir()` con `platformdirs`. Hay además un `pyexamgenerator/custom_prompts.json` suelto e
   ignorado dentro del paquete.
-- [ ] **ARC-13 (P3)** Estado compartido en `self` (`self.text`, `self.quiz`, `self.page_texts`) hace
-  que las instancias no sean reutilizables de forma segura.
+- [x] **ARC-13 (P3)** Estado compartido en `self` (`self.text`, `self.quiz`, `self.page_texts`) hace
+  que las instancias no sean reutilizables de forma segura. — hecho en `b6913cb`.
 
 ## 5. Dependencias, empaquetado y compatibilidad
 
@@ -302,8 +302,9 @@ búscalas por nombre de función si no coinciden.
   (restos de lógica sustituida, sin efecto) y 6 imports sin uso. Buen punto de partida: activar `F`.*
   — hecho en `d1c6542`: reglas `F` en la CI y pre-commit (además, un `except` repetido que daba un
   mensaje falso). *Pendiente: aplicar `ruff format` en un PR aparte y ampliar las reglas.*
-- [ ] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
-  `grading/api.py` y los dataclasses de configuración.
+- [x] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
+  `grading/api.py` y los dataclasses de configuración. — hecho en `b08fab8` (job `mypy` en la CI;
+  ir añadiendo módulos a `[tool.mypy]`).
 - [ ] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa
   `setx Path`, que trunca el PATH a 1.024 caracteres. Considerar `py -m pip install -e .` y
   documentar el PATH manualmente, o usar PowerShell.

@@ -28,12 +28,15 @@ venv/Scripts/python.exe -m pytest tests/test_bank_usage.py -q
 venv/Scripts/python.exe -m pytest -q -k "final_grade"     # por nombre
 venv/Scripts/python.exe -m tox                            # matriz py310 / py314 (tox.ini)
 venv/Scripts/python.exe -m ruff check .                   # lint (reglas en pyproject.toml)
+venv/Scripts/python.exe -m mypy                           # tipos (módulos en [tool.mypy])
 ```
 
-La CI también ejecuta `ruff check` (de momento solo las reglas `F` de pyflakes). Para que se compruebe
-en cada commit: `venv/Scripts/pre-commit.exe install` (configuración en `.pre-commit-config.yaml`).
+La CI también ejecuta `ruff check` (de momento solo las reglas `F` de pyflakes) y `mypy` en modo no
+estricto sobre los módulos listados en `[tool.mypy]` de `pyproject.toml` (añade ahí los que tipes).
+Para comprobar el lint en cada commit: `venv/Scripts/pre-commit.exe install` (configuración en
+`.pre-commit-config.yaml`).
 
-Estado a 2026-10-22: 190 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
+Estado a 2026-10-22: 234 tests pasan en Windows con Python 3.14 y `[grading]` (incluidas las
 pruebas de la GUI, que necesitan pantalla). La CI (`.github/workflows/tests.yml`) repite la suite en
 Ubuntu (con pantalla virtual `xvfb`) y Windows, con y sin el extra; sin `[grading]` se saltan las
 pruebas de OCR. La sección `[tool.pytest.ini_options]` de `pyproject.toml` limita la recogida a
