@@ -4,7 +4,6 @@ import os
 import re
 import shutil
 import tempfile
-import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -29,6 +28,7 @@ except ImportError:  # pragma: no cover - depende del entorno
 from pyexamgenerator._console import stdin_is_interactive
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
+from pyexamgenerator.grading._text import normalize_key, parse_decimal
 from pyexamgenerator.grading.data import (
     SharedExamDataStore,
     build_merged_enrollment_from_sources,
@@ -125,15 +125,7 @@ class AnswerSheetExtractor:
     def _load_enrollment(self, enrollment_xlsx_path: str) -> None:
         self._set_enrollment_df(pd.read_excel(enrollment_xlsx_path))
 
-    @staticmethod
-    def _strip_accents(text: str) -> str:
-        normalized = unicodedata.normalize("NFD", text)
-        return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
-
-    @classmethod
-    def _normalize(cls, text: str) -> str:
-        clean = cls._strip_accents(text).lower()
-        return re.sub(r"[^a-z0-9]", "", clean)
+    _normalize = staticmethod(normalize_key)
 
     @classmethod
     def _normalize_option_label(cls, text: str) -> Optional[str]:
@@ -1084,19 +1076,6 @@ class ImageExamGrader:
             return None
         return matches.iloc[0]
 
-    @staticmethod
-    def _parse_decimal_grade(value: object) -> Optional[float]:
-        if value is None or pd.isna(value):
-            return None
-        text = str(value).strip()
-        if text in {"", "-"}:
-            return None
-        text = text.replace(",", ".")
-        try:
-            return float(text)
-        except ValueError:
-            return None
-
     def _build_ocr_incidents(
         self,
         sheet_results: Sequence[SheetResult],
@@ -1116,7 +1095,7 @@ class ImageExamGrader:
         grade_by_image: Dict[str, float] = {}
         for _, row in grades_df.iterrows():
             image = str(row.get("Imagen", "")).strip()
-            grade = self._parse_decimal_grade(row.get("Calificacion/10,00", ""))
+            grade = parse_decimal(row.get("Calificacion/10,00", ""))
             if image and grade is not None:
                 grade_by_image[image] = grade
 

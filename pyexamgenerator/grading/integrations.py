@@ -2,14 +2,20 @@ import argparse
 import os
 from pathlib import Path
 import re
-import unicodedata
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
+from pyexamgenerator.grading._text import clean_text, find_column, normalize_key, normalize_text, parse_decimal
 from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
+
+
+def _grade_or_na(value):
+    """:func:`parse_decimal` with ``pd.NA`` for a missing grade, as the integrated tables keep it."""
+    parsed = parse_decimal(value)
+    return pd.NA if parsed is None else parsed
 
 
 class MoodleGradeIntegrator:
@@ -127,14 +133,8 @@ class MoodleGradeIntegrator:
 
     @staticmethod
     def _parse_grade(grade) -> float:
-        if pd.isna(grade):
-            return 0.0
-
-        grade_str = str(grade).strip().replace(",", ".")
-        try:
-            return float(grade_str)
-        except ValueError:
-            return 0.0
+        parsed = parse_decimal(grade)
+        return 0.0 if parsed is None else parsed
 
     @staticmethod
     def _parse_quiz_total_column(column_name: str) -> Optional[Tuple[str, str]]:
@@ -144,19 +144,8 @@ class MoodleGradeIntegrator:
             return None
         return match.group(1).strip(), match.group(2).strip().upper()
 
-    @staticmethod
-    def _normalize_text(text: str) -> str:
-        text = str(text).strip().lower()
-        return "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
-
-    @classmethod
-    def _find_column(cls, columns: List[str], candidates: Iterable[str]) -> Optional[str]:
-        normalized_map = {cls._normalize_text(c).replace(" ", ""): c for c in columns}
-        for candidate in candidates:
-            key = cls._normalize_text(candidate).replace(" ", "")
-            if key in normalized_map:
-                return normalized_map[key]
-        return None
+    _normalize_text = staticmethod(normalize_text)
+    _find_column = staticmethod(find_column)
 
     def _is_grade_column(self, column_name: str) -> bool:
         column_norm = self._normalize_text(column_name)
@@ -166,21 +155,7 @@ class MoodleGradeIntegrator:
             return True
         return re.match(r"^p\.\s*\d+\s*/", column_norm) is not None
 
-    @staticmethod
-    def _to_float_grade(value):
-        if pd.isna(value):
-            return pd.NA
-        if isinstance(value, (int, float)):
-            return float(value)
-
-        text = str(value).strip()
-        if text in {"", "-"}:
-            return pd.NA
-
-        text = text.replace(",", ".")
-        if re.fullmatch(r"[-+]?\d+(\.\d+)?", text):
-            return float(text)
-        return pd.NA
+    _to_float_grade = staticmethod(_grade_or_na)
 
     def _convert_grade_columns_to_numeric(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -408,39 +383,17 @@ class OcrGradeIntegrator:
         self.last_integration_summary: Dict[str, int] = {}
         self.last_integration_incidents_df = pd.DataFrame(columns=self._incident_columns())
 
-    @staticmethod
-    def _normalize(text: str) -> str:
-        text = str(text).strip().lower()
-        text = "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
-        return re.sub(r"[^a-z0-9]", "", text)
-
-    @classmethod
-    def _normalized_column_map(cls, columns: List[str]) -> Dict[str, str]:
-        return {cls._normalize(c): c for c in columns}
-
-    @classmethod
-    def _find_column(cls, columns: List[str], normalized_candidates: List[str]) -> Optional[str]:
-        col_map = cls._normalized_column_map(columns)
-        for cand in normalized_candidates:
-            if cand in col_map:
-                return col_map[cand]
-        return None
+    _normalize = staticmethod(normalize_key)
+    _find_column = staticmethod(find_column)
+    _clean_text = staticmethod(clean_text)
 
     @staticmethod
     def _is_empty(value) -> bool:
-        if pd.isna(value):
-            return True
-        return str(value).strip() == ""
+        return clean_text(value) == ""
 
     @staticmethod
     def _normalize_id(value) -> str:
         return normalize_id(value)
-
-    @staticmethod
-    def _clean_text(value) -> str:
-        if pd.isna(value):
-            return ""
-        return str(value).strip()
 
     @classmethod
     def _contains_summary_word(cls, text: str) -> bool:
@@ -605,18 +558,7 @@ class OcrGradeIntegrator:
                 best_exam_type = str(exam_type).strip().upper()
         return best_grade, best_group, best_exam_type
 
-    @staticmethod
-    def _to_float_grade(value):
-        if pd.isna(value):
-            return pd.NA
-        text = str(value).strip()
-        if text in {"", "-"}:
-            return pd.NA
-        text = text.replace(",", ".")
-        try:
-            return float(text)
-        except ValueError:
-            return pd.NA
+    _to_float_grade = staticmethod(_grade_or_na)
 
     @staticmethod
     def _name_match(
