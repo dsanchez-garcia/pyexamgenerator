@@ -22,7 +22,7 @@ import pandas as pd
 from pyexamgenerator.question_generator import (
     QuestionGenerator, QuotaExceededError, ServiceOverloadedError, GeminiRequestError,
 )
-from pyexamgenerator import gui_logic
+from pyexamgenerator import credentials, gui_logic
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
@@ -136,17 +136,13 @@ class ExamApp:
         main_title_label = ttk.Label(self.root, text=f"pyexamgenerator v{version}", font=title_font)
         main_title_label.pack(pady=(10, 5), padx=10, anchor='w')
 
-        # Lógica de carga de API Key actualizada con GEMINI_API_KEY
+        # Clave de API: la variable de entorno GEMINI_API_KEY o, si no está, la guardada con
+        # «Guardar Clave» en el almacén de credenciales del sistema (SEC-3, `credentials.py`).
         initial_status = "Aplicación iniciada."
-        # 1. Intentar cargar desde la variable de entorno (máxima prioridad)
-        env_api_key = os.getenv('GEMINI_API_KEY') # <--- NOMBRE CORREGIDO
-        if env_api_key:
-            self.api_key = env_api_key
+        self.api_key = credentials.get_api_key()
+        if os.getenv(credentials.ENV_VAR, "").strip():
             initial_status = "Clave API cargada desde la variable de entorno GEMINI_API_KEY."
             print(initial_status)
-        else:
-            # 2. Si no existe, intentar cargar desde config.json (fallback)
-            self.api_key = self.load_api_key()
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
@@ -197,7 +193,7 @@ class ExamApp:
         self.pdf_files_var = tk.StringVar()
         self.num_questions_var = tk.StringVar(value="5")
         self.output_filename_var = tk.StringVar(value="preguntas")
-        self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else "TU_CLAVE_API")
+        self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else credentials.PLACEHOLDER)
         self.gen_questions_output_dir_var = tk.StringVar()
 
         self.selected_model_var = tk.StringVar(value='')
@@ -261,6 +257,8 @@ class ExamApp:
         help_menu.add_command(label="Configurar API Key (Ayuda)...", command=self.open_api_key_help)
         help_menu.add_separator()
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
+
+        self._offer_legacy_key_migration()
 
     def _install_copyable_messageboxes(self) -> None:
         """Info/warning/error popups of this module use copyable dialogs (see _CopyableMessageBox)."""
@@ -1817,7 +1815,12 @@ class ExamApp:
 
         save_api_key_button = ttk.Button(api_buttons_frame, text="Guardar Clave", command=self.save_current_api_key)
         save_api_key_button.pack(side='left', padx=2)
-        ToolTip(save_api_key_button, text="Guarda la clave de API actual en la configuración.")
+        ToolTip(save_api_key_button, text="Guarda la clave cifrada en el almacén de credenciales del sistema "
+                                          "(en Windows, el Administrador de credenciales).")
+
+        delete_api_key_button = ttk.Button(api_buttons_frame, text="Borrar Clave", command=self.delete_saved_api_key)
+        delete_api_key_button.pack(side='left', padx=2)
+        ToolTip(delete_api_key_button, text="Borra de este equipo la clave guardada (p. ej. en un ordenador compartido).")
 
         self.load_models_button = ttk.Button(api_buttons_frame, text="Cargar Modelos", command=self.populate_models_table)
         self.load_models_button.pack(side='left', padx=2)
@@ -1909,7 +1912,7 @@ class ExamApp:
         window keeps responding; the table is filled in the main thread.
         """
         api_key = self.api_key_var.get()
-        if not api_key or api_key == "TU_CLAVE_API":
+        if not api_key or api_key == credentials.PLACEHOLDER:
             messagebox.showerror("Error", "Por favor, introduce una clave API de Gemini válida antes de cargar los modelos.")
             return
 
@@ -2067,51 +2070,85 @@ class ExamApp:
         # Reseteamos la última celda para que el tooltip se vuelva a mostrar si volvemos a entrar
         self.last_hovered_cell = (None, None)
 
-    def load_api_key(self) -> Optional[str]:
-        """
-        Loads the API key from a configuration file.
-
-        Returns:
-            Optional[str]: The API key if found, otherwise None.
-        """
-        try:
-            with open('config.json', 'r', encoding='utf-8') as f:
-                config = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return None
-        api_key = str(config.get('api_key') or '').strip()
-        # Older versions could save the "TU_CLAVE_API" placeholder as if it were a key.
-        return api_key if api_key and api_key != "TU_CLAVE_API" else None
-
-    def save_api_key(self, api_key: str) -> None:
-        """
-        Saves the API key to a configuration file.
-
-        Args:
-            api_key (str): The API key to save.
-        """
-        with open('config.json', 'w', encoding='utf-8') as f:
-            json.dump({'api_key': api_key}, f)
+    @staticmethod
+    def _saved_key_message(saved: credentials.SavedKey) -> str:
+        if saved.encrypted:
+            message = f"La clave de API se ha guardado cifrada en el {saved.location}."
+        else:
+            message = ("Este sistema no tiene un almacén de credenciales: la clave de API se ha guardado "
+                       f"sin cifrar en\n{saved.location}\n(solo tu usuario puede leer ese fichero).")
+        if os.getenv(credentials.ENV_VAR, "").strip():
+            message += ("\n\nLa variable de entorno GEMINI_API_KEY está definida y tiene prioridad: "
+                        "la aplicación la usará mientras exista.")
+        return message
 
     def save_current_api_key(self) -> None:
         """
         Saves the API key currently entered in the GUI.
 
-        This method gets the API key from the GUI variable,
-        saves it using the `save_api_key` method, and updates the
-        API key in the instance.
+        It goes encrypted to the system credential store (``credentials.save_api_key``); the
+        "TU_CLAVE_API" placeholder of the entry is never stored as if it were a key.
         It also shows informational or error messages to the user via messagebox.
         """
-        key_to_save = self.api_key_var.get().strip()
-        # The entry starts with the "TU_CLAVE_API" placeholder: never store it as if it were a key.
-        if key_to_save and key_to_save != "TU_CLAVE_API":
-            self.save_api_key(key_to_save)
-            self.api_key = key_to_save  # Update the API key in the instance.
-            # We don't instantiate QuestionGenerator here anymore because it requires a model_name,
-            # which might not be selected yet. It will be instantiated when generating questions.
-            messagebox.showinfo("Info", "La API key ha sido actualizada y guardada.")
-        else:
+        try:
+            saved = credentials.save_api_key(self.api_key_var.get())
+        except ValueError:
             messagebox.showerror("Error", "Por favor, introduce la API key.")
+            return
+        # We don't instantiate QuestionGenerator here because it requires a model_name, which might
+        # not be selected yet. It will be instantiated when generating questions.
+        self.api_key = self.api_key_var.get().strip()
+        messagebox.showinfo("Info", self._saved_key_message(saved))
+
+    def delete_saved_api_key(self) -> None:
+        """Deletes the key saved with «Guardar Clave» from this computer (e.g. a shared one)."""
+        if not messagebox.askyesno("Borrar clave", "¿Borrar de este equipo la clave de API guardada?"):
+            return
+        if not credentials.delete_api_key():
+            messagebox.showinfo("Clave de API", "No había ninguna clave de API guardada en este equipo.")
+            return
+        self.api_key = credentials.get_api_key()  # GEMINI_API_KEY may still give one
+        self.api_key_var.set(self.api_key or credentials.PLACEHOLDER)
+        message = "Clave de API borrada de este equipo."
+        if self.api_key:
+            message += "\n\nLa variable de entorno GEMINI_API_KEY sigue definida y la aplicación la seguirá usando."
+        messagebox.showinfo("Clave de API", message)
+
+    def _offer_legacy_key_migration(self) -> None:
+        """SEC-3: older versions saved the key unencrypted in ``config.json`` of the current folder.
+
+        Offers to move it to the credential store (or, if a key is already saved there, to delete
+        that copy). If the user declines, the key is still used in this session, as before.
+        """
+        legacy = credentials.find_legacy_api_key()
+        if legacy is None:
+            return
+        path, legacy_key = legacy
+        already_saved = credentials.get_saved_api_key() is not None
+        question = (
+            f"Hay una clave de API guardada sin cifrar, por una versión anterior, en:\n{path}\n\n"
+            + ("Ya tienes una clave guardada en el almacén de credenciales. ¿Borrar esa copia sin cifrar?"
+               if already_saved else
+               "¿Moverla al almacén de credenciales del sistema (cifrada) y borrar ese fichero?")
+        )
+        if not messagebox.askyesno("Clave de API sin cifrar", question):
+            if not self.api_key:
+                self.api_key = legacy_key
+                self.api_key_var.set(legacy_key)
+            return
+        try:
+            saved = None if already_saved else credentials.save_api_key(legacy_key)
+            credentials.remove_legacy_api_key(path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Error", f"No se pudo terminar de mover la clave de API:\n{exc}")
+            return
+        if saved is not None:
+            if not self.api_key:
+                self.api_key = legacy_key
+                self.api_key_var.set(legacy_key)
+            messagebox.showinfo("Clave de API", f"{self._saved_key_message(saved)}\n\nSe ha borrado {path}.")
+        else:
+            messagebox.showinfo("Clave de API", f"Se ha borrado la copia sin cifrar:\n{path}")
 
     def select_pdf_files(self) -> None:
         """
@@ -2188,7 +2225,7 @@ class ExamApp:
             messagebox.showerror("Error", "Por favor, carga y selecciona un modelo de la tabla.")
             return
 
-        if not api_key or api_key == "TU_CLAVE_API":
+        if not api_key or api_key == credentials.PLACEHOLDER:
             messagebox.showerror("Error", "Por favor, introduce tu clave API de Gemini.")
             return
         if not pdf_paths:

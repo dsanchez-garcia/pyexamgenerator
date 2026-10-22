@@ -37,6 +37,9 @@ dependencies = [
     # Successor of the abandoned PyPDF2; 6.21.2 fixes the security advisories known in October 2026
     # (long runtimes or memory use when opening a malformed PDF).
     "pypdf>=6.21.2",
+    # Gemini API key in the system credential store (Windows Credential Manager, macOS Keychain,
+    # Secret Service), see pyexamgenerator/credentials.py.
+    "keyring>=25",
     "python-docx",
     "pandas",
     "openpyxl",
@@ -107,6 +110,7 @@ python_version = "3.10"
 files = [
     "pyexamgenerator/_console.py",
     "pyexamgenerator/_text.py",
+    "pyexamgenerator/credentials.py",
     "pyexamgenerator/gui_logic.py",
     "pyexamgenerator/grading/_ids.py",
     "pyexamgenerator/grading/_paths.py",

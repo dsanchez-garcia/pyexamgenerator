@@ -11,7 +11,7 @@ import pytest
 tk = pytest.importorskip("tkinter")
 from tkinter import messagebox, ttk  # noqa: E402
 
-from pyexamgenerator import gui_logic  # noqa: E402
+from pyexamgenerator import credentials, gui_logic  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -98,23 +98,73 @@ def test_api_key_placeholder_is_never_saved(app, tmp_path):
     app.api_key_var.set("TU_CLAVE_API")
     app.save_current_api_key()
 
+    assert credentials.get_saved_api_key() is None
     assert not (tmp_path / "config.json").exists()
     assert [kind for kind, _title, _message in app.shown_messages] == ["error"]
 
 
-def test_api_key_is_saved_trimmed_with_a_single_confirmation(app, tmp_path):
+def test_api_key_is_saved_encrypted_with_a_single_confirmation(app, tmp_path, memory_keyring):
+    """SEC-3: «Guardar Clave» la escribía sin cifrar en config.json de la carpeta actual."""
     app.api_key_var.set("  clave-de-prueba  ")
     app.save_current_api_key()
 
-    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == {"api_key": "clave-de-prueba"}
-    assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
-    assert app.load_api_key() == "clave-de-prueba"
+    assert memory_keyring.passwords == {("pyexamgenerator", "gemini_api_key"): "clave-de-prueba"}
+    assert not (tmp_path / "config.json").exists()
+    assert [(kind, "cifrada" in message) for kind, _title, message in app.shown_messages] == [("info", True)]
+    assert app.api_key == "clave-de-prueba"
 
 
 def test_saved_placeholder_from_older_versions_is_ignored(app, tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({"api_key": "TU_CLAVE_API"}), encoding="utf-8")
 
-    assert app.load_api_key() is None
+    app._offer_legacy_key_migration()
+
+    assert app.shown_messages == []
+    assert (tmp_path / "config.json").exists()
+
+
+def test_unencrypted_key_from_older_versions_is_moved_to_the_store(app, tmp_path):
+    """SEC-3: al arrancar se ofrece mover la clave de un config.json antiguo al almacén y borrarlo."""
+    (tmp_path / "config.json").write_text(json.dumps({"api_key": "clave-antigua"}), encoding="utf-8")
+
+    app._offer_legacy_key_migration()  # askyesno answers "yes" in these tests
+
+    assert credentials.get_saved_api_key() == "clave-antigua"
+    assert not (tmp_path / "config.json").exists()
+    assert (app.api_key, app.api_key_var.get()) == ("clave-antigua", "clave-antigua")
+    assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
+
+
+def test_declined_move_keeps_the_old_file_and_uses_its_key(app, tmp_path, monkeypatch):
+    (tmp_path / "config.json").write_text(json.dumps({"api_key": "clave-antigua"}), encoding="utf-8")
+    monkeypatch.setattr(messagebox, "askyesno", lambda *args, **kwargs: False)
+
+    app._offer_legacy_key_migration()
+
+    assert credentials.get_saved_api_key() is None
+    assert (tmp_path / "config.json").exists()
+    assert app.api_key == "clave-antigua"
+
+
+def test_old_copy_is_deleted_when_a_key_is_already_saved(app, tmp_path):
+    credentials.save_api_key("clave-actual")
+    (tmp_path / "config.json").write_text(json.dumps({"api_key": "clave-antigua"}), encoding="utf-8")
+
+    app._offer_legacy_key_migration()
+
+    assert credentials.get_saved_api_key() == "clave-actual"
+    assert not (tmp_path / "config.json").exists()
+
+
+def test_saved_api_key_can_be_deleted(app):
+    credentials.save_api_key("clave-guardada")
+    app.api_key_var.set("clave-guardada")
+
+    app.delete_saved_api_key()
+
+    assert credentials.get_saved_api_key() is None
+    assert app.api_key_var.get() == "TU_CLAVE_API"
+    assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
 
 def test_selecting_source_files_twice_keeps_a_valid_list(app, tmp_path, monkeypatch):

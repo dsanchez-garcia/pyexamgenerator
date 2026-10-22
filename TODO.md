@@ -29,12 +29,16 @@ búscalas por nombre de función si no coinciden.
   código arbitrario, y al pasar una ruta sin extensión se prefiere el `.pkl` al `.json`. El JSON ya
   hace round-trip (`from_dict`): cargar JSON por defecto y dejar pickle tras un flag explícito
   (`trusted=True`) o eliminarlo. — hecho en `9161e7c`.
-- [ ] **SEC-3 (P1)** Clave de API en texto plano en `config.json` del directorio actual —
+- [x] **SEC-3 (P1)** Clave de API en texto plano en `config.json` del directorio actual —
   `main_app.py:2149,2162`. Además se puede guardar el marcador `"TU_CLAVE_API"` como clave. Usar
   `keyring` o una carpeta de configuración por usuario (`platformdirs`) y rechazar el marcador.
   *Parcial (`dac098a`): ya no se guarda el marcador `TU_CLAVE_API` ni una clave vacía, y se ignora
   si una versión anterior lo guardó. Pendiente de decisión: dónde guardar la clave (keyring o
   carpeta de configuración por usuario).*
+  *Decidido por el mantenedor (2026-10-22): almacén de credenciales del sistema con `keyring` (y,
+  solo si no hay almacén, fichero en la carpeta de configuración del usuario); al arrancar se
+  pregunta si mover la clave de un `config.json` antiguo; la librería también usa la clave
+  guardada.* — hecho en la rama `fix/sec-3-clave-api` (`pyexamgenerator/credentials.py`).
 - [x] **SEC-4 (P1)** Imágenes de alumnos copiadas al Escritorio por defecto —
   `grading/extraction.py:658`, `main_app.py:617` (`~/Desktop/pyexamgenerator_temp`). En Windows el
   Escritorio suele sincronizarse con OneDrive (datos personales en la nube, RGPD). Usar

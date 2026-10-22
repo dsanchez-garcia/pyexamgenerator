@@ -70,7 +70,7 @@ Esta es la parte más importante, donde personalizamos la tarea.
     *   **Acción para nuestro ejemplo:** Como no estamos usando un banco existente, **ignoraremos esta sección**.
 
 *   **Modelo y Clave API:**
-    *   **Clave API de Gemini:** Si configuraste la variable de entorno, la aplicación ya la habrá detectado. Si no, pega aquí tu clave API.
+    *   **Clave API de Gemini:** Si ya la guardaste o configuraste la variable de entorno, la aplicación ya la habrá detectado. Si no, pega aquí tu clave API y pulsa **"Guardar Clave"**: se guarda cifrada en el almacén de credenciales del sistema (en Windows, el *Administrador de credenciales*) y la próxima vez aparecerá sola. **"Borrar Clave"** la elimina de ese equipo.
     *   **Botón "Cargar Modelos":** **¡Este paso es crucial!** Haz clic en este botón. La aplicación usará tu clave para conectarse a Google y obtener una lista de los "cerebros" de IA disponibles.
     *   **Tabla de Modelos:** Después de cargar, la tabla se llenará con los modelos que tu clave puede usar en ese momento (por ejemplo, variantes «Flash» y «Pro» de la generación actual de Gemini), con todos sus detalles. Google renueva los modelos y retira los antiguos, por eso la lista se obtiene cada vez. Te explicamos las columnas:
         *   **Nombre Técnico:** El nombre "oficial" que usa el programa para comunicarse con la IA.

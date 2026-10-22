@@ -66,6 +66,7 @@ pyexamgenerator/
   exam_generator.py        ExamGenerator: banco XLSX → exámenes DOCX/XLSX/Moodle XML
   main_app.py              GUI Tkinter (clase ExamApp, ~3.800 líneas) y entry point main()
   gui_logic.py             lógica de la GUI sin tkinter: interpretar los campos, avisos (se prueba sin pantalla)
+  credentials.py           clave de API de Gemini: GEMINI_API_KEY o almacén de credenciales (keyring)
   tooltip.py               ToolTip para la GUI
   grading/                 corrección de exámenes (ver ARCHITECTURE.md)
     api.py                 ExamCorrectionAPI + dataclasses *Config
@@ -139,7 +140,10 @@ pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [d
   `build/`, `dist/`, `.tox/`.
 - **Nunca** llames a la API real de Gemini en tests: `tests/conftest.py` ya sustituye
   `google.genai.Client` en todos los tests; para simular respuestas, asigna un cliente falso a
-  `generator.client`. No uses ni imprimas `GEMINI_API_KEY`; no leas `config.json`.
+  `generator.client`. No uses ni imprimas `GEMINI_API_KEY`; no leas `config.json`. Tampoco leas ni
+  escribas la clave guardada en el almacén de credenciales del sistema: `tests/conftest.py` lo
+  sustituye en todos los tests por uno en memoria (y la carpeta de configuración del usuario por
+  una temporal).
 - No uses `eval`, `exec` ni `pickle.load` sobre contenido externo (respuestas del modelo, ficheros
   del usuario). Las respuestas de Gemini se analizan con `QuestionGenerator._parse_question_literal`
   y las sesiones solo leen pickle con `allow_pickle=True`.

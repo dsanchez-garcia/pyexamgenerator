@@ -37,6 +37,7 @@ Las reglas de trabajo están en [`AGENTS.md`](../../AGENTS.md); la deuda técnic
 | GUI | `main_app.py` (`ExamApp`), `gui_logic.py` (sin tkinter), `tooltip.py` | tkinter + toda la librería |
 | Generación | `question_generator.py`, `question_bank_manager.py`, `exam_generator.py` | pandas, python-docx, google-genai, pypdf, PyMuPDF |
 | Corrección | `grading/*` | pandas; OCR opcional (cv2, rapidocr) solo en `grading/extraction.py` |
+| Clave de API | `credentials.py` | keyring |
 
 La librería nunca importa `tkinter`. La GUI llama a la librería directamente desde los manejadores de
 los botones.
@@ -188,9 +189,11 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 
 - Una clase `ExamApp(root)`; `main()` crea `tk.Tk()` y lanza `mainloop()` (entry point de consola
   `pyexamgenerator`).
-- `__init__` carga la clave (`GEMINI_API_KEY` → `config.json`), crea ~70 variables Tkinter y
-  construye las pestañas: `create_question_tab`, `create_manage_bank_tab`, `create_exam_tab`,
-  `create_grading_tab`, y el menú «Ayuda».
+- `__init__` carga la clave (`credentials.get_api_key`: `GEMINI_API_KEY` → almacén de
+  credenciales), crea ~70 variables Tkinter y construye las pestañas: `create_question_tab`,
+  `create_manage_bank_tab`, `create_exam_tab`, `create_grading_tab`, y el menú «Ayuda». Al final,
+  si hay un `config.json` antiguo con la clave sin cifrar en el directorio actual, ofrece moverla al
+  almacén y borrarlo (`_offer_legacy_key_migration`).
 - Hilos: las tareas largas se ejecutan fuera del hilo de la interfaz. Generación con Gemini, carga
   de modelos y generación de exámenes usan `_run_in_background` (deshabilita el botón, ejecuta en
   un hilo y llama a `on_success`/`on_error` en el hilo principal); la corrección usa
@@ -217,7 +220,8 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 
 | Fichero | Ubicación | Contenido |
 |---|---|---|
-| `config.json` | directorio actual | clave de API (texto plano, `SEC-3`) |
+| clave de API | almacén de credenciales del sistema (`keyring`: Administrador de credenciales de Windows, Llavero de macOS, Secret Service); sin almacén, `credentials.json` en la carpeta de configuración del usuario (`%LOCALAPPDATA%\pyexamgenerator`, `~/.config/pyexamgenerator`) | la clave, cifrada por el sistema (sin cifrar en el fichero alternativo, solo legible por el usuario); `GEMINI_API_KEY` tiene prioridad (`credentials.py`, `SEC-3`) |
+| `config.json` (versiones anteriores) | directorio actual | clave de API sin cifrar: la aplicación ofrece moverla al almacén y borrar el fichero |
 | copias temporales del OCR | `<temp del sistema>/pyexamgenerator_temp` (configurable) | solo si falla la lectura directa; se borran al terminar |
 | `custom_prompts.json` | directorio actual | prompts personalizados |
 | `exam_generation_template.json` | directorio actual → `%APPDATA%\pyexamgenerator` | plantilla de la pestaña de exámenes |
@@ -245,6 +249,7 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 | `test_grading_ocr_sheet.py` | hojas de respuestas PNG sintéticas con RapidOCR simulado, de la imagen a la nota (requiere `[grading]`) |
 | `test_grading_text_helpers.py` | reglas comunes de `grading/_text.py`; filas sin ID ni nombre en la nota final y la comparación |
 | `test_gui_logic.py` | `gui_logic.py` sin pantalla: listas de rutas, penalización, pesos, tipos forzados, nombres de examen, preguntas por tema |
+| `test_credentials.py` | clave de API: almacén de credenciales (en memoria, `conftest.py`), fichero alternativo, `GEMINI_API_KEY`, `config.json` antiguo y uso desde la librería |
 | `test_dev_scripts.py` | `install_current_version.bat` sin `setx`; `add_user_path.ps1` con `-WhatIf` (solo Windows) |
 | `test_gui_smoke.py` | ventana real de la GUI: prompts, clave de API, lista de ficheros, errores de entrada, una sola tarea de corrección, variables Tk solo en el hilo principal, tareas en segundo plano, rueda del ratón, tooltips y valores por defecto (se salta sin pantalla; en la CI de Linux usa xvfb) |
 | `test_package_smoke.py` | compila todos los módulos (incluida la GUI) |
