@@ -11,6 +11,8 @@ import pytest
 tk = pytest.importorskip("tkinter")
 from tkinter import messagebox, ttk  # noqa: E402
 
+from pyexamgenerator import gui_logic  # noqa: E402
+
 
 @pytest.fixture(scope="module")
 def tk_root():
@@ -132,16 +134,7 @@ def test_selecting_source_files_twice_keeps_a_valid_list(app, tmp_path, monkeypa
     monkeypatch.setattr(filedialog, "askopenfilenames", lambda **kwargs: ())
     app.select_pdf_files()  # cancelled dialog: the list is kept
 
-    assert app._split_paths(app.pdf_files_var.get()) == [first, second]
-
-
-def test_split_paths_accepts_a_comma_list_typed_by_hand(app, tmp_path):
-    a, b = str(tmp_path / "a.pdf"), str(tmp_path / "b.pdf")
-    for path in (a, b):
-        open(path, "wb").close()
-
-    assert app._split_paths(f"{a}, {b}") == [a, b]
-    assert app._split_paths(f"{a};{b}") == [a, b]
+    assert gui_logic.split_paths(app.pdf_files_var.get()) == [first, second]
 
 
 def test_invalid_final_grade_weight_shows_an_error(app, tmp_path):
@@ -573,18 +566,6 @@ def test_exam_list_shows_usage_columns_through_the_public_api(app, monkeypatch):
 
     values = [app.update_exams_tree.item(item, "values") for item in app.update_exams_tree.get_children()]
     assert values == [("examen_Evaluación_1A_completo.xlsx", "Evaluación 1", "Evaluacion_1_uso")]
-
-
-def test_integration_warnings_mention_overwritten_grades():
-    """GRD-12: la GUI avisa cuando la nota OCR sustituye a una nota que ya existía."""
-    from pyexamgenerator.main_app import ExamApp
-
-    warnings = ExamApp._grad_integration_warnings(
-        {"blocked_unmatched": 1, "grades_overwritten": 2}, "incidencias_integracion_ocr.xlsx")
-
-    assert len(warnings) == 2
-    assert "Alumno no encontrado en teoría: 1" in warnings[0]
-    assert "2 alumno(s)" in warnings[1] and "incidencias_integracion_ocr.xlsx" in warnings[1]
 
 
 def test_standard_messageboxes_are_not_replaced_for_the_whole_process(app):
