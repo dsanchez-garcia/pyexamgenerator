@@ -532,8 +532,8 @@ class ExamGenerator:
             Tuple[str, str]: The student's exam text and the full exam text (with solutions). ``df`` is
             modified in place when ``shuffle_answers`` is True.
         """
-        self.exam_text = ""
-        self.full_exam_text = ""
+        exam_text = ""
+        full_exam_text = ""
         num_total_questions = len(df)
         use_two_digits = num_total_questions > 9
 
@@ -543,10 +543,10 @@ class ExamGenerator:
             pregunta_num = row['Número de pregunta'] if renumber else index + 1
             formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
 
-            self.exam_text += f"Pregunta {formatted_pregunta_num}:\n"
-            self.full_exam_text += f"Pregunta {formatted_pregunta_num}:\n"
-            self.exam_text += f"{row['Pregunta']}\n"
-            self.full_exam_text += f"{row['Pregunta']}\n"
+            exam_text += f"Pregunta {formatted_pregunta_num}:\n"
+            full_exam_text += f"Pregunta {formatted_pregunta_num}:\n"
+            exam_text += f"{row['Pregunta']}\n"
+            full_exam_text += f"{row['Pregunta']}\n"
             # Shuffle answer texts if shuffle_answers is True.
             if shuffle_answers:
                 answers = [
@@ -567,14 +567,14 @@ class ExamGenerator:
                 elif row['Texto respuesta correcta'] == answers[3]:
                     new_correct_answer = 'd'
                 # Print shuffled answers with letters in order.
-                self.exam_text += f"a) {answers[0]}\n"
-                self.exam_text += f"b) {answers[1]}\n"
-                self.exam_text += f"c) {answers[2]}\n"
-                self.exam_text += f"d) {answers[3]}\n"
-                self.full_exam_text += f"a) {answers[0]}\n"
-                self.full_exam_text += f"b) {answers[1]}\n"
-                self.full_exam_text += f"c) {answers[2]}\n"
-                self.full_exam_text += f"d) {answers[3]}\n"
+                exam_text += f"a) {answers[0]}\n"
+                exam_text += f"b) {answers[1]}\n"
+                exam_text += f"c) {answers[2]}\n"
+                exam_text += f"d) {answers[3]}\n"
+                full_exam_text += f"a) {answers[0]}\n"
+                full_exam_text += f"b) {answers[1]}\n"
+                full_exam_text += f"c) {answers[2]}\n"
+                full_exam_text += f"d) {answers[3]}\n"
                 # Update the DataFrame with the new answers and correct answer.
                 df.loc[index, 'Respuesta A'] = answers[0]
                 df.loc[index, 'Respuesta B'] = answers[1]
@@ -583,21 +583,21 @@ class ExamGenerator:
                 df.loc[index, 'Respuesta correcta'] = new_correct_answer
             else:
                 # Print answers in original order.
-                self.exam_text += f"a) {row['Respuesta A']}\n"
-                self.exam_text += f"b) {row['Respuesta B']}\n"
-                self.exam_text += f"c) {row['Respuesta C']}\n"
-                self.exam_text += f"d) {row['Respuesta D']}\n"
-                self.full_exam_text += f"a) {row['Respuesta A']}\n"
-                self.full_exam_text += f"b) {row['Respuesta B']}\n"
-                self.full_exam_text += f"c) {row['Respuesta C']}\n"
-                self.full_exam_text += f"d) {row['Respuesta D']}\n"
+                exam_text += f"a) {row['Respuesta A']}\n"
+                exam_text += f"b) {row['Respuesta B']}\n"
+                exam_text += f"c) {row['Respuesta C']}\n"
+                exam_text += f"d) {row['Respuesta D']}\n"
+                full_exam_text += f"a) {row['Respuesta A']}\n"
+                full_exam_text += f"b) {row['Respuesta B']}\n"
+                full_exam_text += f"c) {row['Respuesta C']}\n"
+                full_exam_text += f"d) {row['Respuesta D']}\n"
                 new_correct_answer = (self._normalize_correct_letter(row['Respuesta correcta']) or '').lower()
-            self.full_exam_text += f"Respuesta correcta: {new_correct_answer}\n"
-            self.full_exam_text += f"Texto relevante: {row['Texto relevante']}\n"
-            self.exam_text += "\n"
-            self.full_exam_text += "\n"
+            full_exam_text += f"Respuesta correcta: {new_correct_answer}\n"
+            full_exam_text += f"Texto relevante: {row['Texto relevante']}\n"
+            exam_text += "\n"
+            full_exam_text += "\n"
         df.drop('Texto respuesta correcta', axis=1, inplace=True)
-        return self.exam_text, self.full_exam_text
+        return exam_text, full_exam_text
 
     def _remove_empty_last_section(self, document: Document):
         """
@@ -717,61 +717,38 @@ class ExamGenerator:
             xml_cat_additional_text (Optional[str], optional): Additional text for the Moodle XML category.
             penalty (float, optional): Penalty percentage for an incorrect answer.
         """
-        self.quiz = Element('quiz')
-        self.category = SubElement(self.quiz, 'question', type='category')
-        self.category_name = SubElement(self.category, 'category')
-        self.text = SubElement(self.category_name, 'text')
+        # Local variables only: the instance is not used as scratch space, so one ExamGenerator can
+        # build several XML files (even from different threads) without them mixing.
+        quiz = Element('quiz')
+        category = SubElement(quiz, 'question', type='category')
+        category_text = SubElement(SubElement(category, 'category'), 'text')
         wrong_fraction = self._format_fraction_percent_for_xml(
             self._nearest_moodle_grade_option_percent(penalty)
         )
 
-        self.text.text = self._moodle_category_text(exam, exam_type, xml_cat_additional_text)
+        category_text.text = self._moodle_category_text(exam, exam_type, xml_cat_additional_text)
         for _, row in df.iterrows():
             correct_answer = (self._normalize_correct_letter(row.get('Respuesta correcta')) or '').lower()
 
             pregunta_num = row['Número de pregunta']
             formatted_pregunta_num = self._format_question_number(pregunta_num)
 
-            self.question = SubElement(self.quiz, 'question', type='multichoice')
-            self.name = SubElement(self.question, 'name')
-            self.text = SubElement(self.name, 'text')
-            self.text.text = f"Pregunta {formatted_pregunta_num}"
+            question = SubElement(quiz, 'question', type='multichoice')
+            SubElement(SubElement(question, 'name'), 'text').text = f"Pregunta {formatted_pregunta_num}"
 
-            questiontext = SubElement(self.question, 'questiontext', format='html')
+            questiontext = SubElement(question, 'questiontext', format='html')
             questiontext_text = SubElement(questiontext, 'text')
             questiontext_text.text = self._cell_text(row.get('Pregunta', '')) if xml_use_answer_text else f"Pregunta {formatted_pregunta_num}"
 
-            if correct_answer == 'a':
-                self.answer_a = SubElement(self.question, 'answer', fraction='100')
-            else:
-                self.answer_a = SubElement(self.question, 'answer', fraction=wrong_fraction)
-            self.text = SubElement(self.answer_a, 'text')
-            self.text.text = self._cell_text(row.get('Respuesta A', '')) if xml_use_answer_text else 'a'
+            for letter in 'abcd':
+                answer = SubElement(question, 'answer', fraction='100' if correct_answer == letter else wrong_fraction)
+                answer_text = SubElement(answer, 'text')
+                answer_text.text = self._cell_text(row.get(f'Respuesta {letter.upper()}', '')) if xml_use_answer_text else letter
 
-            if correct_answer == 'b':
-                self.answer_b = SubElement(self.question, 'answer', fraction='100')
-            else:
-                self.answer_b = SubElement(self.question, 'answer', fraction=wrong_fraction)
-            self.text = SubElement(self.answer_b, 'text')
-            self.text.text = self._cell_text(row.get('Respuesta B', '')) if xml_use_answer_text else 'b'
-
-            if correct_answer == 'c':
-                self.answer_c = SubElement(self.question, 'answer', fraction='100')
-            else:
-                self.answer_c = SubElement(self.question, 'answer', fraction=wrong_fraction)
-            self.text = SubElement(self.answer_c, 'text')
-            self.text.text = self._cell_text(row.get('Respuesta C', '')) if xml_use_answer_text else 'c'
-
-            if correct_answer == 'd':
-                self.answer_d = SubElement(self.question, 'answer', fraction='100')
-            else:
-                self.answer_d = SubElement(self.question, 'answer', fraction=wrong_fraction)
-            self.text = SubElement(self.answer_d, 'text')
-            self.text.text = self._cell_text(row.get('Respuesta D', '')) if xml_use_answer_text else 'd'
-
-        self.xml_str = minidom.parseString(tostring(self.quiz)).toprettyxml(indent="  ")
+        xml_str = minidom.parseString(tostring(quiz)).toprettyxml(indent="  ")
+        self.xml_str = xml_str  # Last XML generated, kept for code that reads it.
         with open(file_name, 'w', encoding='utf-8') as f:
-            f.write(self.xml_str)
+            f.write(xml_str)
 
     def generate_moodle_xml_from_existing_exam_xlsx(
             self,

@@ -151,17 +151,27 @@ class QuestionGenerator:
         Returns:
             Optional[str]: The extracted text from the PDF, or None if an error occurs.
         """
+        result = self._read_pdf(pdf_path)
+        if result is None:
+            return None
+        # Kept for code that reads them after this call; the generation itself uses local values.
+        self.page_texts, self.text = result
+        self.num_pages = len(self.page_texts)
+        return self.text
+
+    @staticmethod
+    def _read_pdf(pdf_path: str) -> Optional[Tuple[List[str], str]]:
+        """Text of each page and of the whole PDF, or None if it cannot be read.
+
+        Returned instead of stored in the instance, so a generator can process several PDFs (or be
+        used from several threads) without one overwriting another's text.
+        """
         try:
             with open(pdf_path, 'rb') as pdf_file:
                 pdf_reader = PyPDF2.PdfReader(pdf_file)
-                self.text = ""
-                self.page_texts = []  # List to store the text of each page
-                for page in pdf_reader.pages:
-                    page_text = page.extract_text()
-                    self.page_texts.append(page_text)
-                    self.text += page_text
-                self.num_pages = len(pdf_reader.pages)  # Save the total number of pages
-            return self.text
+                page_texts = [page.extract_text() for page in pdf_reader.pages]
+                full_text = "".join(page_texts)
+            return page_texts, full_text
         except Exception as e:
             print(f"Error extracting text from PDF: {e}")
             return None
@@ -272,36 +282,39 @@ class QuestionGenerator:
             image_bytes = f.read()
         return [{"bytes": image_bytes, "mime_type": self._guess_mime_type(source_path)}]
 
-    def _group_pages_into_chunks(self, pages_per_chunk: int) -> List[str]:
+    @staticmethod
+    def _group_pages_into_chunks(page_texts: List[str], pages_per_chunk: int) -> List[str]:
         """
         Groups the text from pages into larger chunks.
 
         Args:
+            page_texts (List[str]): The text of each page.
             pages_per_chunk (int): The number of pages to include in each chunk.
 
         Returns:
             List[str]: A list of strings, where each string is a text chunk.
         """
-        if not hasattr(self, 'page_texts') or not self.page_texts:
+        if not page_texts:
             return []
 
         text_chunks = []
         current_chunk_pages = []
-        for i, page_text in enumerate(self.page_texts):
+        for i, page_text in enumerate(page_texts):
             current_chunk_pages.append(page_text)
-            if (i + 1) % pages_per_chunk == 0 or (i + 1) == len(self.page_texts):
+            if (i + 1) % pages_per_chunk == 0 or (i + 1) == len(page_texts):
                 text_chunks.append("\n".join(current_chunk_pages))
                 current_chunk_pages = []
         return text_chunks
 
-    def _group_pages_into_total_chunks(self, total_chunks: int) -> List[str]:
+    @staticmethod
+    def _group_pages_into_total_chunks(page_texts: List[str], total_chunks: int) -> List[str]:
         """Groups page texts into a fixed number of balanced chunks."""
-        if not hasattr(self, 'page_texts') or not self.page_texts:
+        if not page_texts:
             return []
         if total_chunks <= 0:
             return []
 
-        num_pages = len(self.page_texts)
+        num_pages = len(page_texts)
         total_chunks = min(total_chunks, num_pages)
         base_size = num_pages // total_chunks
         remainder = num_pages % total_chunks
@@ -311,7 +324,7 @@ class QuestionGenerator:
         for idx in range(total_chunks):
             extra = 1 if idx < remainder else 0
             end = start + base_size + extra
-            chunks.append("\n".join(self.page_texts[start:end]))
+            chunks.append("\n".join(page_texts[start:end]))
             start = end
         return chunks
 
@@ -801,21 +814,21 @@ class QuestionGenerator:
                 })
                 continue
 
-            pdf_full_text_content = self.extract_pdf_text(pdf_path)
+            page_texts, pdf_full_text_content = self._read_pdf(pdf_path) or ([], "")
             if not pdf_full_text_content:
                 continue
 
-            if process_by_pages and hasattr(self, 'page_texts') and self.page_texts:
+            if process_by_pages and page_texts:
                 if chunking_mode == "text_length":
                     inferred_chunks = total_chunks
                     if inferred_chunks is None:
-                        inferred_chunks = max(1, math.ceil(len(self.page_texts) / max(1, pages_per_chunk)))
+                        inferred_chunks = max(1, math.ceil(len(page_texts) / max(1, pages_per_chunk)))
                     text_chunks_to_process = self._group_text_by_length(pdf_full_text_content, inferred_chunks)
                 else:
                     if total_chunks is not None:
-                        text_chunks_to_process = self._group_pages_into_total_chunks(total_chunks)
+                        text_chunks_to_process = self._group_pages_into_total_chunks(page_texts, total_chunks)
                     else:
-                        text_chunks_to_process = self._group_pages_into_chunks(pages_per_chunk)
+                        text_chunks_to_process = self._group_pages_into_chunks(page_texts, pages_per_chunk)
                 context_for_chunks = pdf_full_text_content
             else:
                 text_chunks_to_process = [pdf_full_text_content]
@@ -1024,25 +1037,26 @@ class QuestionGenerator:
             context_for_chunks = None
 
             if input_mode == "text":
-                pdf_full_text_content = self.extract_pdf_text(pdf_path)
+                # Local values (not instance attributes): see _read_pdf.
+                page_texts, pdf_full_text_content = self._read_pdf(pdf_path) or ([], "")
                 if not pdf_full_text_content:
                     print(f"No se pudo extraer texto del PDF: {pdf_path}")
                     continue
 
-                if process_by_pages and hasattr(self, 'page_texts') and self.page_texts:
+                if process_by_pages and page_texts:
                     if chunking_mode not in ("pages", "text_length"):
                         raise ValueError("chunking_mode debe ser 'pages' o 'text_length'.")
 
                     if chunking_mode == "text_length":
                         inferred_chunks = total_chunks
                         if inferred_chunks is None:
-                            inferred_chunks = max(1, math.ceil(len(self.page_texts) / max(1, pages_per_chunk)))
+                            inferred_chunks = max(1, math.ceil(len(page_texts) / max(1, pages_per_chunk)))
                         text_chunks_to_process = self._group_text_by_length(pdf_full_text_content, inferred_chunks)
                     else:
                         if total_chunks is not None:
-                            text_chunks_to_process = self._group_pages_into_total_chunks(total_chunks)
+                            text_chunks_to_process = self._group_pages_into_total_chunks(page_texts, total_chunks)
                         else:
-                            text_chunks_to_process = self._group_pages_into_chunks(pages_per_chunk)
+                            text_chunks_to_process = self._group_pages_into_chunks(page_texts, pages_per_chunk)
 
                     context_for_chunks = pdf_full_text_content
                     if chunking_mode == "pages" and total_chunks is None:
