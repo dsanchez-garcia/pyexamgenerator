@@ -17,6 +17,7 @@
 from google import genai
 from google.genai import types # Opcional, útil para tipado, pero no estricto
 from pypdf import PdfReader
+from pyexamgenerator import credentials
 import ast
 import json
 import re
@@ -104,7 +105,9 @@ class QuestionGenerator:
 
         Args:
             api_key (Optional[str]): The API key for the Gemini model. If omitted, the
-                                     ``GEMINI_API_KEY`` environment variable is used.
+                                     ``GEMINI_API_KEY`` environment variable is used or, if it is
+                                     not set, the key saved with «Guardar Clave»
+                                     (:mod:`pyexamgenerator.credentials`).
             model_name (str): The technical name of the Gemini model to use (``models/...``), as
                               listed by ``client.models.list()`` or the app's «Cargar Modelos».
                               Google retires old models, so check the list. This is a required
@@ -119,9 +122,9 @@ class QuestionGenerator:
                 "Los disponibles se listan con «Cargar Modelos» en la aplicación o con "
                 "`client.models.list()`."
             )
-        # Without an explicit key, use GEMINI_API_KEY (the google-genai client may still find
-        # GOOGLE_API_KEY by itself when neither is given).
-        self.client = genai.Client(api_key=api_key or os.getenv("GEMINI_API_KEY"))
+        # Without an explicit key, GEMINI_API_KEY or the saved key (the google-genai client may still
+        # find GOOGLE_API_KEY by itself when there is none).
+        self.client = genai.Client(api_key=api_key or credentials.get_api_key())
         self.model_name = model_name
 
         print(f"Cliente de Gemini inicializado para modelo: {model_name}")

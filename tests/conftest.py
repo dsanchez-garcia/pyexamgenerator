@@ -1,6 +1,41 @@
 """Configuración común de los tests."""
 
+import keyring
 import pytest
+from keyring.backend import KeyringBackend
+from keyring.errors import PasswordDeleteError
+
+
+class MemoryKeyring(KeyringBackend):
+    """Replaces the system credential store in every test: the tests never read or write the real one
+    (on the developer's computer it holds their real Gemini key, SEC-3)."""
+
+    priority = 1
+
+    def __init__(self):
+        super().__init__()
+        self.passwords = {}
+
+    def get_password(self, service, username):
+        return self.passwords.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.passwords[(service, username)] = password
+
+    def delete_password(self, service, username):
+        if self.passwords.pop((service, username), None) is None:
+            raise PasswordDeleteError(username)
+
+
+@pytest.fixture(autouse=True)
+def memory_keyring(monkeypatch, tmp_path):
+    """An empty credential store per test, and the user's configuration folder inside ``tmp_path``."""
+    from pyexamgenerator import credentials
+
+    store = MemoryKeyring()
+    keyring.set_keyring(store)
+    monkeypatch.setattr(credentials, "_config_dir", lambda: tmp_path / "configuracion_usuario")
+    return store
 
 
 class OfflineGeminiClient:

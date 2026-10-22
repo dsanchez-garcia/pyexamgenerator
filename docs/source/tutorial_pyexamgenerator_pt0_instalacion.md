@@ -16,7 +16,7 @@ Antes de poder usar la aplicación, necesitamos prepararlo todo. Esto solo se ha
 
 3.  **Conseguir tu Clave API de Gemini:** La "Clave API" es como una contraseña personal que te da acceso a la inteligencia artificial de Google.
     *   Puedes conseguir una gratis siguiendo las instrucciones de Google. En la aplicación, hemos añadido un atajo para ayudarte: ve al menú **Ayuda > Configurar API Key (Ayuda)...** para abrir la guía oficial.
-    *   Una vez que tengas tu clave, la forma más fácil y segura de usarla es configurarla como una "variable de entorno" (`GEMINI_API_KEY`). El enlace de ayuda te explica cómo hacerlo. Si sigues esos pasos, ¡la aplicación la detectará automáticamente!
+    *   Una vez que tengas tu clave, lo más fácil y seguro es pegarla en la aplicación y pulsar **"Guardar Clave"** (pestaña "Generar Preguntas"): queda guardada cifrada en el almacén de credenciales de tu sistema (en Windows, el *Administrador de credenciales*) y la aplicación la recordará. También puedes configurarla como "variable de entorno" (`GEMINI_API_KEY`), como explica el enlace de ayuda; en ese caso la aplicación la detectará automáticamente.
 
 ## Parte 1: Cómo iniciar pyexamgenerator
 

@@ -12,6 +12,14 @@ Subpackages
 Submodules
 ----------
 
+pyexamgenerator.credentials module
+----------------------------------
+
+.. automodule:: pyexamgenerator.credentials
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 pyexamgenerator.exam\_generator module
 --------------------------------------
 

@@ -38,9 +38,14 @@ notas y escaneos de hojas de respuestas.
 - **No subas ficheros reales** al repositorio, a *issues*, *pull requests* ni discusiones (xlsx,
   docx, xml, imágenes de hojas de respuestas). El `.gitignore` los excluye; los tests usan datos
   sintéticos generados en carpetas temporales.
-- **Clave de API de Gemini:** lo más seguro es la variable de entorno `GEMINI_API_KEY`. El botón
-  «Guardar Clave» de la aplicación la escribe sin cifrar en `config.json`, en la carpeta desde la
-  que se ejecuta: no compartas ni subas ese fichero.
+- **Clave de API de Gemini:** el botón «Guardar Clave» la guarda cifrada en el almacén de
+  credenciales del sistema (Administrador de credenciales de Windows, Llavero de macOS o Secret
+  Service en Linux) y «Borrar Clave» la elimina. Solo si el sistema no tiene almacén (p. ej. un
+  servidor Linux) se guarda sin cifrar en la carpeta de configuración del usuario, legible solo por
+  él, y la aplicación lo avisa. La variable de entorno `GEMINI_API_KEY`, si existe, tiene prioridad;
+  ten en cuenta que se guarda sin cifrar. Las versiones anteriores escribían la clave sin cifrar en
+  `config.json`, en la carpeta desde la que se ejecutaba la aplicación: al arrancar se ofrece
+  moverla al almacén y borrar ese fichero. No lo compartas ni lo subas.
 - **Ficheros temporales:** el OCR copia las imágenes en la carpeta temporal del sistema
   (`pyexamgenerator_temp`) y las borra al terminar; el «Pipeline completo» borra siempre su carpeta
   `_intermedios`, también si hay un error.

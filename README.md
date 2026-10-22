@@ -35,12 +35,14 @@ Antes del primer uso, necesitas tu propia clave de API de Google Gemini.
 1.  **Obtén tu clave de API** siguiendo las instrucciones oficiales en la [documentación de Google AI Studio](https://ai.google.dev/gemini-api/docs/api-key).
 2.  **Configura la clave**. Tienes dos opciones:
 
-    *   **(Recomendado) Usar una Variable de Entorno:** Es el método más seguro. Crea una variable de entorno llamada `GEMINI_API_KEY` con el valor de tu clave. La aplicación la detectará automáticamente al iniciarse.
-    *   **(Alternativa) Guardar en la Aplicación:**
+    *   **(Recomendado) Guardarla en la aplicación:**
         *   Abre la aplicación `pyexamgenerator`.
         *   Ve a la pestaña **"Generar Preguntas"**.
         *   Introduce tu clave en el campo **"Clave API de Gemini"**.
-        *   Haz clic en el botón **"Guardar Clave"**. La clave se guardará en un archivo `config.json` local.
+        *   Haz clic en el botón **"Guardar Clave"**. La clave se guarda cifrada en el almacén de credenciales del sistema (en Windows, el *Administrador de credenciales*), no en un archivo, y la usan tanto la aplicación como tus scripts. **"Borrar Clave"** la elimina de ese equipo (útil en un ordenador compartido).
+    *   **Usar una variable de entorno** llamada `GEMINI_API_KEY` con el valor de tu clave. La aplicación la detecta al iniciarse y tiene prioridad sobre la clave guardada. Ten en cuenta que la variable se guarda sin cifrar.
+
+    Si una versión anterior guardó tu clave en un archivo `config.json`, la aplicación te ofrecerá moverla al almacén de credenciales y borrar ese archivo.
 
 ## Uso mediante la interfaz
 
@@ -123,11 +125,10 @@ Este script utiliza la IA para leer uno o más archivos PDF y generar un banco d
 # archivo: generar_preguntas.py
 
 from pyexamgenerator import QuestionGenerator
-import os
 
 # --- Configuración ---
-# Se recomienda configurar la API Key como una variable de entorno (GEMINI_API_KEY)
-# api_key = os.getenv("GEMINI_API_KEY") 
+# Sin api_key, se usa la variable de entorno GEMINI_API_KEY o, si no existe, la clave
+# guardada con «Guardar Clave» en la aplicación (almacén de credenciales del sistema).
 
 PDF_FILES = ['ruta/a/tu/TEMA_01.pdf', 'ruta/a/tu/TEMA_02.pdf']
 OUTPUT_FILENAME = "banco_generado_script"
@@ -138,7 +139,7 @@ MODEL_NAME = 'models/NOMBRE-DEL-MODELO'
 
 # --- Lógica del Script ---
 if __name__ == '__main__':
-    # Asegúrate de pasar la API Key si no usas variables de entorno
+    # También puedes pasarla explícitamente: QuestionGenerator(api_key="...", model_name=MODEL_NAME)
     generator = QuestionGenerator(model_name=MODEL_NAME)
     
     print(f"Generando preguntas desde: {PDF_FILES}")
