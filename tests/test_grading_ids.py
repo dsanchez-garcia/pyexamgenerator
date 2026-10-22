@@ -126,7 +126,7 @@ def test_attendance_lookup_keys_ignore_missing_ids():
     de modo que la justificación de uno se aplicaba a los demás."""
     keys_without_id = AbsenceJustificationManager._student_lookup_keys(np.nan, "Ana", "Gil")
     assert not any(key.startswith("id:") for key in keys_without_id)
-    assert keys_without_id == ["name:ana_gil"]
+    assert "name:ana_gil" in keys_without_id
 
     keys_float_id = AbsenceJustificationManager._student_lookup_keys(12345678.0, "Ana", "Gil")
     assert keys_float_id[0] == "id:12345678"

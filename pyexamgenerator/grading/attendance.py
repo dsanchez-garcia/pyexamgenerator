@@ -270,6 +270,9 @@ class AbsenceJustificationManager:
         sname = AbsenceJustificationManager._student_name_key(first_name, last_name)
         if sname and sname != "_":
             keys.append(f"name:{sname}")
+            # Split-independent key: a full name split at its first space ('María' + 'José García')
+            # and the enrollment fields ('María José' + 'García') must still meet.
+            keys.append(f"full:{sname.replace('_', '')}")
         return keys
 
     @staticmethod
