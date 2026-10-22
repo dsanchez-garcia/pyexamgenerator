@@ -591,7 +591,7 @@ class QuestionGenerator:
 
     def _is_similar_question(self,
                              new_question_text: str
-                             ) -> tuple[bool, float, Optional[str]]:
+                             ) -> Tuple[bool, float, Optional[str]]:
         """
         Checks if the new question is similar to any existing one in the bank,
         comparing ONLY the question statements for filtering purposes.
