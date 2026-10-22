@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
+from pyexamgenerator.grading._paths import prepare_output_path
 
 
 @dataclass
@@ -1105,19 +1106,17 @@ class AbsenceJustificationManager:
     ) -> AbsenceJustificationResult:
         result = self.analyze()
 
-        if output_dir:
-            out_dir = Path(output_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            summary_output_path = str(out_dir / Path(summary_output_path).name)
-            detailed_output_path = str(out_dir / Path(detailed_output_path).name)
-            if attendance_overview_output_path:
-                attendance_overview_output_path = str(out_dir / Path(attendance_overview_output_path).name)
-            if sender_absence_check_output_path:
-                sender_absence_check_output_path = str(out_dir / Path(sender_absence_check_output_path).name)
-            if attendance_quiz_output_path:
-                attendance_quiz_output_path = str(out_dir / Path(attendance_quiz_output_path).name)
-            if extreme_justified_absences_output_path:
-                extreme_justified_absences_output_path = str(out_dir / Path(extreme_justified_absences_output_path).name)
+        # Relative paths go to output_dir; absolute ones are kept.
+        summary_output_path = prepare_output_path(summary_output_path, output_dir)
+        detailed_output_path = prepare_output_path(detailed_output_path, output_dir)
+        if attendance_overview_output_path:
+            attendance_overview_output_path = prepare_output_path(attendance_overview_output_path, output_dir)
+        if sender_absence_check_output_path:
+            sender_absence_check_output_path = prepare_output_path(sender_absence_check_output_path, output_dir)
+        if attendance_quiz_output_path:
+            attendance_quiz_output_path = prepare_output_path(attendance_quiz_output_path, output_dir)
+        if extreme_justified_absences_output_path:
+            extreme_justified_absences_output_path = prepare_output_path(extreme_justified_absences_output_path, output_dir)
 
         result.summary_df.to_excel(summary_output_path, index=False)
         result.detailed_df.to_excel(detailed_output_path, index=False)

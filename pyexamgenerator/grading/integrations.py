@@ -7,6 +7,7 @@ from typing import Iterable, List, Optional, Tuple
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
+from pyexamgenerator.grading._paths import prepare_output_path
 
 
 class MoodleGradeIntegrator:
@@ -356,10 +357,7 @@ class MoodleGradeIntegrator:
             deduplicate_by_id = bool(legacy_kwargs.pop("deduplicar_por_id"))
         if legacy_kwargs:
             raise TypeError(f"Unexpected arguments: {sorted(legacy_kwargs.keys())}")
-        if output_dir:
-            out_dir = Path(output_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(out_dir / Path(output_path).name)
+        output_path = prepare_output_path(output_path, output_dir)
         final_df = self.integrate_grades(deduplicate_by_id=deduplicate_by_id)
         final_df.to_excel(output_path, index=False)
         print(f"OK: integration completed. Output saved to: {output_path}")
@@ -895,10 +893,7 @@ class OcrGradeIntegrator:
         return normalized_df
 
     def integrate(self, output_path: str, output_dir: Optional[str] = None) -> pd.DataFrame:
-        if output_dir:
-            out_dir_path = Path(output_dir)
-            out_dir_path.mkdir(parents=True, exist_ok=True)
-            output_path = str(out_dir_path / Path(output_path).name)
+        output_path = prepare_output_path(output_path, output_dir)
 
         # Cada ejecución refresca su propio reporte para evitar arrastrar estado anterior.
         self.last_integration_summary = {}

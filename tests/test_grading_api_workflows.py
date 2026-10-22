@@ -232,3 +232,76 @@ def test_full_pipeline_can_keep_the_intermediate_files(full_pipeline):
 
     kept = {p.name for p in (full_pipeline.out / "_intermedios").iterdir()}
     assert {"matriculados.xlsx", "calificaciones_manuscritos.xlsx", "teoria_integrada.xlsx"} <= kept
+
+
+def _moodle_file(path, rows):
+    return _write(path, [{"Número de ID": student_id, "Nombre": first, "Apellido(s)": last,
+                          "Calificación/10,00": grade} for student_id, first, last, grade in rows])
+
+
+class _CountingPandas:
+    """Replaces ``pd`` inside the facade module to count the Excel files it reads itself."""
+
+    def __init__(self):
+        self.read_excel_calls = []
+
+    def read_excel(self, path, *args, **kwargs):
+        self.read_excel_calls.append(str(path))
+        return pd.read_excel(path, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(pd, name)
+
+
+def test_facade_reads_the_inputs_again_only_to_export_steps(tmp_path, monkeypatch):
+    """GRD-13: sin `export_steps_dir`, la fachada volvía a leer todos los ficheros de entrada solo
+    para exportarlos como pasos."""
+    import pyexamgenerator.grading.api as api_module
+
+    counting = _CountingPandas()
+    monkeypatch.setattr(api_module, "pd", counting)
+    first = _moodle_file(tmp_path / "moodle_GIM.xlsx", [("111", "Ana", "Gil", "5,00")])
+    second = _moodle_file(tmp_path / "moodle_GITI.xlsx", [("222", "Leo", "Ruiz", "6,00")])
+    api = ExamCorrectionAPI(default_output_dir=str(tmp_path / "salida"))
+
+    api.integrate_moodle_grades(MoodleIntegrationConfig(xlsx_files=[first, second]))
+    api.merge_enrollment_sources(EnrollmentMergeConfig(source_paths=[first, second]))
+    assert counting.read_excel_calls == []
+
+    api.integrate_moodle_grades(MoodleIntegrationConfig(xlsx_files=[first, second]),
+                                export_steps_dir=str(tmp_path / "pasos"))
+    assert counting.read_excel_calls == [first, second]
+
+
+def test_moodle_integration_accepts_a_generator_of_files(tmp_path):
+    """GRD-13: `xlsx_files` se recorría dos veces; con un generador, la segunda vez estaba vacío."""
+    files = [_moodle_file(tmp_path / "moodle_GIM.xlsx", [("111", "Ana", "Gil", "5,00")]),
+             _moodle_file(tmp_path / "moodle_GITI.xlsx", [("222", "Leo", "Ruiz", "6,00")])]
+    api = ExamCorrectionAPI(default_output_dir=str(tmp_path / "salida"))
+
+    df = api.integrate_moodle_grades(MoodleIntegrationConfig(xlsx_files=(path for path in files)),
+                                     export_steps_dir=str(tmp_path / "pasos"))
+
+    assert sorted(df["Nombre"]) == ["Ana", "Leo"]
+    assert api.session.workflow_configs["integrate_moodle_grades"]["xlsx_files"] == files
+
+
+def test_explicit_absolute_output_paths_are_respected(tmp_path):
+    """GRD-14: una ruta de salida absoluta acababa en la carpeta de salida por defecto (fachada y
+    clases de trabajo)."""
+    moodle = _moodle_file(tmp_path / "entrada" / "moodle.xlsx", [("111", "Ana", "Gil", "5,00")])
+    ocr = _write(tmp_path / "entrada" / "ocr.xlsx",
+                 [{"Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificacion/10,00": "6,00"}])
+    elsewhere = tmp_path / "otra" / "carpeta"
+    api = ExamCorrectionAPI(default_output_dir=str(tmp_path / "salida"))
+
+    api.integrate_moodle_grades(MoodleIntegrationConfig(xlsx_files=[moodle],
+                                                        output_path=str(elsewhere / "moodle_integrado.xlsx")))
+    api.integrate_ocr_grades(OCRIntegrationConfig(general_xlsx_path=moodle, ocr_xlsx_path=ocr,
+                                                  output_path=str(elsewhere / "teoria.xlsx")))
+    api.merge_enrollment_sources(EnrollmentMergeConfig(source_paths=[moodle], output_path="matricula.xlsx"))
+
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["moodle_integrado.xlsx", "teoria.xlsx"]
+    assert sorted(p.name for p in (tmp_path / "salida").iterdir()) == ["matricula.xlsx"]  # relative: as before
+    outputs = api.session.results_summary["integrate_ocr_grades"]["outputs"]
+    assert outputs["output_path"] == str(elsewhere / "teoria.xlsx")
