@@ -162,3 +162,40 @@ def test_unreadable_bank_when_listing_topics_shows_an_error(app, tmp_path):
     """GUI-5: un banco inexistente o bloqueado por Excel solo daba un error en la consola."""
     assert app._read_bank_with_topics(str(tmp_path / "no_existe.xlsx")) is None
     assert [kind for kind, _title, _message in app.shown_messages] == ["error"]
+
+
+def test_only_one_grading_job_runs_at_a_time(app):
+    """GUI-3: dos clics seguidos lanzaban dos correcciones a la vez sobre la misma carpeta."""
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+    steps = []
+
+    def slow_job():
+        started.set()
+        release.wait(timeout=10)
+        return "hecho"
+
+    def drive():
+        # Runs inside mainloop: the worker thread can only talk to Tk while it is running.
+        if not steps:
+            app._grad_run_async("Trabajando", slow_job)
+            steps.append("first")
+        elif steps == ["first"] and started.is_set():
+            app._grad_run_async("Otra vez", lambda: "no debería ejecutarse")
+            steps.append("second")
+            release.set()
+        elif steps == ["first", "second"] and not app._grad_job_running:
+            app.root.quit()
+            return
+        app.root.after(20, drive)
+
+    app.root.after(0, drive)
+    watchdog = app.root.after(15000, app.root.quit)  # never hang the test run
+    app.root.mainloop()
+    app.root.after_cancel(watchdog)
+
+    assert steps == ["first", "second"]
+    assert [kind for kind, _title, _message in app.shown_messages].count("warning") == 1
+    assert ("info", "Corrección", "hecho") in app.shown_messages
+    assert not app._grad_job_running

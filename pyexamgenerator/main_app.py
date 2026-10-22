@@ -743,6 +743,9 @@ class ExamApp:
         - a string (success info), or
         - a dict like {"info": "...", "warnings": ["...", ...]}.
         """
+        if not self._grad_try_start_job():
+            return
+
         def worker():
             try:
                 self.root.after(0, lambda: self.update_status(status_msg))
@@ -770,8 +773,26 @@ class ExamApp:
                 err = str(exc)
                 self.root.after(0, lambda: self.update_status("Error en la corrección."))
                 self.root.after(0, lambda e=err: messagebox.showerror("Error", e))
+            finally:
+                self.root.after(0, self._grad_finish_job)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _grad_try_start_job(self) -> bool:
+        """Marks a grading job as running; returns False (with a warning) if one is already running.
+
+        Two jobs at once wrote into the same output folder, including '_intermedios', which one of
+        them deletes while the other is still using it.
+        """
+        if getattr(self, "_grad_job_running", False):
+            messagebox.showwarning("Corrección en curso",
+                                   "Ya hay una tarea de corrección en marcha. Espera a que termine.")
+            return False
+        self._grad_job_running = True
+        return True
+
+    def _grad_finish_job(self) -> None:
+        self._grad_job_running = False
 
     def _grad_api(self):
         from pyexamgenerator.grading import ExamCorrectionAPI
@@ -1565,7 +1586,11 @@ class ExamApp:
                 err = str(exc)
                 self.root.after(0, lambda: self.update_status("Error en la corrección."))
                 self.root.after(0, lambda: messagebox.showerror("Error", err))
+            finally:
+                self.root.after(0, self._grad_finish_job)
 
+        if not self._grad_try_start_job():
+            return
         threading.Thread(target=worker, daemon=True).start()
 
     def toggle_pages_per_chunk_entry(self):
