@@ -167,7 +167,7 @@ class AnswerSheetExtractor:
             out = self.ocr(image_bgr)
             if out is None or out.boxes is None:
                 return []
-            return [[box, txt, score] for box, txt, score in zip(out.boxes, out.txts, out.scores)]
+            return [[box, txt, score] for box, txt, score in zip(out.boxes, out.txts, out.scores, strict=True)]
 
         result, _ = self.ocr(image_gray)
         return list(result) if result else []

@@ -79,7 +79,7 @@ def test_ocr_grade_replacing_a_moodle_grade_is_reported(tmp_path):
     students = [("111", "Ana", "Gil"), ("222", "Leo", "Ruiz"), ("333", "Eva", "Sanz")]
     general = [
         {"Número de ID": i, "Nombre": n, "Apellido(s)": a, quiz: grade}
-        for (i, n, a), grade in zip(students, ["7,00", "-", "6,00"])
+        for (i, n, a), grade in zip(students, ["7,00", "-", "6,00"], strict=True)
     ]
     ocr = [
         {
@@ -90,12 +90,12 @@ def test_ocr_grade_replacing_a_moodle_grade_is_reported(tmp_path):
             "Apellido(s)": a,
             "Calificacion/10,00": grade,
         }
-        for (i, n, a), grade in zip(students, ["5,00", "6,00", "6,00"])
+        for (i, n, a), grade in zip(students, ["5,00", "6,00", "6,00"], strict=True)
     ]
 
     integrator, result = _integrate(tmp_path, general, ocr)
 
-    grades = dict(zip(result["Nombre"], result["Calificación/10,00"]))
+    grades = dict(zip(result["Nombre"], result["Calificación/10,00"], strict=True))
     assert grades == {"Ana": pytest.approx(5.0), "Leo": pytest.approx(6.0), "Eva": pytest.approx(6.0)}
     incidents = integrator.last_integration_incidents_df
     assert list(incidents["Tipo"]) == ["OVERWRITTEN_GRADE"]

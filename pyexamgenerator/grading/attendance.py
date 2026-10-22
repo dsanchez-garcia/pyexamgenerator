@@ -717,7 +717,7 @@ class AbsenceJustificationManager:
             topic_best_score: Dict[str, float] = {}
             expected_topics = sorted({t for _, _, _, t, _ in session_columns if t})
 
-            for col, class_label, session_col_name, topic, group in session_columns:
+            for col, class_label, session_col_name, topic, _group in session_columns:
                 att_value = arow.get(col, "")
                 attended_by_topic = bool(topic) and topic_has_presence.get(topic, False)
 

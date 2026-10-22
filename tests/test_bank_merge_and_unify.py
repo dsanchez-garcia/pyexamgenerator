@@ -2,6 +2,7 @@
 duplicado por enunciado o por enunciado y respuestas."""
 
 import pandas as pd
+import pytest
 
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 
@@ -50,6 +51,24 @@ def test_question_bank_manager_add_only_acceptable_is_case_insensitive(tmp_path)
     assert added_count == 1
     assert updated_df is not None
     assert len(updated_df) == 1
+
+
+def test_duplicate_check_columns_none_uses_the_default_columns(tmp_path):
+    """DEV-1 (bugbear B006): el valor por defecto era una lista mutable, y pasar None explícitamente
+    fallaba con TypeError; ahora None significa las columnas por defecto (enunciado y respuestas)."""
+    existing_path = tmp_path / "existing.xlsx"
+    reviewed_path = tmp_path / "reviewed.xlsx"
+    pd.DataFrame([_q("P1", "A", "B", "C", "D")]).to_excel(existing_path, index=False)
+    pd.DataFrame([_q("P1", "A", "B", "C", "D"), _q("P2", "A", "B", "C", "D")]).to_excel(reviewed_path, index=False)
+
+    added_count, updated_df = QuestionBankManager().add_questions_without_duplicates(
+        existing_bank_path=str(existing_path),
+        reviewed_questions_path=str(reviewed_path),
+        duplicate_check_columns=None,
+    )
+
+    assert added_count == 1
+    assert updated_df["Pregunta"].tolist() == ["P1", "P2"]
 
 
 def test_unify_banks_statement_only_dedups_by_statement(tmp_path):
@@ -127,8 +146,5 @@ def test_unify_three_banks_with_gui_alias_and_normalization(tmp_path):
 
 def test_unify_banks_requires_paths():
     manager = QuestionBankManager()
-    try:
+    with pytest.raises(ValueError):
         manager.unify_question_banks([])
-        assert False, "Debe lanzar ValueError con lista vacía"
-    except ValueError:
-        pass
