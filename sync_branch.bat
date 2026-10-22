@@ -17,7 +17,18 @@ echo ==========================================================
 echo Sincronizando rama: %BRANCH_NAME% en la raiz
 echo ==========================================================
 
-:: 1. Limpieza de archivos basura (sin borrar este script)
+:: 1. Limpieza de archivos no versionados (sin borrar este script). git clean los borra de forma
+::    definitiva (no toca los ignorados por .gitignore): primero se listan y se pide confirmacion.
+echo Archivos no versionados que se eliminarian:
+git clean -nd -e "%SCRIPT_NAME%"
+if errorlevel 1 goto :error
+set "CONFIRM="
+set /p "CONFIRM=Eliminarlos y continuar? (s/N): "
+if /I not "%CONFIRM%"=="s" (
+    echo Operacion cancelada. No se ha modificado nada.
+    pause
+    exit /b 1
+)
 git clean -fd -e "%SCRIPT_NAME%"
 if errorlevel 1 goto :error
 
