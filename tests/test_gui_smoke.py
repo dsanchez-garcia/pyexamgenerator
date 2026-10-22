@@ -500,6 +500,52 @@ def test_mouse_wheel_scrolls_tables_and_text_boxes_inside_the_tabs(app):
     assert app.pdf_entry.bind("<MouseWheel>") != ""
 
 
+def _page_widgets(widget, self_scrolling):
+    """The widgets under ``widget`` that should scroll the page: not tables, text boxes or their content."""
+    for child in widget.winfo_children():
+        if isinstance(child, self_scrolling):
+            continue
+        yield child
+        yield from _page_widgets(child, self_scrolling)
+
+
+def test_mouse_wheel_scrolls_every_tab_from_any_field(app):
+    """ARC-2: cada pestaña montaba su propio scroll; en «Generar Exámenes» y «Corregir Exámenes» la
+    rueda solo movía la página sobre el fondo, no con el ratón encima de un campo o una etiqueta."""
+    for tab_id in app.notebook.tabs():
+        name = app.notebook.tab(tab_id, "text")
+        tab = app.root.nametowidget(tab_id)
+        page = next(w for w in tab.winfo_children() if isinstance(w, tk.Canvas))
+        widgets = [page, *_page_widgets(page, app._SELF_SCROLLING_WIDGETS)]
+        assert any(isinstance(w, ttk.Entry) for w in widgets), name
+        for event in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            unbound = [str(w) for w in widgets if not w.bind(event)]
+            assert not unbound, f"{name} {event}: {unbound[:3]}"
+
+
+def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch):
+    """ARC-2: guardar y cargar repetían a mano la lista de campos; un campo nuevo podía quedarse fuera."""
+    monkeypatch.delenv("APPDATA", raising=False)  # template next to the CWD (tmp_path)
+    values = [
+        (app.subject, "Física"), (app.num_exams, "3"), (app.penalty, "-1/3"), (app.font_size, "12"),
+        (app.export_moodle, True), (app.usage_alert_threshold_var, "4"),
+        (app.grad_enrollment_var, "matricula.xlsx"), (app.grad_quizzes_var, "cuestionarios.xlsx"),
+        (app.grad_cmp_new_var, "nuevo.xlsx"), (app.grad_id_col_var, "DNI"), (app.grad_append_unmatched_var, False),
+    ]
+    for var, value in values:
+        var.set(value)
+    app.grad_session_path_var.set(str(tmp_path / "sesion.json"))
+
+    app.save_exam_tab_template()
+    app.save_grading_session()
+    for var, value in values:
+        var.set((not value) if isinstance(value, bool) else "")
+    app.load_exam_tab_template()
+    app.load_grading_session()
+
+    assert [var.get() for var, _ in values] == [value for _, value in values]
+
+
 def test_exam_tab_starts_without_sample_values(app):
     """GUI-10: «Asignatura de Prueba», «Prueba GUI»... venían rellenos y acababan en exámenes reales
     (p. ej. «Prueba GUI» como instrucciones de la hoja de respuestas y en la categoría de Moodle)."""
