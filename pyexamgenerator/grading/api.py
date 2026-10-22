@@ -574,6 +574,7 @@ class ExamCorrectionAPI:
             "blocked_unmatched",
             "blocked_missing_target",
             "blocked_missing_grade",
+            "grades_overwritten",
         ):
             if key in integration_summary:
                 summary_payload[key] = int(integration_summary.get(key, 0) or 0)

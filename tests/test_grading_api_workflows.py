@@ -291,7 +291,7 @@ def test_explicit_absolute_output_paths_are_respected(tmp_path):
     clases de trabajo)."""
     moodle = _moodle_file(tmp_path / "entrada" / "moodle.xlsx", [("111", "Ana", "Gil", "5,00")])
     ocr = _write(tmp_path / "entrada" / "ocr.xlsx",
-                 [{"Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificacion/10,00": "6,00"}])
+                 [{"Número de ID": "111", "Nombre": "Ana", "Apellido(s)": "Gil", "Calificacion/10,00": "5,00"}])
     elsewhere = tmp_path / "otra" / "carpeta"
     api = ExamCorrectionAPI(default_output_dir=str(tmp_path / "salida"))
 

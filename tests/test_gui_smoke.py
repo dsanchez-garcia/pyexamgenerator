@@ -506,3 +506,15 @@ def test_exam_list_shows_usage_columns_through_the_public_api(app, monkeypatch):
 
     values = [app.update_exams_tree.item(item, "values") for item in app.update_exams_tree.get_children()]
     assert values == [("examen_Evaluación_1A_completo.xlsx", "Evaluación 1", "Evaluacion_1_uso")]
+
+
+def test_integration_warnings_mention_overwritten_grades():
+    """GRD-12: la GUI avisa cuando la nota OCR sustituye a una nota que ya existía."""
+    from pyexamgenerator.main_app import ExamApp
+
+    warnings = ExamApp._grad_integration_warnings(
+        {"blocked_unmatched": 1, "grades_overwritten": 2}, "incidencias_integracion_ocr.xlsx")
+
+    assert len(warnings) == 2
+    assert "Alumno no encontrado en teoría: 1" in warnings[0]
+    assert "2 alumno(s)" in warnings[1] and "incidencias_integracion_ocr.xlsx" in warnings[1]

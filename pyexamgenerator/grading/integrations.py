@@ -514,6 +514,7 @@ class OcrGradeIntegrator:
             "blocked_unmatched": 0,
             "blocked_missing_target": 0,
             "blocked_missing_grade": 0,
+            "grades_overwritten": 0,
         }
 
     @staticmethod
@@ -555,6 +556,40 @@ class OcrGradeIntegrator:
             "Apellido_OCR": "" if ocr_last_name_col is None else self._clean_text(ocr_row.get(ocr_last_name_col, "")),
             "Tipo_Examen": "" if ocr_exam_type_col is None else self._clean_text(ocr_row.get(ocr_exam_type_col, "")),
         }
+
+    @classmethod
+    def _grade_change(cls, column: str, previous, new) -> Optional[Tuple[str, float, float]]:
+        """``(column, previous, new)`` when ``new`` replaces a different grade already there."""
+        old_grade, new_grade = cls._to_float_grade(previous), cls._to_float_grade(new)
+        if pd.isna(old_grade) or pd.isna(new_grade) or abs(float(old_grade) - float(new_grade)) < 1e-9:
+            return None
+        return column, float(old_grade), float(new_grade)
+
+    def _overwritten_grade_incident(
+        self,
+        changes: List[Tuple[str, float, float]],
+        ocr_row: pd.Series,
+        row_index: int,
+        **incident_cols,
+    ) -> Optional[Dict[str, str]]:
+        """One incident per OCR row whose grades replaced different grades that were already there.
+
+        The OCR grade is still applied, but it is reported: the student may also have taken the
+        exam in Moodle, or the sheet may belong to someone else.
+        """
+        if not changes:
+            return None
+
+        def fmt(value: float) -> str:
+            return f"{value:.2f}".replace(".", ",")
+
+        shown = ", ".join(f"'{col}': {fmt(old)} -> {fmt(new)}" for col, old, new in changes[:3])
+        more = f" y {len(changes) - 3} más" if len(changes) > 3 else ""
+        detail = (f"La nota OCR sustituye a una nota distinta que ya existía ({shown}{more}); "
+                  "comprueba que la hoja es de este alumno.")
+        return self._build_integration_incident(
+            ocr_row, row_index, "OVERWRITTEN_GRADE", detail, severity="media", **incident_cols,
+        )
 
     def _set_last_integration_report(self, summary: Dict[str, int], incidents: List[Dict[str, str]]) -> None:
         self.last_integration_summary = {str(k): int(v) for k, v in summary.items()}
@@ -858,6 +893,20 @@ class OcrGradeIntegrator:
                     )
                 )
                 continue
+            change = self._grade_change(target_col, out_df.at[target_idx, target_col], grade_value)
+            overwritten = self._overwritten_grade_incident(
+                [change] if change else [],
+                ocr_row,
+                int(ocr_index),
+                ocr_id_col=ocr_id_col,
+                ocr_first_name_col=ocr_first_name_col,
+                ocr_last_name_col=ocr_last_name_col,
+                ocr_exam_type_col=exam_type_col,
+                ocr_image_col=ocr_image_col,
+            )
+            if overwritten is not None:
+                summary["grades_overwritten"] += 1
+                incidents.append(overwritten)
             out_df.at[target_idx, target_col] = grade_value
             summary["rows_updated"] += 1
 
@@ -1037,12 +1086,16 @@ class OcrGradeIntegrator:
 
             summary["rows_matched"] += 1
             row_updated = False
+            overwritten_grades: List[Tuple[str, float, float]] = []
 
             for c in shared_cols:
                 value = ocr_row.get(c, "")
                 if not self._is_empty(value):
                     if c in grade_cols_set:
                         value = self._to_float_grade(value)
+                        change = self._grade_change(c, out_df.at[target_idx, c], value)
+                        if change:
+                            overwritten_grades.append(change)
                     out_df.at[target_idx, c] = value
                     row_updated = True
 
@@ -1054,9 +1107,27 @@ class OcrGradeIntegrator:
                     if self._normalize(ocr_col) == norm_general:
                         value = ocr_row.get(ocr_col, "")
                         if not self._is_empty(value):
-                            out_df.at[target_idx, general_col] = self._to_float_grade(value)
+                            new_grade = self._to_float_grade(value)
+                            change = self._grade_change(general_col, out_df.at[target_idx, general_col], new_grade)
+                            if change:
+                                overwritten_grades.append(change)
+                            out_df.at[target_idx, general_col] = new_grade
                             row_updated = True
                         break
+
+            overwritten = self._overwritten_grade_incident(
+                overwritten_grades,
+                ocr_row,
+                int(ocr_index),
+                ocr_id_col=ocr_id_col,
+                ocr_first_name_col=ocr_first_name_col,
+                ocr_last_name_col=ocr_last_name_col,
+                ocr_exam_type_col=ocr_exam_type_col,
+                ocr_image_col=ocr_image_col,
+            )
+            if overwritten is not None:
+                summary["grades_overwritten"] += 1
+                incidents.append(overwritten)
 
             if general_group_col and ocr_group_col:
                 group_value = ocr_row.get(ocr_group_col, "")

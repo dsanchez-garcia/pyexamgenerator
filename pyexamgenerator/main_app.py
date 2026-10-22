@@ -942,6 +942,13 @@ class ExamApp:
                 + "\n".join(parts)
                 + f"\nRevisa: {incidents_path}"
             )
+        overwritten = int(summary.get("grades_overwritten", 0) or 0)
+        if overwritten > 0:
+            warning_msgs.append(
+                f"La nota OCR sustituyó a una nota distinta que ya había en teoría en {overwritten} alumno(s); "
+                "comprueba que cada hoja es de ese alumno.\n"
+                f"Revisa: {incidents_path}"
+            )
         return warning_msgs
 
     @staticmethod
