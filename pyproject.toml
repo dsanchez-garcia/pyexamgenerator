@@ -34,7 +34,9 @@ classifiers = [
 ]
 dependencies = [
     "google-genai",
-    "PyPDF2",
+    # Successor of the abandoned PyPDF2; 6.21.2 fixes the security advisories known in October 2026
+    # (long runtimes or memory use when opening a malformed PDF).
+    "pypdf>=6.21.2",
     "python-docx",
     "pandas",
     "openpyxl",

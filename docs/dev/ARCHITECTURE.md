@@ -35,7 +35,7 @@ Las reglas de trabajo están en [`AGENTS.md`](../../AGENTS.md); la deuda técnic
 | Capa | Módulos | Depende de |
 |---|---|---|
 | GUI | `main_app.py` (`ExamApp`), `gui_logic.py` (sin tkinter), `tooltip.py` | tkinter + toda la librería |
-| Generación | `question_generator.py`, `question_bank_manager.py`, `exam_generator.py` | pandas, python-docx, google-genai, PyPDF2, PyMuPDF |
+| Generación | `question_generator.py`, `question_bank_manager.py`, `exam_generator.py` | pandas, python-docx, google-genai, pypdf, PyMuPDF |
 | Corrección | `grading/*` | pandas; OCR opcional (cv2, rapidocr) solo en `grading/extraction.py` |
 
 La librería nunca importa `tkinter`. La GUI llama a la librería directamente desde los manejadores de
@@ -47,7 +47,7 @@ los botones.
 
 - Envuelve `google.genai.Client`.
 - `generate_multiple_choice_questions(pdf_paths, prompt_type, ...)`: lee cada PDF como texto
-  (PyPDF2) o como imágenes (PyMuPDF, `input_mode='image'`), lo trocea opcionalmente
+  (pypdf) o como imágenes (PyMuPDF, `input_mode='image'`), lo trocea opcionalmente
   (`chunking_mode='pages'|'text_length'`, `pages_per_chunk`, `total_chunks`), construye el prompt
   (`_build_prompt`), llama a Gemini, analiza la respuesta (`_analyze_gemini_response`) y descarta
   preguntas demasiado parecidas a un banco existente (similitud de Jaccard).

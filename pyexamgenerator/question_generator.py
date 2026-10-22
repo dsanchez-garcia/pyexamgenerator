@@ -16,7 +16,7 @@
 
 from google import genai
 from google.genai import types # Opcional, útil para tipado, pero no estricto
-import PyPDF2
+from pypdf import PdfReader
 import ast
 import json
 import re
@@ -168,7 +168,7 @@ class QuestionGenerator:
         """
         try:
             with open(pdf_path, 'rb') as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                pdf_reader = PdfReader(pdf_file)
                 page_texts = [page.extract_text() for page in pdf_reader.pages]
                 full_text = "".join(page_texts)
             return page_texts, full_text
