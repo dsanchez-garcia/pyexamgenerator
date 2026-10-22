@@ -8,8 +8,6 @@ overwrite the previous ones (optionally adding students that only appear in the 
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -17,44 +15,15 @@ from typing import Any, Dict, List, Optional, Sequence
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
-
-
-def _normalize(text: Any) -> str:
-    text = str(text).strip().lower()
-    text = "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
-    return re.sub(r"[^a-z0-9]", "", text)
-
-
-def _find_column(columns: Sequence[str], candidates: Sequence[str]) -> Optional[str]:
-    col_map = {_normalize(c): c for c in columns}
-    for candidate in candidates:
-        key = _normalize(candidate)
-        if key in col_map:
-            return col_map[key]
-    return None
-
-
-def _clean(value: Any) -> str:
-    if pd.isna(value):
-        return ""
-    return str(value).strip()
-
-
-def _as_float(value: Any) -> Optional[float]:
-    if pd.isna(value):
-        return None
-    text = str(value).strip().replace(",", ".")
-    if re.fullmatch(r"[-+]?\d+(\.\d+)?", text):
-        return float(text)
-    return None
+from pyexamgenerator.grading._text import clean_text, find_column, normalize_key, parse_decimal
 
 
 def _values_differ(old: Any, new: Any) -> bool:
     """True if two cell values differ, comparing numerically when both look like numbers."""
-    old_f, new_f = _as_float(old), _as_float(new)
+    old_f, new_f = parse_decimal(old), parse_decimal(new)
     if old_f is not None and new_f is not None:
         return abs(old_f - new_f) > 1e-9
-    return _clean(old) != _clean(new)
+    return clean_text(old) != clean_text(new)
 
 
 _ID_CANDIDATES = ["Número de ID", "Numero de ID", "Nmero de ID", "ID", "Nombre de usuario", "DNI"]
@@ -98,9 +67,9 @@ class ResultComparator:
         self.last_name_col = last_name_col
 
     def _resolve_keys(self, columns: Sequence[str]):
-        id_col = self.id_col if (self.id_col and self.id_col in columns) else _find_column(columns, _ID_CANDIDATES)
-        first_col = self.first_name_col if (self.first_name_col and self.first_name_col in columns) else _find_column(columns, _FIRST_CANDIDATES)
-        last_col = self.last_name_col if (self.last_name_col and self.last_name_col in columns) else _find_column(columns, _LAST_CANDIDATES)
+        id_col = self.id_col if (self.id_col and self.id_col in columns) else find_column(columns, _ID_CANDIDATES)
+        first_col = self.first_name_col if (self.first_name_col and self.first_name_col in columns) else find_column(columns, _FIRST_CANDIDATES)
+        last_col = self.last_name_col if (self.last_name_col and self.last_name_col in columns) else find_column(columns, _LAST_CANDIDATES)
         return id_col, first_col, last_col
 
     @staticmethod
@@ -108,8 +77,8 @@ class ResultComparator:
         ident = normalize_id(row.get(id_col, "")) if id_col else ""
         if ident:
             return f"id::{ident}"
-        first = _normalize(row.get(first_col, "")) if first_col else ""
-        last = _normalize(row.get(last_col, "")) if last_col else ""
+        first = normalize_key(row.get(first_col, "")) if first_col else ""
+        last = normalize_key(row.get(last_col, "")) if last_col else ""
         key = f"name::{first}::{last}"
         return "" if key == "name::::" else key
 
@@ -117,8 +86,8 @@ class ResultComparator:
     def _identity_fields(row: pd.Series, id_col, first_col, last_col) -> Dict[str, str]:
         return {
             "Número de ID": normalize_id(row.get(id_col, "")) if id_col else "",
-            "Nombre": _clean(row.get(first_col, "")) if first_col else "",
-            "Apellido(s)": _clean(row.get(last_col, "")) if last_col else "",
+            "Nombre": clean_text(row.get(first_col, "")) if first_col else "",
+            "Apellido(s)": clean_text(row.get(last_col, "")) if last_col else "",
         }
 
     def compare(
@@ -147,12 +116,12 @@ class ResultComparator:
         n_id, n_first, n_last = self._resolve_keys(new_cols)
 
         identity_cols = set(filter(None, [
-            e_id, e_first, e_last, _find_column(existing_cols, _EMAIL_CANDIDATES),
+            e_id, e_first, e_last, find_column(existing_cols, _EMAIL_CANDIDATES),
         ]))
         if value_cols:
             resolved_value_cols = []
             for col in value_cols:
-                actual = col if col in existing.columns or col in new.columns else _find_column(existing_cols, [col]) or _find_column(new_cols, [col])
+                actual = col if col in existing.columns or col in new.columns else find_column(existing_cols, [col]) or find_column(new_cols, [col])
                 if actual:
                     resolved_value_cols.append(actual)
             value_columns = resolved_value_cols
@@ -190,8 +159,8 @@ class ResultComparator:
                     record = self._identity_fields(existing_row, e_id, e_first, e_last)
                     record.update({
                         "Columna": col,
-                        "Valor_Anterior": _clean(old_value),
-                        "Valor_Nuevo": _clean(new_value),
+                        "Valor_Anterior": clean_text(old_value),
+                        "Valor_Nuevo": clean_text(new_value),
                     })
                     changes.append(record)
 
@@ -215,7 +184,7 @@ class ResultComparator:
                 new_row = new.loc[new_index[key]]
                 for col in value_columns:
                     # An empty cell in the new file means "no value", not "delete the previous one".
-                    if col in new.columns and _clean(new_row.get(col)) != "":
+                    if col in new.columns and clean_text(new_row.get(col)) != "":
                         merged_df.at[existing_index[key], col] = new_row.get(col)
             if add_new_rows and only_new:
                 extra = new.loc[[new_index[k] for k in sorted(only_new)]]

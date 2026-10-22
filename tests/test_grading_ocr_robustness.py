@@ -4,6 +4,8 @@ Necesitan el extra `[grading]` (cv2/rapidocr) solo para importar el módulo; los
 construyen con `__new__` y un extractor simulado, así que no se cargan modelos de OCR.
 """
 
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -191,3 +193,15 @@ def test_interactive_review_without_a_terminal_needs_a_callback(tmp_path, monkey
             image_paths=[], output_answers="respuestas.xlsx", output_grades="calificaciones.xlsx",
             output_dir=str(tmp_path), interactive_review=True,
         )
+
+
+def test_running_the_module_starts_only_the_grading_command():
+    """ARC-5: el módulo une dos ficheros antiguos y al ejecutarlo corrían sus dos `main` seguidos."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pyexamgenerator.grading.extraction", "--help"],
+        capture_output=True, text=True, timeout=300, cwd=Path(__file__).resolve().parents[1],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--xmls" in result.stdout
+    assert "Desktop" not in result.stdout  # the temporary copies left the Desktop (SEC-4)

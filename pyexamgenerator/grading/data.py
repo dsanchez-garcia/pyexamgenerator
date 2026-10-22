@@ -3,11 +3,12 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Callable, Dict, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, Optional, Sequence, Tuple
 
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
+from pyexamgenerator.grading._text import clean_text, find_column, normalize_key
 
 
 QuestionMap = Dict[str, Dict[str, float]]
@@ -135,38 +136,11 @@ class SharedExamDataStore:
     load_respuestas_excel = load_answers_excel
 
 
-
-
 # Enrollment merge utilities
-
-import unicodedata
-from typing import Dict, Iterable
-
-
-
-def _normalize(text: str) -> str:
-    text = str(text).strip().lower()
-    text = "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
-    return re.sub(r"[^a-z0-9]", "", text)
-
-
-def _find_column(columns: Sequence[str], candidates: Sequence[str]) -> Optional[str]:
-    col_map = {_normalize(c): c for c in columns}
-    for cand in candidates:
-        key = _normalize(cand)
-        if key in col_map:
-            return col_map[key]
-    return None
-
-
-def _clean_text(value) -> str:
-    if pd.isna(value):
-        return ""
-    return str(value).strip()
 
 
 def _is_subgroup_selected(value: str) -> bool:
-    text = _normalize(value)
+    text = normalize_key(value)
     return text not in {"", "sincontestaraun", "sincontestar"}
 
 
@@ -184,8 +158,8 @@ def _identity_key(row: pd.Series, id_col: Optional[str], name_col: Optional[str]
     if student_id:
         return f"id::{student_id}"
 
-    first_name = _normalize(_clean_text(row.get(name_col, ""))) if name_col else ""
-    last_name = _normalize(_clean_text(row.get(last_name_col, ""))) if last_name_col else ""
+    first_name = normalize_key(clean_text(row.get(name_col, ""))) if name_col else ""
+    last_name = normalize_key(clean_text(row.get(last_name_col, ""))) if last_name_col else ""
     return f"name::{first_name}::{last_name}"
 
 
@@ -232,11 +206,11 @@ class EnrollmentMerger:
             self.source_dfs.append(df)
             columns = list(df.columns)
 
-            last_name_col = _find_column(columns, ["Apellido(s)", "Apellidos", "Apellido"])
-            first_name_col = _find_column(columns, ["Nombre"])
-            id_col = _find_column(columns, ["Número de ID", "Nmero de ID", "ID", "DNI"])
-            email_col = _find_column(columns, ["Dirección de correo", "Direccin de correo", "Email", "Correo"])
-            subgroup_col = _find_column(columns, ["Consulta", "Subgrupo", "Grupo", "Grupo prácticas"])
+            last_name_col = find_column(columns, ["Apellido(s)", "Apellidos", "Apellido"])
+            first_name_col = find_column(columns, ["Nombre"])
+            id_col = find_column(columns, ["Número de ID", "Nmero de ID", "ID", "DNI"])
+            email_col = find_column(columns, ["Dirección de correo", "Direccin de correo", "Email", "Correo"])
+            subgroup_col = find_column(columns, ["Consulta", "Subgrupo", "Grupo", "Grupo prácticas"])
             source_group = _detect_macro_group(path)
 
             for _, row in df.iterrows():
@@ -261,15 +235,15 @@ class EnrollmentMerger:
                 )
 
                 if not merged["Apellido(s)"] and last_name_col:
-                    merged["Apellido(s)"] = _clean_text(row.get(last_name_col, ""))
+                    merged["Apellido(s)"] = clean_text(row.get(last_name_col, ""))
                 if not merged["Nombre"] and first_name_col:
-                    merged["Nombre"] = _clean_text(row.get(first_name_col, ""))
+                    merged["Nombre"] = clean_text(row.get(first_name_col, ""))
                 if not merged["Número de ID"] and id_col:
                     merged["Número de ID"] = normalize_id(row.get(id_col, ""))
                 if not merged["Dirección de correo"] and email_col:
-                    merged["Dirección de correo"] = _clean_text(row.get(email_col, ""))
+                    merged["Dirección de correo"] = clean_text(row.get(email_col, ""))
 
-                subgroup_value = _clean_text(row.get(subgroup_col, "")) if subgroup_col else ""
+                subgroup_value = clean_text(row.get(subgroup_col, "")) if subgroup_col else ""
                 if _is_subgroup_selected(subgroup_value):
                     detected = [s for s in merged["Subgrupos_Detectados"].split(";") if s]
                     if subgroup_value not in detected:

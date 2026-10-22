@@ -104,8 +104,16 @@ mantengan los tests en verde, sin mezclar cambios funcionales.
 | `dist_build_package.bat` | borra `dist/`, `build/`, `*.egg-info` y ejecuta `python -m build` | sí, si se pide |
 | `dist_build_docs.bat` | regenera `docs/source/api/` y compila HTML | sí (acaba en `PAUSE`) |
 | `dist_upload_test.bat` / `dist_upload.bat` | suben a TestPyPI / PyPI | **no** sin orden explícita |
-| `install_current_version.bat` | `pip install` del código actual; `--add-path` modifica el PATH | **no** sin orden explícita |
+| `install_current_version.bat` | `pip install` del código actual; `--add-path` añade la carpeta `Scripts` al PATH de usuario con `add_user_path.ps1` | **no** sin orden explícita (`--dry-run` no cambia nada) |
 | `sync_branch.bat` | lista y, tras confirmar, borra lo no versionado (`git clean -fd`); checkout + pull | **no** sin orden explícita |
 
 Los scripts terminan con `PAUSE`: en un entorno no interactivo, ejecuta los comandos equivalentes
 directamente en lugar del `.bat`.
+
+`add_user_path.ps1` sustituye a `setx Path`, que trunca el PATH a 1.024 caracteres: conserva el
+resto del PATH de usuario tal cual (también las entradas con `%USERPROFILE%`) y no toca el del
+sistema. Con `-WhatIf` solo informa de lo que haría.
+
+En Linux/macOS no hay equivalentes de los `.bat`: usa los comandos directamente
+(`python -m pip install .`, `python -m build`, `python -m twine upload dist/*`…). `pip` indica la
+carpeta de los ejecutables si no está en el PATH (habitualmente `~/.local/bin`).

@@ -509,6 +509,29 @@ class ExamApp:
         """
         self.status_text.set(message)
 
+    def _create_scrollable_tab(self, title: str, fill_width: bool = False) -> Tuple[tk.Canvas, ttk.Frame]:
+        """Adds a notebook tab whose page scrolls vertically and returns ``(canvas, page_frame)``.
+
+        Build the tab inside ``page_frame`` and, once all its widgets exist, call
+        :meth:`_bind_page_scroll` with ``canvas`` so the mouse wheel scrolls the page from any of
+        them. With ``fill_width`` the page follows the width of the window.
+        """
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text=title)
+
+        canvas = tk.Canvas(tab)
+        scrollbar = ttk.Scrollbar(tab, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        page = ttk.Frame(canvas)
+        page.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        window_id = canvas.create_window((0, 0), window=page, anchor="nw")
+        if fill_width:
+            canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window_id, width=e.width))
+        return canvas, page
+
     # Widgets that scroll their own content with the mouse wheel.
     _SELF_SCROLLING_WIDGETS = (tk.Text, tk.Listbox, tk.Canvas, ttk.Treeview, tk.Scrollbar, ttk.Scrollbar)
 
@@ -611,19 +634,7 @@ class ExamApp:
         asistencia + justificaciones (opcional), integrar notas, punto extra, nota final ponderada y
         sesión (guardar/cargar). Se mantiene además un botón de 'Pipeline completo'.
         """
-        grading_tab = ttk.Frame(self.notebook)
-        self.notebook.add(grading_tab, text='Corregir Exámenes')
-
-        canvas = tk.Canvas(grading_tab)
-        scrollbar = ttk.Scrollbar(grading_tab, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        inner = ttk.Frame(canvas)
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=inner, anchor="nw")
-        inner.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        canvas, inner = self._create_scrollable_tab('Corregir Exámenes')
 
         intro = ttk.Label(
             inner,
@@ -840,6 +851,8 @@ class ExamApp:
         run_btn = ttk.Button(inner, text="Pipeline completo (todo de una pasada)", command=self.run_grading)
         run_btn.pack(pady=12)
 
+        self._bind_page_scroll(canvas, canvas)
+
     def _grad_pick(self, var: tk.StringVar, multiple: bool = False, directory: bool = False) -> None:
         """Abre el diálogo adecuado y guarda la(s) ruta(s) en `var` (varias separadas por ';')."""
         if directory:
@@ -984,17 +997,21 @@ class ExamApp:
         except Exception:
             pass
 
-    def _grad_columns(self) -> dict:
+    def _grad_column_fields(self) -> Dict[str, Tuple[tk.StringVar, str]]:
+        """Column-name fields of the grading tab: key -> (variable, column used when it is empty)."""
         return {
-            "id_col": self.grad_id_col_var.get().strip() or "Número de ID",
-            "first_name_col": self.grad_first_col_var.get().strip() or "Nombre",
-            "last_name_col": self.grad_last_col_var.get().strip() or "Apellido(s)",
-            "email_col": self.grad_email_col_var.get().strip() or "Dirección de correo",
-            "total_grade_col": self.grad_total_col_var.get().strip() or "Calificación/10,00",
-            "sender_col": self.grad_sender_col_var.get().strip() or "REMITENTE",
-            "subject_col": self.grad_subject_col_var.get().strip() or "ASUNTO",
-            "message_col": self.grad_message_col_var.get().strip() or "MENSAJE",
+            "id_col": (self.grad_id_col_var, "Número de ID"),
+            "first_name_col": (self.grad_first_col_var, "Nombre"),
+            "last_name_col": (self.grad_last_col_var, "Apellido(s)"),
+            "email_col": (self.grad_email_col_var, "Dirección de correo"),
+            "total_grade_col": (self.grad_total_col_var, "Calificación/10,00"),
+            "sender_col": (self.grad_sender_col_var, "REMITENTE"),
+            "subject_col": (self.grad_subject_col_var, "ASUNTO"),
+            "message_col": (self.grad_message_col_var, "MENSAJE"),
         }
+
+    def _grad_columns(self) -> dict:
+        return {key: var.get().strip() or default for key, (var, default) in self._grad_column_fields().items()}
 
     def _grad_image_paths(self) -> List[str]:
         return [p.strip() for p in self.grad_images_var.get().split(";") if p.strip()]
@@ -1455,27 +1472,32 @@ class ExamApp:
 
         self._grad_run_async("Comparando resultados…", work)
 
-    def _grad_session_inputs(self) -> dict:
+    def _grad_session_fields(self) -> Dict[str, tk.Variable]:
+        """Fields of the grading tab saved in a session (besides the columns), by their session key."""
         return {
-            "enrollment": self.grad_enrollment_var.get(),
-            "xmls": self.grad_xmls_var.get(),
-            "images": self.grad_images_var.get(),
-            "forced_types": self.grad_forced_var.get(),
-            "answers": self.grad_answers_var.get(),
-            "theory": self.grad_theory_var.get(),
-            "attendance": self.grad_attendance_var.get(),
-            "schedule": self.grad_schedule_var.get(),
-            "justifications": self.grad_justif_var.get(),
-            "quizzes": self.grad_quizzes_var.get(),
-            "output_dir": self.grad_out_var.get(),
-            "ocr_temp_dir": self.grad_ocr_temp_dir_var.get(),
-            "schedule_sheet": self.grad_sched_sheet_var.get(),
-            "attendance_header_row": self.grad_att_header_var.get(),
-            "compare_existing": self.grad_cmp_existing_var.get(),
-            "compare_new": self.grad_cmp_new_var.get(),
-            "append_unmatched_ocr": bool(self.grad_append_unmatched_var.get()),
-            "columns": self._grad_columns(),
+            "enrollment": self.grad_enrollment_var,
+            "xmls": self.grad_xmls_var,
+            "images": self.grad_images_var,
+            "forced_types": self.grad_forced_var,
+            "answers": self.grad_answers_var,
+            "theory": self.grad_theory_var,
+            "attendance": self.grad_attendance_var,
+            "schedule": self.grad_schedule_var,
+            "justifications": self.grad_justif_var,
+            "quizzes": self.grad_quizzes_var,
+            "output_dir": self.grad_out_var,
+            "ocr_temp_dir": self.grad_ocr_temp_dir_var,
+            "schedule_sheet": self.grad_sched_sheet_var,
+            "attendance_header_row": self.grad_att_header_var,
+            "compare_existing": self.grad_cmp_existing_var,
+            "compare_new": self.grad_cmp_new_var,
         }
+
+    def _grad_session_inputs(self) -> dict:
+        inputs = {key: var.get() for key, var in self._grad_session_fields().items()}
+        inputs["append_unmatched_ocr"] = bool(self.grad_append_unmatched_var.get())
+        inputs["columns"] = self._grad_columns()
+        return inputs
 
     def save_grading_session(self) -> None:
         """Saves the current grading inputs/columns to a resumable session (.pkl + .json)."""
@@ -1526,18 +1548,7 @@ class ExamApp:
             return
 
         gi = session.grading_inputs or {}
-        setters = {
-            "enrollment": self.grad_enrollment_var, "xmls": self.grad_xmls_var,
-            "images": self.grad_images_var, "forced_types": self.grad_forced_var,
-            "answers": self.grad_answers_var,
-            "theory": self.grad_theory_var, "attendance": self.grad_attendance_var,
-            "schedule": self.grad_schedule_var, "justifications": self.grad_justif_var,
-            "quizzes": self.grad_quizzes_var, "output_dir": self.grad_out_var,
-            "ocr_temp_dir": self.grad_ocr_temp_dir_var,
-            "schedule_sheet": self.grad_sched_sheet_var, "attendance_header_row": self.grad_att_header_var,
-            "compare_existing": self.grad_cmp_existing_var, "compare_new": self.grad_cmp_new_var,
-        }
-        for key, var in setters.items():
+        for key, var in self._grad_session_fields().items():
             if gi.get(key):
                 var.set(str(gi[key]))
 
@@ -1550,13 +1561,7 @@ class ExamApp:
             self.grad_append_unmatched_var.set(parsed_bool)
 
         columns = gi.get("columns") or {}
-        col_setters = {
-            "id_col": self.grad_id_col_var, "first_name_col": self.grad_first_col_var,
-            "last_name_col": self.grad_last_col_var, "email_col": self.grad_email_col_var,
-            "total_grade_col": self.grad_total_col_var, "sender_col": self.grad_sender_col_var,
-            "subject_col": self.grad_subject_col_var, "message_col": self.grad_message_col_var,
-        }
-        for key, var in col_setters.items():
+        for key, (var, _default) in self._grad_column_fields().items():
             if columns.get(key):
                 var.set(str(columns[key]))
 
@@ -1672,19 +1677,7 @@ class ExamApp:
         """
         Creates the 'Generate Questions' tab with all its widgets.
         """
-        question_tab = ttk.Frame(self.notebook)
-        self.notebook.add(question_tab, text='Generar Preguntas')
-
-        # Canvas to enable scrolling
-        canvas_question = tk.Canvas(question_tab)
-        scrollbar_question = ttk.Scrollbar(question_tab, orient="vertical", command=canvas_question.yview)
-        canvas_question.configure(yscrollcommand=scrollbar_question.set)
-        scrollbar_question.pack(side="right", fill="y")
-        canvas_question.pack(side="left", fill="both", expand=True)
-
-        inner_frame_question = ttk.Frame(canvas_question)
-        inner_frame_question.bind("<Configure>", lambda e: canvas_question.configure(scrollregion=canvas_question.bbox("all")))
-        canvas_question.create_window((0, 0), window=inner_frame_question, anchor="nw")
+        canvas_question, inner_frame_question = self._create_scrollable_tab('Generar Preguntas')
 
         # --- Prompts and PDF section ---
         prompt_type_frame = ttk.LabelFrame(inner_frame_question, text="Seleccionar/Editar Tipo de Prompt")
@@ -2423,33 +2416,7 @@ class ExamApp:
         """
         Creates the 'Generate Exams' tab with all its widgets.
         """
-        exam_tab = ttk.Frame(self.notebook)
-        self.notebook.add(exam_tab, text='Generar Exámenes')
-
-        # Canvas to enable scrolling
-        canvas_exam = tk.Canvas(exam_tab)
-        scrollbar_exam = ttk.Scrollbar(exam_tab, orient="vertical", command=canvas_exam.yview)
-        canvas_exam.configure(yscrollcommand=scrollbar_exam.set)
-
-        scrollbar_exam.pack(side="right", fill="y")
-        canvas_exam.pack(side="left", fill="both", expand=True)
-
-        # Bind mouse wheel event to the Canvas.
-        canvas_exam.bind("<MouseWheel>", lambda event: canvas_exam.yview_scroll(int(-1 * (event.delta / 120)), "units"))
-        # For Linux:
-        canvas_exam.bind("<Button-4>", lambda event: canvas_exam.yview_scroll(-1, "units"))
-        canvas_exam.bind("<Button-5>", lambda event: canvas_exam.yview_scroll(1, "units"))
-
-        # Inner frame where we will place all the widgets
-        inner_frame_exam = ttk.Frame(canvas_exam)
-        inner_frame_exam.bind("<Configure>", lambda e: canvas_exam.configure(scrollregion=canvas_exam.bbox("all")))
-        canvas_exam.create_window((0, 0), window=inner_frame_exam, anchor="nw")
-
-        # Bind mouse wheel event to the inner_frame.
-        inner_frame_exam.bind("<MouseWheel>", lambda event: canvas_exam.yview_scroll(int(-1 * (event.delta / 120)), "units"))
-        # For Linux:
-        inner_frame_exam.bind("<Button-4>", lambda event: canvas_exam.yview_scroll(-1, "units"))
-        inner_frame_exam.bind("<Button-5>", lambda event: canvas_exam.yview_scroll(1, "units"))
+        canvas_exam, inner_frame_exam = self._create_scrollable_tab('Generar Exámenes')
 
         row = 0
         col = 0
@@ -2792,27 +2759,13 @@ class ExamApp:
         inner_frame_exam.columnconfigure(1, weight=1)
         inner_frame_exam.columnconfigure(2, weight=1)
 
+        self._bind_page_scroll(canvas_exam, canvas_exam)
+
     def create_manage_bank_tab(self):
         """
         Creates the 'Manage Question Bank' tab with all its widgets.
         """
-        manage_bank_tab = ttk.Frame(self.notebook)
-        self.notebook.add(manage_bank_tab, text='Gestionar Banco de Preguntas')
-
-        # Canvas to enable vertical scrolling in this long tab.
-        canvas_manage = tk.Canvas(manage_bank_tab)
-        scrollbar_manage = ttk.Scrollbar(manage_bank_tab, orient="vertical", command=canvas_manage.yview)
-        canvas_manage.configure(yscrollcommand=scrollbar_manage.set)
-
-        scrollbar_manage.pack(side="right", fill="y")
-        canvas_manage.pack(side="left", fill="both", expand=True)
-
-        inner_frame_manage = ttk.Frame(canvas_manage)
-        inner_frame_manage.bind("<Configure>", lambda e: canvas_manage.configure(scrollregion=canvas_manage.bbox("all")))
-        manage_window_id = canvas_manage.create_window((0, 0), window=inner_frame_manage, anchor="nw")
-
-        # Keep the inner frame width synced with the visible canvas width.
-        canvas_manage.bind("<Configure>", lambda e: canvas_manage.itemconfigure(manage_window_id, width=e.width))
+        canvas_manage, inner_frame_manage = self._create_scrollable_tab('Gestionar Banco de Preguntas', fill_width=True)
 
         # --- Section to generate XLSX from a revised DOCX ---
         docx_xlsx_group = ttk.LabelFrame(inner_frame_manage, text="Generar XLSX desde DOCX revisado")
@@ -3878,35 +3831,39 @@ class ExamApp:
             central_path = local_path
         return local_path, central_path
 
+    def _exam_template_fields(self) -> Dict[str, tk.Variable]:
+        """Fields of the exam tab saved in the exam template, by their key in the JSON file."""
+        return {
+            "subject": self.subject,
+            "exam_name": self.exam_name,
+            "course": self.course,
+            "num_exams": self.num_exams,
+            "exam_names": self.exam_names,
+            "questions_per_topic": self.questions_per_topic,
+            "num_questions_same_topic": self.num_questions_same_topic,
+            "selection_method": self.selection_method,
+            "selection_method_var": self.selection_method_var,
+            "total_questions": self.total_questions_var,
+            "total_distribution": self.total_distribution_var,
+            "top_margin": self.top_margin,
+            "bottom_margin": self.bottom_margin,
+            "left_margin": self.left_margin,
+            "right_margin": self.right_margin,
+            "font_size": self.font_size,
+            "answer_sheet_instructions": self.answer_sheet_instructions,
+            "penalty": self.penalty,
+            "xml_cat_additional_text": self.xml_cat_additional_text,
+            "export_moodle": self.export_moodle,
+            "update_excel": self.update_excel,
+            "usage_alert_enabled": self.usage_alert_enabled_var,
+            "usage_alert_threshold": self.usage_alert_threshold_var,
+            "xml_use_answer_text": self.xml_use_answer_text_var,
+            "template_docx_path": self.template_docx_path_var,
+        }
+
     def save_exam_tab_template(self) -> None:
         """Saves current exam-tab values to a JSON template (local first, then central fallback)."""
-        template_data = {
-            "subject": self.subject.get(),
-            "exam_name": self.exam_name.get(),
-            "course": self.course.get(),
-            "num_exams": self.num_exams.get(),
-            "exam_names": self.exam_names.get(),
-            "questions_per_topic": self.questions_per_topic.get(),
-            "num_questions_same_topic": self.num_questions_same_topic.get(),
-            "selection_method": self.selection_method.get(),
-            "selection_method_var": self.selection_method_var.get(),
-            "total_questions": self.total_questions_var.get(),
-            "total_distribution": self.total_distribution_var.get(),
-            "top_margin": self.top_margin.get(),
-            "bottom_margin": self.bottom_margin.get(),
-            "left_margin": self.left_margin.get(),
-            "right_margin": self.right_margin.get(),
-            "font_size": self.font_size.get(),
-            "answer_sheet_instructions": self.answer_sheet_instructions.get(),
-            "penalty": self.penalty.get(),
-            "xml_cat_additional_text": self.xml_cat_additional_text.get(),
-            "export_moodle": self.export_moodle.get(),
-            "update_excel": self.update_excel.get(),
-            "usage_alert_enabled": self.usage_alert_enabled_var.get(),
-            "usage_alert_threshold": self.usage_alert_threshold_var.get(),
-            "xml_use_answer_text": self.xml_use_answer_text_var.get(),
-            "template_docx_path": self.template_docx_path_var.get(),
-        }
+        template_data = {key: var.get() for key, var in self._exam_template_fields().items()}
 
         local_path, central_path = self._get_exam_template_config_paths()
         saved_path = None
@@ -3945,31 +3902,9 @@ class ExamApp:
             messagebox.showwarning("Plantilla", "No se encontró plantilla de exámenes en ruta local ni central.")
             return
 
-        self.subject.set(config.get("subject", self.subject.get()))
-        self.exam_name.set(config.get("exam_name", self.exam_name.get()))
-        self.course.set(config.get("course", self.course.get()))
-        self.num_exams.set(config.get("num_exams", self.num_exams.get()))
-        self.exam_names.set(config.get("exam_names", self.exam_names.get()))
-        self.questions_per_topic.set(config.get("questions_per_topic", self.questions_per_topic.get()))
-        self.num_questions_same_topic.set(config.get("num_questions_same_topic", self.num_questions_same_topic.get()))
-        self.selection_method.set(config.get("selection_method", self.selection_method.get()))
-        self.selection_method_var.set(config.get("selection_method_var", self.selection_method_var.get()))
-        self.total_questions_var.set(config.get("total_questions", self.total_questions_var.get()))
-        self.total_distribution_var.set(config.get("total_distribution", self.total_distribution_var.get()))
-        self.top_margin.set(config.get("top_margin", self.top_margin.get()))
-        self.bottom_margin.set(config.get("bottom_margin", self.bottom_margin.get()))
-        self.left_margin.set(config.get("left_margin", self.left_margin.get()))
-        self.right_margin.set(config.get("right_margin", self.right_margin.get()))
-        self.font_size.set(config.get("font_size", self.font_size.get()))
-        self.answer_sheet_instructions.set(config.get("answer_sheet_instructions", self.answer_sheet_instructions.get()))
-        self.penalty.set(config.get("penalty", self.penalty.get()))
-        self.xml_cat_additional_text.set(config.get("xml_cat_additional_text", self.xml_cat_additional_text.get()))
-        self.export_moodle.set(config.get("export_moodle", self.export_moodle.get()))
-        self.update_excel.set(config.get("update_excel", self.update_excel.get()))
-        self.usage_alert_enabled_var.set(config.get("usage_alert_enabled", self.usage_alert_enabled_var.get()))
-        self.usage_alert_threshold_var.set(config.get("usage_alert_threshold", self.usage_alert_threshold_var.get()))
-        self.xml_use_answer_text_var.set(config.get("xml_use_answer_text", self.xml_use_answer_text_var.get()))
-        self.template_docx_path_var.set(config.get("template_docx_path", self.template_docx_path_var.get()))
+        for key, var in self._exam_template_fields().items():
+            if key in config:
+                var.set(config[key])
 
         self.update_status(f"Plantilla cargada desde: {loaded_path}")
 

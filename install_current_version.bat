@@ -5,6 +5,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 set "SCRIPT_NAME=%~nx0"
+set "ADD_PATH_PS1=%~dp0add_user_path.ps1"
 set "MODE=user"
 set "UPGRADE_PIP=0"
 set "DRY_RUN=0"
@@ -76,6 +77,7 @@ if "%DRY_RUN%"=="1" (
     if "%ADD_PATH%"=="1" (
         if /I "%MODE%"=="user" (
             echo [DRY-RUN] Se agregaria al PATH de usuario: %TARGET_SCRIPTS%
+            powershell -NoProfile -ExecutionPolicy Bypass -File "%ADD_PATH_PS1%" -Folder "%TARGET_SCRIPTS%" -WhatIf
         ) else (
             echo [DRY-RUN] --add-path solo aplica a instalaciones --user.
         )
@@ -136,23 +138,8 @@ exit /b 1
 set "PATH_TO_ADD=%~1"
 if "%PATH_TO_ADD%"=="" exit /b 0
 
-set "USER_PATH="
-for /f "tokens=2,*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul ^| findstr /R /C:"^[ ]*Path[ ]*REG_"') do set "USER_PATH=%%B"
-
-echo ;%USER_PATH%; | findstr /I /C:";%PATH_TO_ADD%;" >nul
-if not errorlevel 1 (
-    echo La ruta ya existe en el PATH de usuario.
-    set "PATH=%PATH%;%PATH_TO_ADD%"
-    exit /b 0
-)
-
-if defined USER_PATH (
-    set "NEW_USER_PATH=%USER_PATH%;%PATH_TO_ADD%"
-) else (
-    set "NEW_USER_PATH=%PATH_TO_ADD%"
-)
-
-setx Path "%NEW_USER_PATH%" >nul
+:: PowerShell en lugar de setx: setx trunca el PATH a 1024 caracteres y perderia entradas.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ADD_PATH_PS1%" -Folder "%PATH_TO_ADD%"
 if errorlevel 1 (
     echo AVISO: No se pudo actualizar el PATH de usuario automaticamente.
     echo Agrega manualmente esta ruta al PATH:
@@ -161,6 +148,5 @@ if errorlevel 1 (
 )
 
 set "PATH=%PATH%;%PATH_TO_ADD%"
-echo PATH de usuario actualizado. Abre una nueva terminal para verlo.
 exit /b 0
 

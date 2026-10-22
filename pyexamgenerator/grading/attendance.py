@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 import difflib
 import re
-import unicodedata
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -12,6 +12,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
+from pyexamgenerator.grading._text import find_column, normalize_key, normalize_text, parse_decimal
 
 
 def _topic_key(text: object) -> Optional[str]:
@@ -21,9 +22,7 @@ def _topic_key(text: object) -> Optional[str]:
     only in one of them). Separators are interchangeable ('Ley 31/95', 'Ley 31_95', 'Ley 31/1995')
     and words must be whole ('Sistema 3' is not 'Tema 3').
     """
-    raw = "" if pd.isna(text) else str(text).lower()
-    raw = "".join(c for c in unicodedata.normalize("NFD", raw) if unicodedata.category(c) != "Mn")
-    words = re.sub(r"[^a-z0-9]+", " ", raw)
+    words = re.sub(r"[^a-z0-9]+", " ", normalize_text(text))
     if re.search(r"\bley\s*31\s*(?:19)?95\b", words):
         return "LPRL"
     if re.search(r"\brd\s*39\s*(?:19)?97\b", words):
@@ -91,20 +90,8 @@ class AbsenceJustificationManager:
         # Class-quiz grade needed in every topic for the theory bonus point.
         self.min_quiz_grade = float(min_quiz_grade)
 
-    @staticmethod
-    def _normalize(text: object) -> str:
-        raw = "" if pd.isna(text) else str(text).strip().lower()
-        raw = "".join(c for c in unicodedata.normalize("NFD", raw) if unicodedata.category(c) != "Mn")
-        return re.sub(r"[^a-z0-9]", "", raw)
-
-    @classmethod
-    def _find_column(cls, columns: Sequence[str], candidates: Sequence[str]) -> Optional[str]:
-        norm_map = {cls._normalize(c): c for c in columns}
-        for cand in candidates:
-            key = cls._normalize(cand)
-            if key in norm_map:
-                return norm_map[key]
-        return None
+    _normalize = staticmethod(normalize_key)
+    _find_column = staticmethod(find_column)
 
     @staticmethod
     def _candidates(override: Optional[str], defaults: Sequence[str]) -> List[str]:
@@ -338,19 +325,6 @@ class AbsenceJustificationManager:
             if topic and group:
                 out[(topic, group)] = str(col)
         return out
-
-    @staticmethod
-    def _parse_grade(value: object) -> Optional[float]:
-        if pd.isna(value):
-            return None
-        text = str(value).strip()
-        if text in {"", "-"}:
-            return None
-        text = text.replace(",", ".")
-        try:
-            return float(text)
-        except ValueError:
-            return None
 
     @staticmethod
     def _classify_justification_text(subject: object, message: object) -> Tuple[str, int, str]:
@@ -725,7 +699,7 @@ class AbsenceJustificationManager:
                         qcol = quiz_cols.get((topic, g))
                         if not qcol:
                             continue
-                        score = self._parse_grade(qrow.get(qcol, ""))
+                        score = parse_decimal(qrow.get(qcol, ""))
                         if score is not None:
                             quiz_topic_scores.append(score)
 
@@ -1207,21 +1181,7 @@ def main() -> None:
     )
 
 
-if __name__ == "__main__":
-    main()
-
-
-
-
-
-
-
-
 # PIR bonus calculation
-
-from dataclasses import dataclass
-from datetime import date
-
 
 
 @dataclass(frozen=True)
@@ -1232,17 +1192,8 @@ class PIRSession:
     attendance_col: str
 
 
-def _strip_accents(text: object) -> str:
-    normalized = unicodedata.normalize("NFD", str(text))
-    return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
-
-
-def _normalize_text(text: object) -> str:
-    return _strip_accents(str(text)).strip().lower()
-
-
 def _student_key(last_name: object, first_name: object) -> str:
-    return re.sub(r"\s+", " ", f"{_normalize_text(first_name)} {_normalize_text(last_name)}").strip()
+    return re.sub(r"\s+", " ", f"{normalize_text(first_name)} {normalize_text(last_name)}").strip()
 
 
 def _parse_spanish_month(token: str) -> int:
@@ -1260,7 +1211,7 @@ def _parse_spanish_month(token: str) -> int:
         "nov": 11,
         "dic": 12,
     }
-    t = _normalize_text(token)[:3]
+    t = normalize_text(token)[:3]
     if t not in months:
         raise ValueError(f"Unknown month in attendance header: {token}")
     return months[t]
@@ -1282,25 +1233,12 @@ def _topic_from_text(text: object) -> Optional[str]:
 
 
 def _group_from_text(text: object) -> Optional[str]:
-    normalized = _normalize_text(text).upper()
+    normalized = normalize_text(text).upper()
     if "GITI-GIE-GIEI" in normalized:
         return "GITI-GIE-GIEI"
     if "GIM" in normalized:
         return "GIM"
     return None
-
-
-def _parse_grade(value: object) -> Optional[float]:
-    if pd.isna(value):
-        return None
-    text = str(value).strip()
-    if text in {"", "-"}:
-        return None
-    text = text.replace(",", ".")
-    try:
-        return float(text)
-    except ValueError:
-        return None
 
 
 class PIRBonusCalculator:
@@ -1367,9 +1305,9 @@ class PIRBonusCalculator:
     def _build_sessions(self, attendance_df: pd.DataFrame, schedule_df: pd.DataFrame) -> Tuple[List[PIRSession], List[str]]:
         warnings: List[str] = []
 
-        start_date_col = next((c for c in schedule_df.columns if _normalize_text(c) == "fecha de inicio"), None)
-        desc_col = next((c for c in schedule_df.columns if _normalize_text(c) in {"descripcion", "descripcin"}), None)
-        title_col = next((c for c in schedule_df.columns if "titulo" in _normalize_text(c) and "editable" in _normalize_text(c)), None)
+        start_date_col = next((c for c in schedule_df.columns if normalize_text(c) == "fecha de inicio"), None)
+        desc_col = next((c for c in schedule_df.columns if normalize_text(c) in {"descripcion", "descripcin"}), None)
+        title_col = next((c for c in schedule_df.columns if "titulo" in normalize_text(c) and "editable" in normalize_text(c)), None)
 
         if not start_date_col or not desc_col or not title_col:
             raise ValueError("Required columns were not found in schedule file.")
@@ -1427,7 +1365,7 @@ class PIRBonusCalculator:
 
     @staticmethod
     def _is_present(value: object) -> bool:
-        return _normalize_text(value).startswith("p")
+        return normalize_text(value).startswith("p")
 
     def calculate(self) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
         attendance_df = self._load_attendance()
@@ -1479,7 +1417,7 @@ class PIRBonusCalculator:
                         col = quiz_cols.get((topic, group))
                         if not col:
                             continue
-                        score = _parse_grade(quiz_row.get(col))
+                        score = parse_decimal(quiz_row.get(col))
                         if score is None:
                             continue
 
@@ -1562,7 +1500,7 @@ class PIRBonusCalculator:
         }
 
         def parse_theory_grade(value: object) -> float:
-            parsed = _parse_grade(value)
+            parsed = parse_decimal(value)
             return float(parsed) if parsed is not None else 0.0
 
         out_df = theory_df.copy()
@@ -1590,27 +1528,8 @@ class PIRBonusCalculator:
         )
 
 
-def _normalize_bonus_text(text: object) -> str:
-    raw = "" if pd.isna(text) else str(text).strip().lower()
-    raw = "".join(c for c in unicodedata.normalize("NFD", raw) if unicodedata.category(c) != "Mn")
-    return re.sub(r"[^a-z0-9]", "", raw)
-
-
 def _normalize_bonus_id(value: object) -> str:
     return normalize_id(value)
-
-
-def _parse_bonus_grade(value: object) -> Optional[float]:
-    if pd.isna(value):
-        return None
-    text = str(value).strip()
-    if text in {"", "-"}:
-        return None
-    text = text.replace(",", ".")
-    try:
-        return float(text)
-    except ValueError:
-        return None
 
 
 def _find_theory_grade_columns(theory_df: pd.DataFrame, theory_grade_col: Optional[str]) -> List[str]:
@@ -1618,7 +1537,7 @@ def _find_theory_grade_columns(theory_df: pd.DataFrame, theory_grade_col: Option
     if theory_grade_col and theory_grade_col in theory_df.columns:
         return [theory_grade_col]
 
-    normalized = {_normalize_bonus_text(c): c for c in columns}
+    normalized = {normalize_key(c): c for c in columns}
     for candidate in ["calificacion1000", "calificacin1000", "calificacion10", "nota", "grade"]:
         if candidate in normalized:
             return [normalized[candidate]]
@@ -1707,7 +1626,7 @@ def _compute_theory_bonus(
         has_bonus = 1 if str(row.get("Tiene_Punto_Adicional_Teoria", "")).strip().lower() == "si" else 0
         reason = str(row.get("Motivo_No_Punto", "")).strip()
         student_id = _normalize_bonus_id(row.get("ID_Alumno", ""))
-        name_key = _normalize_bonus_text(f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}")
+        name_key = normalize_key(f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}")
         if student_id:
             previous = bonus_by_id.get(student_id, (0, ""))
             bonus_by_id[student_id] = (max(has_bonus, previous[0]), reason or previous[1])
@@ -1732,7 +1651,7 @@ def _compute_theory_bonus(
     id_candidates = ["Número de ID", "Numero de ID", "Nombre de usuario", "ID_Alumno", "ID_Oficial", "ID"]
     for idx, row in out_df.iterrows():
         id_keys = [_normalize_bonus_id(row.get(col, "")) for col in id_candidates if col in out_df.columns]
-        name_key = _normalize_bonus_text(f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}")
+        name_key = normalize_key(f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}")
 
         has_bonus = 0
         no_bonus_reason = "sin_regla_punto"
@@ -1745,7 +1664,7 @@ def _compute_theory_bonus(
                 has_bonus, no_bonus_reason = bonus_by_name[name_key]
 
         original_values = {
-            col: _parse_bonus_grade(row.get(col, ""))
+            col: parse_decimal(row.get(col, ""))
             for col in grade_columns
         }
         valid_values = [value for value in original_values.values() if value is not None]
@@ -1876,7 +1795,7 @@ def _compute_theory_topic_reports(source_df: pd.DataFrame) -> Tuple[pd.DataFrame
                 if col_text.endswith("__Asistencia"):
                     attendance_values.append(str(row.get(col, "")).strip())
                 elif col_text.endswith("__Quiz_Nota_Tema_Max"):
-                    parsed = _parse_bonus_grade(row.get(col, ""))
+                    parsed = parse_decimal(row.get(col, ""))
                     if parsed is not None:
                         quiz_values.append(parsed)
 
@@ -1910,4 +1829,8 @@ def export_theory_topic_reports(
     """
     reporter = TheoryTopicReporter(attendance_quiz=attendance_quiz_xlsx_path)
     return reporter.export(output_dir)
+
+
+if __name__ == "__main__":
+    main()
 

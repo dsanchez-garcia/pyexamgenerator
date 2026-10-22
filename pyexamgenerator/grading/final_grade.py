@@ -11,47 +11,13 @@ the final grade can optionally be capped at 10. Grades are parsed tolerating com
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
-
-
-def _normalize(text: Any) -> str:
-    text = str(text).strip().lower()
-    text = "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
-    return re.sub(r"[^a-z0-9]", "", text)
-
-
-def _find_column(columns: Sequence[str], candidates: Sequence[str]) -> Optional[str]:
-    col_map = {_normalize(c): c for c in columns}
-    for candidate in candidates:
-        key = _normalize(candidate)
-        if key in col_map:
-            return col_map[key]
-    return None
-
-
-def _to_float_grade(value: Any) -> Optional[float]:
-    if pd.isna(value):
-        return None
-    text = str(value).strip()
-    if text in {"", "-"}:
-        return None
-    text = text.replace(",", ".")
-    if re.fullmatch(r"[-+]?\d+(\.\d+)?", text):
-        return float(text)
-    return None
-
-
-def _clean(value: Any) -> str:
-    if pd.isna(value):
-        return ""
-    return str(value).strip()
+from pyexamgenerator.grading._text import clean_text, find_column, normalize_key, parse_decimal
 
 
 _ID_CANDIDATES = ["Número de ID", "Numero de ID", "Nmero de ID", "ID", "Nombre de usuario", "DNI"]
@@ -89,7 +55,7 @@ class FinalGradeCalculator:
         ident = normalize_id(id_value)
         if ident:
             return f"id::{ident}"
-        return f"name::{_normalize(first)}::{_normalize(last)}"
+        return f"name::{normalize_key(first)}::{normalize_key(last)}"
 
     def compute_by_files(self, sources: Sequence[Dict[str, Any]]) -> pd.DataFrame:
         """Weights one grade column per file. ``sources`` items: ``{path, label?, weight?, grade_col?, id_col?}``."""
@@ -110,10 +76,10 @@ class FinalGradeCalculator:
                 label, copy_number = f"{base_label} ({copy_number})", copy_number + 1
             used_labels.add(label)
             weight = float(source.get("weight", 1.0))
-            id_col = source.get("id_col") or self.id_col or _find_column(columns, _ID_CANDIDATES)
-            first_col = self.first_name_col or _find_column(columns, _FIRST_CANDIDATES)
-            last_col = self.last_name_col or _find_column(columns, _LAST_CANDIDATES)
-            grade_col = source.get("grade_col") or _find_column(columns, _GRADE_CANDIDATES)
+            id_col = source.get("id_col") or self.id_col or find_column(columns, _ID_CANDIDATES)
+            first_col = self.first_name_col or find_column(columns, _FIRST_CANDIDATES)
+            last_col = self.last_name_col or find_column(columns, _LAST_CANDIDATES)
+            grade_col = source.get("grade_col") or find_column(columns, _GRADE_CANDIDATES)
             if grade_col is None:
                 raise ValueError(
                     f"No se encontró una columna de nota en '{path}'. Indique 'grade_col' explícitamente."
@@ -145,8 +111,8 @@ class FinalGradeCalculator:
                 if key not in registry:
                     registry[key] = {
                         "Número de ID": normalize_id(id_value),
-                        "Nombre": _clean(first),
-                        "Apellido(s)": _clean(last),
+                        "Nombre": clean_text(first),
+                        "Apellido(s)": clean_text(last),
                         "_grades": {},
                     }
                     order.append(key)
@@ -154,10 +120,10 @@ class FinalGradeCalculator:
                 if not record["Número de ID"]:
                     record["Número de ID"] = normalize_id(id_value)
                 if not record["Nombre"]:
-                    record["Nombre"] = _clean(first)
+                    record["Nombre"] = clean_text(first)
                 if not record["Apellido(s)"]:
-                    record["Apellido(s)"] = _clean(last)
-                grade = _to_float_grade(row.get(p["grade_col"], ""))
+                    record["Apellido(s)"] = clean_text(last)
+                grade = parse_decimal(row.get(p["grade_col"], ""))
                 if grade is not None:
                     record["_grades"][p["label"]] = grade
 
@@ -193,7 +159,7 @@ class FinalGradeCalculator:
         columns = list(df.columns)
         resolved: Dict[str, float] = {}
         for col_name, weight in weights.items():
-            actual = col_name if col_name in df.columns else _find_column(columns, [col_name])
+            actual = col_name if col_name in df.columns else find_column(columns, [col_name])
             if actual is None:
                 raise ValueError(f"Columna '{col_name}' no encontrada en '{source_path}'.")
             resolved[actual] = float(weight)
@@ -204,7 +170,7 @@ class FinalGradeCalculator:
         for _, row in df.iterrows():
             value = 0.0
             for col, weight in resolved.items():
-                grade = _to_float_grade(row.get(col, ""))
+                grade = parse_decimal(row.get(col, ""))
                 value += (weight / total_weight) * (0.0 if grade is None else grade)
             if self.cap_to_10:
                 value = min(value, 10.0)
