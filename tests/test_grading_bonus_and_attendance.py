@@ -1,7 +1,9 @@
 """Regresiones del punto extra PIR y de la detección de columnas de asistencia."""
 
 import pandas as pd
+import pytest
 
+from pyexamgenerator.grading import attendance
 from pyexamgenerator.grading.attendance import AbsenceJustificationManager, PIRBonusCalculator
 
 
@@ -70,3 +72,27 @@ def test_attendance_date_columns_are_detected_for_any_year():
     assert is_date_col("15 feb 2031 Todos los estudiantes")
     assert not is_date_col("Todos los estudiantes")
     assert not is_date_col("12 oct 2027 10:00 AM")
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Ley 31/95", "LPRL"),
+    ("Ley 31_95", "LPRL"),
+    ("LEY 31-95 (PRL)", "LPRL"),
+    ("Ley 31/1995", "LPRL"),
+    ("RD 39/97", "RSP"),
+    ("rd 39_97", "RSP"),
+    ("Tema 3", "TEMA 03"),
+    ("TEMA 03 - Riesgos", "TEMA 03"),
+    ("tema_10", "TEMA 10"),
+])
+def test_attendance_and_pir_detect_topics_the_same_way(text, expected):
+    """GRD-10: el cálculo PIR solo aceptaba 'Ley 31_95' / 'RD 39_97' y la asistencia también
+    'Ley 31/95': la misma sesión contaba como tema en un flujo y no en el otro."""
+    assert attendance._topic_from_text(text) == expected
+    assert AbsenceJustificationManager._topic_from_text(text) == expected
+
+
+def test_topic_words_must_be_whole():
+    assert attendance._topic_from_text("Sistema 3D") is None
+    assert AbsenceJustificationManager._topic_from_text("Sistema 3D") == "Sistema 3D"  # not a known topic
+    assert AbsenceJustificationManager._topic_from_text("Prácticas tema 3") == ""  # practice sessions excluded

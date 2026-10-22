@@ -14,6 +14,26 @@ from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
 
 
+def _topic_key(text: object) -> Optional[str]:
+    """Topic named in a session, schedule or quiz text: 'LPRL', 'RSP' or 'TEMA NN' (else None).
+
+    Shared by the attendance and the PIR flows, which used to accept different spellings ('Ley 31/95'
+    only in one of them). Separators are interchangeable ('Ley 31/95', 'Ley 31_95', 'Ley 31/1995')
+    and words must be whole ('Sistema 3' is not 'Tema 3').
+    """
+    raw = "" if pd.isna(text) else str(text).lower()
+    raw = "".join(c for c in unicodedata.normalize("NFD", raw) if unicodedata.category(c) != "Mn")
+    words = re.sub(r"[^a-z0-9]+", " ", raw)
+    if re.search(r"\bley\s*31\s*(?:19)?95\b", words):
+        return "LPRL"
+    if re.search(r"\brd\s*39\s*(?:19)?97\b", words):
+        return "RSP"
+    match = re.search(r"\btema\s*0?(\d{1,2})\b", words)
+    if match:
+        return f"TEMA {int(match.group(1)):02d}"
+    return None
+
+
 @dataclass
 class AbsenceJustificationResult:
     summary_df: pd.DataFrame
@@ -239,15 +259,8 @@ class AbsenceJustificationManager:
         normalized = AbsenceJustificationManager._normalize(raw)
         if "practic" in normalized:
             return ""
-        # Sesiones teóricas sin el literal "tema" que deben contar como tema.
-        if "ley3195" in normalized:
-            return "LPRL"
-        if "rd3997" in normalized:
-            return "RSP"
-        match = re.search(r"tema0?(\d{1,2})", normalized)
-        if match:
-            return f"TEMA {int(match.group(1)):02d}"
-        return raw
+        # Sesiones teóricas sin el literal "tema" (Ley 31/95, RD 39/97) también cuentan como tema.
+        return _topic_key(raw) or raw
 
     @staticmethod
     def _group_from_text(text: object) -> str:
@@ -1258,16 +1271,8 @@ def _parse_attendance_date(col_name: str) -> date:
 
 
 def _topic_from_text(text: object) -> Optional[str]:
-    normalized = _normalize_text(text)
-    if "ley 31_95" in normalized:
-        return "LPRL"
-    if "rd 39_97" in normalized:
-        return "RSP"
-
-    match = re.search(r"tema\s*0?(\d{1,2})", normalized)
-    if match:
-        return f"TEMA {int(match.group(1)):02d}"
-    return None
+    # Same detection as the attendance flow (before, only 'ley 31_95' / 'rd 39_97' were accepted here).
+    return _topic_key(text)
 
 
 def _group_from_text(text: object) -> Optional[str]:
