@@ -52,16 +52,24 @@ class QuestionGenerator:
     Generates multiple-choice questions from PDF files using the Gemini model.
     """
 
-    def __init__(self, api_key: str, model_name: str):
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         """
         Initializes the QuestionGenerator class.
 
         Args:
-            api_key (str): The API key for the Gemini model.
+            api_key (Optional[str]): The API key for the Gemini model. If omitted, the
+                                     ``GEMINI_API_KEY`` environment variable is used.
             model_name (str): The name of the Gemini model to use (e.g., 'models/gemini-2.5-pro').
                               This is a required argument.
+
+        Raises:
+            ValueError: If ``model_name`` is not given.
         """
-        self.client = genai.Client(api_key=api_key)
+        if not model_name:
+            raise ValueError("Debes indicar model_name (p. ej. 'models/gemini-2.5-flash').")
+        # Without an explicit key, use GEMINI_API_KEY (the google-genai client may still find
+        # GOOGLE_API_KEY by itself when neither is given).
+        self.client = genai.Client(api_key=api_key or os.getenv("GEMINI_API_KEY"))
         self.model_name = model_name
 
         print(f"Cliente de Gemini inicializado para modelo: {model_name}")
