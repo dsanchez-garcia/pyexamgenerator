@@ -174,3 +174,22 @@ def test_the_moodle_column_names_can_be_configured(tmp_path):
     result = _final_grade(tmp_path, ["ID number", "First name", "Surname", "Grade/10.00"], ["1", "Ana", "Gil", "8"])
 
     assert result[["Número de ID", "Nombre", "Apellido(s)", "Nota_Final"]].values.tolist() == [["1", "Ana", "Gil", 8.0]]
+
+
+def test_the_pir_rule_comes_from_the_settings_unless_given():
+    from pyexamgenerator.grading.api import PIRBonusConfig, TheoryBonusConfig
+    from pyexamgenerator.grading.attendance import AbsenceJustificationManager
+    from pyexamgenerator.grading.pir_bonus import PIRBonusCalculator
+    from pyexamgenerator.grading.theory_bonus import TheoryBonusApplier
+
+    _write({"pir": {"nota_minima_cuestionario": 5, "puntos": 0.5}})
+    paths = dict(attendance_path="a.xlsx", schedule_path="h.xlsx", schedule_sheet=0, quizzes_path="c.xlsx")
+
+    calculator = PIRBonusCalculator(**paths)
+    assert (calculator.min_quiz_grade, calculator.bonus_points) == (5.0, 0.5)
+    assert PIRBonusCalculator(**paths, min_quiz_grade=8, bonus_points=2).bonus_points == 2.0
+    assert AbsenceJustificationManager("a.xlsx", "j.xlsx", "m.xlsx").min_quiz_grade == 5.0
+    assert TheoryBonusApplier(theory="t.xlsx", attendance_quiz="a.xlsx").bonus_points == 0.5
+    # The API leaves them unset, so the flows started from the application use the file too.
+    assert PIRBonusConfig("a", "h", "0", "c").min_quiz_grade is None
+    assert TheoryBonusConfig("t", "a").bonus_points is None

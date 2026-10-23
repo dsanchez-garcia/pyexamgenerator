@@ -47,7 +47,8 @@ def _as_dataframe(source: object) -> pd.DataFrame:
 
 
 class TheoryBonusApplier:
-    """Apply the PIR theory bonus (``bonus_points``, +1 by default), retaining inputs and outputs as attributes.
+    """Apply the PIR theory bonus (``bonus_points``; by default that of grading_settings.json, +1), retaining
+    inputs and outputs as attributes.
 
     Inputs (``theory`` and ``attendance_quiz``) may be either a path to an Excel file
     or an in-memory DataFrame, so the step can be chained without writing intermediate
@@ -62,13 +63,13 @@ class TheoryBonusApplier:
         attendance_quiz: object,
         theory_grade_col: Optional[str] = None,
         cap_to_10: bool = True,
-        bonus_points: float = 1.0,
+        bonus_points: Optional[float] = None,
     ) -> None:
         self.theory = theory
         self.attendance_quiz = attendance_quiz
         self.theory_grade_col = theory_grade_col
         self.cap_to_10 = cap_to_10
-        self.bonus_points = float(bonus_points)
+        self.bonus_points = float(current_settings().pir_bonus_points if bonus_points is None else bonus_points)
         self.theory_df: Optional[pd.DataFrame] = None
         self.bonus_df: Optional[pd.DataFrame] = None
         self.grade_columns: Optional[List[str]] = None
@@ -194,9 +195,9 @@ def apply_theory_bonus_from_attendance_quiz(
     output_path: str,
     theory_grade_col: Optional[str] = None,
     cap_to_10: bool = True,
-    bonus_points: float = 1.0,
+    bonus_points: Optional[float] = None,
 ) -> pd.DataFrame:
-    """Apply the PIR bonus (``bonus_points``, +1 by default) to a theory workbook using attendance+quiz audit output.
+    """Apply the PIR bonus (``bonus_points``; by default that of grading_settings.json, +1) to a theory workbook using attendance+quiz audit output.
 
     Thin functional wrapper kept for backward compatibility; delegates to
     :class:`TheoryBonusApplier`.

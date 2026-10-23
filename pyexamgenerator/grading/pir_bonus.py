@@ -84,8 +84,8 @@ class PIRBonusCalculator:
         schedule_sheet: object = None,
         quizzes_path: Optional[str] = None,
         attendance_header_row: int = 3,
-        min_quiz_grade: float = 7.5,
-        bonus_points: float = 1.0,
+        min_quiz_grade: Optional[float] = None,
+        bonus_points: Optional[float] = None,
         **legacy_kwargs,
     ) -> None:
         if attendance_path is None:
@@ -123,8 +123,10 @@ class PIRBonusCalculator:
         self.schedule_sheet = schedule_sheet
         self.quizzes_path = str(quizzes_path)
         self.attendance_header_row = attendance_header_row
-        self.min_quiz_grade = float(min_quiz_grade)
-        self.bonus_points = float(bonus_points)
+        # None: the PIR rule of grading_settings.json (7.5 and 1 point by default).
+        rule = current_settings()
+        self.min_quiz_grade = float(rule.pir_min_quiz_grade if min_quiz_grade is None else min_quiz_grade)
+        self.bonus_points = float(rule.pir_bonus_points if bonus_points is None else bonus_points)
 
     def _load_attendance(self) -> pd.DataFrame:
         return pd.read_excel(self.attendance_path, header=self.attendance_header_row)

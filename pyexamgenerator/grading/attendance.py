@@ -68,7 +68,7 @@ class AbsenceJustificationManager:
         id_col: Optional[str] = None,
         email_col: Optional[str] = None,
         justification_mode: str = "extremo",
-        min_quiz_grade: float = 7.5,
+        min_quiz_grade: Optional[float] = None,
     ) -> None:
         self.attendance_xlsx_path = attendance_xlsx_path
         self.justifications_xlsx_path = justifications_xlsx_path
@@ -90,7 +90,8 @@ class AbsenceJustificationManager:
         self.email_col = email_col
         self.justification_mode = str(justification_mode or "extremo").strip().lower()
         # Class-quiz grade needed in every topic for the theory bonus point.
-        self.min_quiz_grade = float(min_quiz_grade)
+        # None: the minimum of the PIR rule in grading_settings.json (7.5 by default).
+        self.min_quiz_grade = float(current_settings().pir_min_quiz_grade if min_quiz_grade is None else min_quiz_grade)
 
     _normalize = staticmethod(normalize_key)
     _find_column = staticmethod(find_column)
