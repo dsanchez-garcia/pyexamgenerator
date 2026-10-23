@@ -53,14 +53,7 @@ def test_library_messages_go_to_the_log_not_to_stdout(capsys, caplog):
     assert "models/test" in caplog.records[0].getMessage()
 
 
-def test_log_to_console_shows_the_messages_on_stdout_as_plain_text():
-    code = (
-        "import logging\n"
-        "from pyexamgenerator._console import log_to_console\n"
-        "log_to_console()\n"
-        "logging.getLogger('pyexamgenerator.prueba').info('Generando exámenes...')\n"
-        "logging.getLogger('pyexamgenerator.prueba').debug('detalle que no se ve')\n"
-    )
+def _run_python(code):
     result = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
@@ -70,6 +63,22 @@ def test_log_to_console_shows_the_messages_on_stdout_as_plain_text():
         cwd=Path(__file__).resolve().parents[1],
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
-
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "Generando exámenes...\n"
+    return result.stdout
+
+
+def test_importing_the_package_writes_nothing_on_stdout():
+    """Con PyMuPDF 1.28, `import fitz` escribía «The `fitz` API is deprecated...» en la consola."""
+    assert _run_python("import pyexamgenerator") == ""
+
+
+def test_log_to_console_shows_the_messages_on_stdout_as_plain_text():
+    code = (
+        "import logging\n"
+        "from pyexamgenerator._console import log_to_console\n"
+        "log_to_console()\n"
+        "logging.getLogger('pyexamgenerator.prueba').info('Generando exámenes...')\n"
+        "logging.getLogger('pyexamgenerator.prueba').debug('detalle que no se ve')\n"
+    )
+
+    assert _run_python(code) == "Generando exámenes...\n"

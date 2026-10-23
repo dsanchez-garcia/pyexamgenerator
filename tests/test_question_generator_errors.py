@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-import fitz  # PyMuPDF
+import pymupdf
 import pytest
 from google.genai import errors
 
@@ -131,7 +131,7 @@ def test_generation_stops_at_the_first_retired_model_error(tmp_path, waits):
     resultado era «no se generaron preguntas» sin explicar por qué."""
     pdf_paths = []
     for name in ("Tema 1.pdf", "Tema 2.pdf"):
-        document = fitz.open()
+        document = pymupdf.open()
         document.new_page().insert_text((72, 72), "La ley de prevencion de riesgos laborales.")
         document.save(str(tmp_path / name))
         document.close()

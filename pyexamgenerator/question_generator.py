@@ -30,9 +30,13 @@ from typing import List, Dict, Optional, Tuple
 import math
 
 try:
-    import fitz  # PyMuPDF
+    # PyMuPDF. Recent versions print a deprecation warning on stdout for its old name, 'fitz'.
+    import pymupdf as fitz
 except ImportError:
-    fitz = None
+    try:
+        import fitz  # PyMuPDF < 1.24
+    except ImportError:
+        fitz = None
 
 logger = logging.getLogger(__name__)
 
