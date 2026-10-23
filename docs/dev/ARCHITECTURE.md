@@ -224,8 +224,8 @@ cambia; un fichero mal escrito detiene la corrección con un `ValueError` que di
 - Las pestañas pasan a clases propias en `gui/` (ARC-1), una por módulo, que reciben la app:
   `QuestionsTab` (`gui/questions_tab.py`, «Generar Preguntas», en `app.questions_tab`, con la clave
   de API y los tipos de prompt), `BankTab` (`gui/bank_tab.py`, «Gestionar Banco de Preguntas», en
-  `app.bank_tab`) y `ExamTab` (`gui/exam_tab.py`, «Generar Exámenes», en `app.exam_tab`) ya están
-  separadas. Cada pestaña crea sus variables Tk y sus widgets, y usa de la app solo la
+  `app.bank_tab`), `ExamTab` (`gui/exam_tab.py`, «Generar Exámenes», en `app.exam_tab`) y
+  `GradingTab` (`gui/grading_tab.py`, «Corregir Exámenes», en `app.grading_tab`). Cada pestaña crea sus variables Tk y sus widgets, y usa de la app solo la
   ventana y sus servicios (`self.app.root`, `_create_scrollable_tab`, `_bind_page_scroll`,
   `update_status`, `_run_in_background`, `_call_in_main_thread`). El `messagebox` con texto
   copiable está en `gui/_dialogs.py` y lo comparten la ventana y las pestañas.
@@ -240,7 +240,8 @@ cambia; un fichero mal escrito detiene la corrección con un `ValueError` que di
   `_grad_run_async`, con una sola tarea a la vez (`_grad_try_start_job` / `_grad_finish_job`), y
   «Pipeline completo» delega en `ExamCorrectionAPI.run_full_pipeline`. Todos los valores de la
   interfaz se leen antes de lanzar el hilo; un diálogo pedido desde un hilo (la alerta de uso de
-  preguntas) se muestra con `_call_in_main_thread`. Los hilos devuelven resultados con
+  preguntas) se muestra con `_call_in_main_thread`; la corrección abre la carpeta de resultados con
+  `app._open_folder`. Los hilos devuelven resultados con
   `root.after`, que exige el `mainloop` en marcha (en los tests, ver `_run_in_mainloop` en
   `test_gui_smoke.py`). Cada generación de exámenes usa su propio `ExamGenerator`, porque la
   instancia guarda estado mientras trabaja (`ARC-13`).

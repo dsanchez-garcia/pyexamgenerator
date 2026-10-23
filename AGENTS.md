@@ -68,7 +68,7 @@ pyexamgenerator/
   exam_generator.py        ExamGenerator: banco XLSX → exámenes DOCX/XLSX/Moodle XML
   main_app.py              GUI Tkinter: ExamApp (ventana, menús, estado, tareas en segundo plano) y main()
   gui/                     una clase por pestaña que recibe la app (ARC-1): questions_tab.py, bank_tab.py,
-                           exam_tab.py;
+                           exam_tab.py, grading_tab.py;
                            _dialogs.py (messagebox)
   gui_logic.py             lógica de la GUI sin tkinter: interpretar los campos, avisos (se prueba sin pantalla)
   credentials.py           clave de API de Gemini: GEMINI_API_KEY o almacén de credenciales (keyring)
