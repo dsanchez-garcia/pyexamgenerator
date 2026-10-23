@@ -1254,7 +1254,9 @@ class ExamGenerator:
         preview_paragraph = preview_document.add_paragraph(preview_full_exam_text)
         preview_paragraph.runs[0].font.size = Pt(font_size)
         preview_document = self.add_page_number(preview_document)
-        preview_path = f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx'
+        # Same rules as the exam files: '/', ':' or '?' would break the path (and None gave 'None').
+        name_parts = '_'.join(safe_filename_part(part) for part in (subject, exam, course))
+        preview_path = f'examen_previsualizacion_{name_parts}_completo.docx'
         preview_document.save(preview_path)
 
         logger.info(f"Se ha generado un examen de previsualización: {preview_path}")

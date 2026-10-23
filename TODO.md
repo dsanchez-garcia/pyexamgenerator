@@ -84,6 +84,8 @@ búscalas por nombre de función si no coinciden.
   `question_bank_manager.py:778-781`. Devolver lo que devuelve `save_dataframe_to_excel`. — hecho en `8111c5b`.
 - [x] **BUG-11 (P2)** Nombres de archivo de examen sin sanear — `exam_generator.py:1002`.
   `/`, `:` o `?` en asignatura/examen rompen en Windows; `None` produce `examen_None_...`. — hecho en `e7a49a1`.
+  *El nombre de la previsualización de `check=True` se quedó sin sanear: corregido en la rama
+  `refactor/exam-generation-steps` (sigue escribiéndose en la carpeta actual, como antes).*
 - [x] **BUG-12 (P2)** Categoría Moodle con `" -"` final en el XML pero no en
   `suggest_moodle_config` — `exam_generator.py:649-655` vs `:108-113`. Un único helper. — hecho en `e7a49a1`.
 - [x] **BUG-13 (P3)** Placeholders `{{...}}` de la plantilla DOCX partidos entre *runs* de Word no se
