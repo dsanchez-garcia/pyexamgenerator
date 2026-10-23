@@ -136,6 +136,7 @@ files = [
     "pyexamgenerator/grading/final_grade.py",
     "pyexamgenerator/grading/graders.py",
     "pyexamgenerator/grading/session.py",
+    "pyexamgenerator/grading/settings.py",
 ]
 ignore_missing_imports = true
 follow_imports = "silent"
