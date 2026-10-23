@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -9,10 +10,13 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import pandas as pd
 
+from pyexamgenerator._console import log_to_console
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._names import match_name
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import find_column, normalize_key, normalize_text, parse_decimal
+
+logger = logging.getLogger(__name__)
 
 
 def _topic_key(text: object) -> Optional[str]:
@@ -1186,20 +1190,22 @@ class AbsenceJustificationManager:
         ):
             result.extreme_justified_absences_df.to_excel(extreme_justified_absences_output_path, index=False)
 
-        print(f"OK: justification summary -> {summary_output_path} ({len(result.summary_df)} rows)")
-        print(f"OK: justification detail -> {detailed_output_path} ({len(result.detailed_df)} rows)")
+        logger.info(f"OK: justification summary -> {summary_output_path} ({len(result.summary_df)} rows)")
+        logger.info(f"OK: justification detail -> {detailed_output_path} ({len(result.detailed_df)} rows)")
         if attendance_overview_output_path and result.attendance_overview_df is not None:
-            print(
+            logger.info(
                 f"OK: attendance overview -> {attendance_overview_output_path} ({len(result.attendance_overview_df)} rows)"
             )
         if sender_absence_check_output_path and result.sender_absence_check_df is not None:
-            print(
+            logger.info(
                 f"OK: sender absence check -> {sender_absence_check_output_path} ({len(result.sender_absence_check_df)} rows)"
             )
         if attendance_quiz_output_path and result.attendance_quiz_df is not None:
-            print(f"OK: attendance + quizzes -> {attendance_quiz_output_path} ({len(result.attendance_quiz_df)} rows)")
+            logger.info(
+                f"OK: attendance + quizzes -> {attendance_quiz_output_path} ({len(result.attendance_quiz_df)} rows)"
+            )
         if extreme_justified_absences_output_path and result.extreme_justified_absences_df is not None:
-            print(
+            logger.info(
                 f"OK: justified absences (extreme mode) -> {extreme_justified_absences_output_path} "
                 f"({len(result.extreme_justified_absences_df)} rows)"
             )
@@ -1229,6 +1235,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    log_to_console()
     args = _parse_args()
     manager = AbsenceJustificationManager(
         attendance_xlsx_path=args.attendance,

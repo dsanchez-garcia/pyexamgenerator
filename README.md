@@ -117,6 +117,14 @@ Además de la interfaz gráfica, todos los componentes de pyexamgenerator están
 
 A continuación se muestran ejemplos de uso para cada uno de los módulos principales.
 
+Los mensajes de progreso de la librería se registran con el módulo estándar `logging`. Sin configurar nada, un script solo muestra los avisos y errores; para ver también el progreso, como en la aplicación:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+```
+
 ### 1. Generar Preguntas con `QuestionGenerator`
 
 Este script utiliza la IA para leer uno o más archivos PDF y generar un banco de preguntas, procesando cada página de forma individual para un análisis exhaustivo.

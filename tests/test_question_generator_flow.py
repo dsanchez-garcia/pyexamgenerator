@@ -2,8 +2,8 @@
 
 from types import SimpleNamespace
 
-import fitz  # PyMuPDF
 import pandas as pd
+import pymupdf
 import pytest
 
 from pyexamgenerator.question_generator import QuestionGenerator
@@ -18,7 +18,7 @@ _RESPONSE = (
 
 
 def _pdf(path, text):
-    document = fitz.open()
+    document = pymupdf.open()
     document.new_page().insert_text((72, 72), text)
     document.save(str(path))
     document.close()
@@ -107,7 +107,7 @@ def test_unreadable_duplicates_bank_stops_before_calling_gemini(tmp_path):
 
 
 def _pages_pdf(path, pages):
-    document = fitz.open()
+    document = pymupdf.open()
     for text in pages:
         document.new_page().insert_text((72, 72), text)
     document.save(str(path))

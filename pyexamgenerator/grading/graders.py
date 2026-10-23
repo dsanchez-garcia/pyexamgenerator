@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -6,6 +7,8 @@ import pandas as pd
 from pyexamgenerator.grading._names import AMBIGUOUS, NameMatch, match_name
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading.data import SharedExamDataStore
+
+logger = logging.getLogger(__name__)
 
 INCIDENT_COLUMNS = ["Fila", "Nombre_Escrito", "Tipo", "Severidad", "Detalle", "Candidato", "Score"]
 
@@ -186,13 +189,13 @@ class ExamGrader:
 
         final_df = pd.DataFrame(result_rows)
         final_df.to_excel(output_path, index=False)
-        print(f"OK: grading completed. Output saved to: {output_path}")
+        logger.info(f"OK: grading completed. Output saved to: {output_path}")
 
         self.last_incidents_df = pd.DataFrame(incidents, columns=INCIDENT_COLUMNS).sort_values("Fila", kind="stable")
         if incidents_output_path:
             self.last_incidents_df.to_excel(prepare_output_path(incidents_output_path), index=False)
         if incidents:
-            print(f"AVISO: {len(incidents)} incidencia(s) al asignar las respuestas a la matrícula.")
+            logger.warning(f"AVISO: {len(incidents)} incidencia(s) al asignar las respuestas a la matrícula.")
         return final_df
 
 

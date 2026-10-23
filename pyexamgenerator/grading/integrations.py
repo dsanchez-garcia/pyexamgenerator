@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 from pathlib import Path
 import re
@@ -6,10 +7,13 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from pyexamgenerator._console import log_to_console
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import clean_text, find_column, normalize_key, normalize_text, parse_decimal
 from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
+
+logger = logging.getLogger(__name__)
 
 
 def _grade_or_na(value):
@@ -291,7 +295,7 @@ class MoodleGradeIntegrator:
         summary_mask = df.apply(self._is_moodle_summary_row, axis=1)
         dropped_count = int(summary_mask.sum())
         if dropped_count > 0:
-            print(f"Notice: dropped {dropped_count} summary row(s) in '{os.path.basename(file_path)}'.")
+            logger.info(f"Notice: dropped {dropped_count} summary row(s) in '{os.path.basename(file_path)}'.")
         df = df.loc[~summary_mask].copy()
 
         df["Tipo_Grupo"] = self._extract_group_type_from_filename(file_path)
@@ -335,7 +339,7 @@ class MoodleGradeIntegrator:
         output_path = prepare_output_path(output_path, output_dir)
         final_df = self.integrate_grades(deduplicate_by_id=deduplicate_by_id)
         final_df.to_excel(output_path, index=False)
-        print(f"OK: integration completed. Output saved to: {output_path}")
+        logger.info(f"OK: integration completed. Output saved to: {output_path}")
         return final_df
 
 
@@ -1125,6 +1129,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    log_to_console()
     args = _parse_args()
     integrator = OcrGradeIntegrator(
         general_xlsx_path=args.general,

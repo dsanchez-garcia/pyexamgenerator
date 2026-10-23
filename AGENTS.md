@@ -122,6 +122,10 @@ pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [d
 - **No añadas `input()` ni prompts interactivos** a la librería: usa callbacks opcionales (como
   `usage_warning_callback` o `review_callback` en `ExamGenerator`, `exam_type_callback` en el OCR).
   Sin callback, solo se pregunta por consola desde un terminal (`pyexamgenerator/_console.py`).
+- **Mensajes con `logging`, no con `print`:** cada módulo de la librería usa
+  `logger = logging.getLogger(__name__)` (`info` para el progreso, `warning` y `error` para avisos y
+  fallos). `print` solo queda en la interacción por consola y en los `main()` de línea de órdenes,
+  que llaman a `_console.log_to_console()`, como la GUI. `tests/test_logging.py` lo comprueba.
 - **Tkinter desde hilos:** nunca leas variables (`*.get()`) ni toques widgets fuera del hilo
   principal. Lee los valores antes de lanzar el hilo y devuelve resultados con `root.after(0, ...)`.
   Para tareas largas usa `ExamApp._run_in_background` (corrección: `_grad_run_async`, una tarea a la

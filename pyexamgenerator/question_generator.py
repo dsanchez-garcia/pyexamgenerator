@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import logging
 from google import genai
 from google.genai import types  # Opcional, útil para tipado, pero no estricto
 from pypdf import PdfReader
@@ -29,9 +30,15 @@ from typing import List, Dict, Optional, Tuple
 import math
 
 try:
-    import fitz  # PyMuPDF
+    # PyMuPDF. Recent versions print a deprecation warning on stdout for its old name, 'fitz'.
+    import pymupdf as fitz
 except ImportError:
-    fitz = None
+    try:
+        import fitz  # PyMuPDF < 1.24
+    except ImportError:
+        fitz = None
+
+logger = logging.getLogger(__name__)
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
@@ -133,7 +140,7 @@ class QuestionGenerator:
         self.client = genai.Client(api_key=api_key or credentials.get_api_key())
         self.model_name = model_name
 
-        print(f"Cliente de Gemini inicializado para modelo: {model_name}")
+        logger.info(f"Cliente de Gemini inicializado para modelo: {model_name}")
 
         self.prompt_types = {
             "PRL": """
@@ -182,7 +189,7 @@ class QuestionGenerator:
                 full_text = "".join(page_texts)
             return page_texts, full_text
         except Exception as e:
-            print(f"Error extracting text from PDF: {e}")
+            logger.error(f"Error extracting text from PDF: {e}")
             return None
 
     def extract_topic_number_from_path(self, pdf_path: str) -> str:
@@ -569,7 +576,7 @@ class QuestionGenerator:
                     accepted_questions.append(question_dict)
 
             except (SyntaxError, TypeError, ValueError, AttributeError):
-                print(f"Error al evaluar la estructura como diccionario: {json_like_str}")
+                logger.error(f"Error al evaluar la estructura como diccionario: {json_like_str}")
 
         return accepted_questions
 
@@ -599,9 +606,9 @@ class QuestionGenerator:
             if 'Número de pregunta' not in df.columns:
                 df.insert(0, 'Número de pregunta', range(1, len(df) + 1))
             df.to_excel(filepath, index=False)
-            print(f"Preguntas aceptadas guardadas en: '{filepath}'")
+            logger.info(f"Preguntas aceptadas guardadas en: '{filepath}'")
         else:
-            print("No se generaron preguntas aceptadas para guardar en Excel.")
+            logger.info("No se generaron preguntas aceptadas para guardar en Excel.")
 
     def save_questions_to_docx(self, df: pd.DataFrame, filepath: str) -> None:
         """Saves the questions to a DOCX file for manual review."""
@@ -623,7 +630,7 @@ class QuestionGenerator:
                 document.add_paragraph()
             document.save(filepath)
         else:
-            print("No hay preguntas para guardar en DOCX.")
+            logger.info("No hay preguntas para guardar en DOCX.")
 
     def save_rejected_questions_to_docx(self, df: pd.DataFrame, filepath: str) -> None:
         """
@@ -634,7 +641,7 @@ class QuestionGenerator:
             filepath (str): The filepath for the output file.
         """
         if df.empty:
-            print("No se descartaron preguntas por similitud.")
+            logger.info("No se descartaron preguntas por similitud.")
             return
 
         document = Document()
@@ -677,7 +684,7 @@ class QuestionGenerator:
             p_match.add_run(f"{row.get('Pregunta Coincidente', 'N/A')}")
 
         document.save(filepath)
-        print(f"Se guardó un informe de {len(df)} preguntas descartadas en: '{filepath}'")
+        logger.info(f"Se guardó un informe de {len(df)} preguntas descartadas en: '{filepath}'")
 
     def _normalize_text(self, text: str) -> str:
         """Normalizes text for comparison (lowercase, no punctuation)."""
@@ -890,7 +897,7 @@ class QuestionGenerator:
                 delay = pending_delays.pop(0)
                 if suggested is not None and suggested > delay:
                     delay = suggested
-                print(f"    Gemini no responde ahora mismo (error {code}); nuevo intento en {delay:g} s...")
+                logger.warning(f"    Gemini no responde ahora mismo (error {code}); nuevo intento en {delay:g} s...")
                 time.sleep(delay)
 
     @staticmethod
@@ -1012,13 +1019,13 @@ class QuestionGenerator:
 
         if similarity_threshold is not None and 0 <= similarity_threshold <= 1.0:
             self.similarity_threshold = similarity_threshold
-            print(f"Filtro de similitud activado con umbral: {self.similarity_threshold}")
+            logger.info(f"Filtro de similitud activado con umbral: {self.similarity_threshold}")
         else:
             self.similarity_threshold = 1.1  # Effectively disables the filter
-            print(f"Filtro de similitud DESACTIVADO (umbral: {self.similarity_threshold}).")
+            logger.info(f"Filtro de similitud DESACTIVADO (umbral: {self.similarity_threshold}).")
 
         self.current_prompt_example_content_type = prompt_example_content_type
-        print(f"Contenido de ejemplos en prompt: {self.current_prompt_example_content_type}")
+        logger.info(f"Contenido de ejemplos en prompt: {self.current_prompt_example_content_type}")
 
         if existing_bank_path:
             # A bank was chosen to avoid duplicates: if it cannot be read (missing, open in Excel...),
@@ -1027,12 +1034,14 @@ class QuestionGenerator:
                 self.existing_bank_df = pd.read_excel(existing_bank_path)
             except Exception as e:
                 raise ValueError(f"No se pudo leer el banco de preguntas existente '{existing_bank_path}': {e}") from e
-            print(f"Banco de preguntas existente cargado desde '{existing_bank_path}' para el filtro de similitud.")
+            logger.info(
+                f"Banco de preguntas existente cargado desde '{existing_bank_path}' para el filtro de similitud."
+            )
         else:
             self.existing_bank_df = None
 
         for pdf_path in pdf_paths:
-            print(f"\n--- Procesando archivo fuente: {pdf_path} ---")
+            logger.info(f"\n--- Procesando archivo fuente: {pdf_path} ---")
             current_pdf_topic = self.extract_topic_number_from_path(pdf_path)
 
             if input_mode not in ("text", "image"):
@@ -1047,7 +1056,7 @@ class QuestionGenerator:
                 # Local values (not instance attributes): see _read_pdf.
                 page_texts, pdf_full_text_content = self._read_pdf(pdf_path) or ([], "")
                 if not pdf_full_text_content:
-                    print(f"No se pudo extraer texto del PDF: {pdf_path}")
+                    logger.warning(f"No se pudo extraer texto del PDF: {pdf_path}")
                     continue
 
                 if process_by_pages and page_texts:
@@ -1067,18 +1076,20 @@ class QuestionGenerator:
 
                     context_for_chunks = pdf_full_text_content
                     if chunking_mode == "pages" and total_chunks is None:
-                        print(
+                        logger.info(
                             f"PDF dividido en {len(text_chunks_to_process)} fragmentos de ~{pages_per_chunk} página(s)."
                         )
                     else:
-                        print(f"PDF dividido en {len(text_chunks_to_process)} fragmentos (modo: {chunking_mode}).")
+                        logger.info(
+                            f"PDF dividido en {len(text_chunks_to_process)} fragmentos (modo: {chunking_mode})."
+                        )
                 else:
                     text_chunks_to_process = [pdf_full_text_content]
-                    print("Procesando el PDF completo como un solo fragmento.")
+                    logger.info("Procesando el PDF completo como un solo fragmento.")
             else:
                 visual_items = self._load_source_as_image_items(pdf_path)
                 if not visual_items:
-                    print(f"No se pudieron cargar imágenes desde: {pdf_path}")
+                    logger.warning(f"No se pudieron cargar imágenes desde: {pdf_path}")
                     continue
 
                 if process_by_pages and len(visual_items) > 1:
@@ -1086,10 +1097,10 @@ class QuestionGenerator:
                         image_chunks_to_process = self._group_items_into_total_chunks(visual_items, total_chunks)
                     else:
                         image_chunks_to_process = self._group_items_by_chunk_size(visual_items, pages_per_chunk)
-                    print(f"Fuente visual dividida en {len(image_chunks_to_process)} fragmentos.")
+                    logger.info(f"Fuente visual dividida en {len(image_chunks_to_process)} fragmentos.")
                 else:
                     image_chunks_to_process = [visual_items]
-                    print("Procesando la fuente visual completa como un solo fragmento.")
+                    logger.info("Procesando la fuente visual completa como un solo fragmento.")
 
             chunks_count = len(text_chunks_to_process) if input_mode == "text" else len(image_chunks_to_process)
 
@@ -1104,7 +1115,7 @@ class QuestionGenerator:
                     )
                     current_chunk_images = image_chunks_to_process[i]
 
-                print(f"\nProcesando fragmento {i + 1}/{chunks_count}...")
+                logger.info(f"\nProcesando fragmento {i + 1}/{chunks_count}...")
                 questions_accepted_for_this_chunk = []  # This list will hold question dicts
                 attempts_for_this_chunk = 0
 
@@ -1115,7 +1126,7 @@ class QuestionGenerator:
                     attempts_for_this_chunk += 1
                     num_still_needed = num_questions_per_chunk_target - len(questions_accepted_for_this_chunk)
 
-                    print(
+                    logger.info(
                         f"  Intento {attempts_for_this_chunk}/{max_generation_attempts_per_chunk} para el fragmento: Se necesitan {num_still_needed} preguntas más."
                     )
 
@@ -1144,7 +1155,7 @@ class QuestionGenerator:
                         # Temporary errors (429/5xx) are retried inside, with increasing waits.
                         response = self._generate_content(contents)
                         if print_raw_gemini_answer:
-                            print(
+                            logger.info(
                                 f"    Respuesta cruda de Gemini (Fragmento {i + 1}, Intento {attempts_for_this_chunk}):\n    >>>\n{response.text}\n    <<<\n    ---"
                             )
 
@@ -1167,7 +1178,7 @@ class QuestionGenerator:
                                 unique_newly_accepted.append(q_new)
 
                         questions_accepted_for_this_chunk.extend(unique_newly_accepted)
-                        print(
+                        logger.info(
                             f"    Intento {attempts_for_this_chunk}: {len(unique_newly_accepted)} preguntas nuevas aceptadas para este fragmento. Total para fragmento: {len(questions_accepted_for_this_chunk)}/{num_questions_per_chunk_target}"
                         )
 
@@ -1175,16 +1186,13 @@ class QuestionGenerator:
                         # Already retried or not fixable by retrying (see _generate_content): stop here.
                         raise
                     except Exception as e_gen:
-                        # Si es otro error, lo imprimimos para depuración pero no detenemos el proceso
-                        print(
+                        # Si es otro error, lo registramos con la traza para depuración pero no detenemos el proceso
+                        logger.exception(
                             f"    Error durante la generación/análisis en el intento {attempts_for_this_chunk} para el fragmento {i + 1}: {e_gen}"
                         )
-                        import traceback
-
-                        print(traceback.format_exc())
 
                 if len(questions_accepted_for_this_chunk) < num_questions_per_chunk_target:
-                    print(
+                    logger.warning(
                         f"  Advertencia: No se alcanzó el objetivo de {num_questions_per_chunk_target} preguntas para el fragmento {i + 1} después de {max_generation_attempts_per_chunk} intentos. Se obtuvieron {len(questions_accepted_for_this_chunk)}."
                     )
 
@@ -1206,12 +1214,12 @@ class QuestionGenerator:
             rejected_docx_path = os.path.join(output_dir, f'{output_filename}_similares_descartadas.docx')
             self.save_rejected_questions_to_docx(rejected_df, rejected_docx_path)
         else:
-            print("No se descartaron preguntas por similitud durante todo el proceso.")
+            logger.info("No se descartaron preguntas por similitud durante todo el proceso.")
 
-        print("\n--- Proceso de generación completado. ---")
-        print(f"Total preguntas aceptadas y guardadas: {len(self.final_df)}")
+        logger.info("\n--- Proceso de generación completado. ---")
+        logger.info(f"Total preguntas aceptadas y guardadas: {len(self.final_df)}")
         if self.rejected_questions_list:
-            print(
+            logger.info(
                 f"Total preguntas rechazadas por similitud (acumulado de todos los intentos): {len(self.rejected_questions_list)}"
             )
 
