@@ -222,8 +222,8 @@ cambia; un fichero mal escrito detiene la corrección con un `ValueError` que di
 - Una clase `ExamApp(root)`; `main()` crea `tk.Tk()` y lanza `mainloop()` (entry point de consola
   `pyexamgenerator`).
 - Las pestañas pasan a clases propias en `gui/` (ARC-1), una por módulo, que reciben la app:
-  `BankTab` (`gui/bank_tab.py`, «Gestionar Banco de Preguntas») ya está separada y se guarda en
-  `app.bank_tab`. Cada pestaña crea sus variables Tk y sus widgets, y usa de la app solo la
+  `BankTab` (`gui/bank_tab.py`, «Gestionar Banco de Preguntas», en `app.bank_tab`) y `ExamTab`
+  (`gui/exam_tab.py`, «Generar Exámenes», en `app.exam_tab`) ya están separadas. Cada pestaña crea sus variables Tk y sus widgets, y usa de la app solo la
   ventana y sus servicios (`self.app.root`, `_create_scrollable_tab`, `_bind_page_scroll`,
   `update_status`, `_run_in_background`, `_call_in_main_thread`). El `messagebox` con texto
   copiable está en `gui/_dialogs.py` y lo comparten la ventana y las pestañas.
@@ -252,7 +252,7 @@ cambia; un fichero mal escrito detiene la corrección con un `ValueError` que di
   nombres de fichero pueden contener comas), penalización, pesos de la nota final, tipos forzados por
   imagen, nombres de examen y preguntas por tema.
 - Guardar y cargar la plantilla de exámenes y la sesión de corrección usan un único mapa de campos
-  (`_exam_template_fields`, `_grad_session_fields`, `_grad_column_fields`).
+  (`ExamTab._exam_template_fields`, `_grad_session_fields`, `_grad_column_fields`).
 - Los `messagebox.show*` se sustituyen por diálogos con texto copiable.
 - Ficheros persistidos:
 
