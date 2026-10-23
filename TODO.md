@@ -201,7 +201,7 @@ búscalas por nombre de función si no coinciden.
   comando `pyexamgenerator` y los tests. Un PR por pestaña, empezando por la más pequeña.*
   *Aprobada por el mantenedor el 2026-10-23. Hecho hasta ahora: «Gestionar Banco de Preguntas» en
   `gui/bank_tab.py` (`027dba8`; el `messagebox` copiable, en `gui/_dialogs.py`) y «Generar Exámenes»
-  en `gui/exam_tab.py` (`5aa4125`).*
+  en `gui/exam_tab.py` (`5aa4125`) y «Generar Preguntas» en `gui/questions_tab.py` (`7bd4390`).*
 - [x] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
   *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*
