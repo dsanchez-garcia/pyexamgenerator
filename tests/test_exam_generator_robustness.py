@@ -218,6 +218,33 @@ def test_check_preview_is_reviewed_through_a_callback(tmp_path, monkeypatch):
     assert not list((tmp_path / "salida").glob("*.docx"))
 
 
+def test_preview_name_follows_the_exam_file_name_rules(tmp_path, monkeypatch):
+    """BUG-11 saneó los nombres de los exámenes, pero no el de la previsualización: con una `/` o `:`
+    en la asignatura, `check=True` fallaba al guardarla."""
+    monkeypatch.chdir(tmp_path)
+    _bank().to_excel(tmp_path / "banco.xlsx", index=False)
+    reviewed = []
+
+    def approve(preview_path):
+        reviewed.append(preview_path)
+        assert os.path.exists(preview_path)
+        return True
+
+    _generate(
+        tmp_path / "banco.xlsx",
+        out_dir=tmp_path / "salida",
+        subject="Prevención: PRL/Riesgos",
+        course=None,
+        check=True,
+        review_callback=approve,
+    )
+
+    assert [os.path.basename(path) for path in reviewed] == [
+        "examen_previsualizacion_Prevención- PRL-Riesgos_Parcial__completo.docx"
+    ]
+    assert list((tmp_path / "salida").glob("*_A.docx"))
+
+
 def test_check_without_a_terminal_or_callback_fails_before_generating(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _bank().to_excel(tmp_path / "banco.xlsx", index=False)

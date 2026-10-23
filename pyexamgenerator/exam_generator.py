@@ -28,6 +28,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import os
+from dataclasses import dataclass
 from typing import Callable, Iterable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
 
 from pyexamgenerator import schema
@@ -45,6 +46,22 @@ class NoAcceptableQuestionsError(Exception):
     """Excepción personalizada para cuando no se encuentran preguntas aceptables."""
 
     pass
+
+
+@dataclass(frozen=True)
+class _ExamDocumentSettings:
+    """What the DOCX of every exam type share in one call to ``generate_exam_from_excel``."""
+
+    subject: Optional[str]
+    exam: Optional[str]
+    course: Optional[str]
+    font_size: int
+    top_margin: float
+    bottom_margin: float
+    left_margin: float
+    right_margin: float
+    template_docx_path: Optional[str]
+    answer_sheet_instructions: Optional[str]
 
 
 class ExamGenerator:
@@ -974,163 +991,49 @@ class ExamGenerator:
             # Silently falling back to a blank document would hide a wrong path.
             raise FileNotFoundError(f"No se encuentra la plantilla DOCX: {template_docx_path}")
 
-        # Always re-read the bank: a cached DataFrame from a previous call could belong to another
-        # file (or an outdated version of this one) and, with update_excel=True, overwrite it.
-        # Read errors are raised: returning quietly made callers (the GUI) report a generation
-        # that did not happen.
-        self.df = self._read_bank(bank_excel_path)
+        # 1. Selection: the questions that every exam type has, each in its own order.
+        self._load_acceptable_questions(bank_excel_path)
+        self.exam_df = self._select_exam_questions(
+            questions_per_topic, selection_method, total_questions, total_distribution, verbose
+        )
+        self._check_correct_answers(self.exam_df)
 
-        exam_columns = [col for col in self.df.columns if re.match(r'.*_\d{2}-\d{2}', col)]
-        for col in exam_columns:
-            self.df[col] = self.df[col].fillna(0)
+        # 2. Confirmations: the usage warning and the preview can cancel before anything is written.
+        if not self._usage_warning_allows_generation(
+            usage_warning_enabled, usage_warning_threshold, usage_warning_callback
+        ):
+            self.generation_cancelled = True
+            logger.info("Generacion de examenes cancelada por alerta de uso de preguntas.")
+            return
+        if check and not self._preview_approved(subject, exam, course, font_size, review_callback):
+            self.generation_cancelled = True
+            logger.info("Generación de exámenes cancelada.")
+            return
 
-        self.acceptable_df = self.df[
-            self.df[schema.STATUS].astype(str).str.strip().str.lower() == schema.STATUS_ACCEPTABLE.lower()
-        ]
-
-        # Comprobación temprana: si no hay NINGUNA pregunta aceptable, paramos aquí.
-        if self.acceptable_df.empty:
-            raise NoAcceptableQuestionsError(
-                "No se encontraron preguntas con estado 'Aceptable' en el banco de preguntas."
-            )
-
-        # Normalize the optional total-questions request.
-        total_questions_int = None
-        if total_questions is not None and str(total_questions).strip() != "":
-            try:
-                total_questions_int = int(total_questions)
-            except (TypeError, ValueError):
-                total_questions_int = None
-
-        if total_questions_int and total_questions_int > 0:
-            # A fixed total overrides any per-topic dictionary.
-            available = len(self.acceptable_df)
-            if total_questions_int > available:
-                raise ValueError(
-                    f"Se solicitaron {total_questions_int} preguntas en total, "
-                    f"pero solo hay {available} preguntas 'Aceptables' disponibles."
-                )
-            if total_distribution == "azar":
-                # Pick the total at random from the whole acceptable pool, ignoring topics.
-                self.exam_df = self.acceptable_df.sample(n=total_questions_int).copy()
-            else:
-                # Spread the total across topics as evenly as possible.
-                computed_per_topic = self._distribute_questions_equitably(self.acceptable_df, total_questions_int)
-                if verbose:
-                    logger.info(f"Verbose: Reparto equitativo del total {total_questions_int}: {computed_per_topic}")
-                self.exam_df = self._select_questions_by_topic(computed_per_topic, selection_method, verbose)
-        elif questions_per_topic:
-            self.exam_df = self._select_questions_by_topic(questions_per_topic, selection_method, verbose)
-        else:
-            self.exam_df = self.acceptable_df.copy()
-
-        if verbose:
-            logger.info(f"Verbose: Tipo de self.exam_df antes del bucle: {type(self.exam_df)}")
-            if isinstance(self.exam_df, pd.DataFrame):
-                logger.info(f"Verbose: Head de self.exam_df antes del bucle:\n{self.exam_df.head()}")
-            else:
-                logger.info(f"Verbose: self.exam_df no es un DataFrame: {self.exam_df}")
-
-        invalid_answers = self._questions_without_valid_answer(self.exam_df)
-        if not invalid_answers.empty:
-            # Without a valid letter the exam would have no correct answer (and Moodle rejects it).
-            details = []
-            for _, row in invalid_answers.head(10).iterrows():
-                value = self._cell_text(row.get(schema.CORRECT_ANSWER))
-                details.append(
-                    f"nº {self._cell_text(row.get(schema.QUESTION_NUMBER)) or '?'} "
-                    f"({self._cell_text(row.get(schema.TOPIC))}): {repr(value) if value else 'vacía'}"
-                )
-            listed = "; ".join(details)
-            raise ValueError(
-                f"{len(invalid_answers)} pregunta(s) seleccionada(s) no tienen una 'Respuesta correcta' "
-                f"válida (debe ser A, B, C o D): {listed}"
-            )
-
-        self.last_usage_warning_questions = pd.DataFrame()
-        if usage_warning_enabled:
-            try:
-                usage_warning_threshold_int = int(usage_warning_threshold)
-            except (TypeError, ValueError):
-                usage_warning_threshold_int = 3
-            self.last_usage_warning_questions = self._questions_over_usage_threshold(
-                self.exam_df, usage_warning_threshold_int
-            )
-            if not self.last_usage_warning_questions.empty:
-                warning_message = self._format_usage_warning_message(
-                    self.last_usage_warning_questions, usage_warning_threshold_int
-                )
-                if usage_warning_callback:
-                    should_continue = usage_warning_callback(
-                        self.last_usage_warning_questions.copy(), usage_warning_threshold_int, warning_message
-                    )
-                    if not should_continue:
-                        self.generation_cancelled = True
-                        logger.info("Generacion de examenes cancelada por alerta de uso de preguntas.")
-                        return
-                else:
-                    logger.warning(warning_message)
-
-        if check:
-            preview_exam_df = self.exam_df.copy()
-            preview_exam_df[schema.QUESTION_NUMBER] = range(1, len(preview_exam_df) + 1)
-            preview_exam_df['Texto respuesta correcta'] = preview_exam_df.apply(self._correct_answer_text, axis=1)
-            preview_exam_text, preview_full_exam_text = self.generate_question_text(
-                preview_exam_df.copy(), renumber=True, shuffle_answers=True
-            )
-            preview_document = Document()
-            title_paragraph = preview_document.add_paragraph(subject, style='Heading 1')
-            title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            subtitle_paragraph = preview_document.add_paragraph(
-                f"Examen: {exam} - Curso: {course} - Tipo: Previsualización", style='Heading 1'
-            )
-            subtitle_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            preview_paragraph = preview_document.add_paragraph(preview_full_exam_text)
-            preview_paragraph.runs[0].font.size = Pt(font_size)
-            preview_document = self.add_page_number(preview_document)
-            preview_path = f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx'
-            preview_document.save(preview_path)
-
-            logger.info(f"Se ha generado un examen de previsualización: {preview_path}")
-            if review_callback is not None:
-                approved = bool(review_callback(os.path.abspath(preview_path)))
-            else:
-                approved = ask_yes_no("¿El examen es correcto? (sí/no): ")
-
-            if approved:
-                try:
-                    os.remove(preview_path)
-                    logger.info("Archivo de previsualización eliminado.")
-                except OSError as e:
-                    logger.error(f"Error al eliminar el archivo de previsualización: {e}")
-            else:
-                self.generation_cancelled = True
-                logger.info("Generación de exámenes cancelada.")
-                return
-
+        # 3. One variant per exam type (questions and answers shuffled) and its files.
         if exam_names is None:
-            num_exams_to_generate = num_exams
-            exam_name_list = [f'Tipo {i + 1}' for i in range(num_exams_to_generate)]
-        else:
-            num_exams_to_generate = len(exam_names)
-            exam_name_list = exam_names
+            exam_names = [f'Tipo {i + 1}' for i in range(num_exams)]
 
         if output_dir is None:
             # abspath: a bare file name ('banco.xlsx') has an empty dirname and makedirs('') fails.
             output_dir = os.path.dirname(os.path.abspath(bank_excel_path))
         os.makedirs(output_dir, exist_ok=True)
         usage_column_name = self._generation_usage_column_name(exam, course, existing_columns=self.df.columns)
+        settings = _ExamDocumentSettings(
+            subject=subject,
+            exam=exam,
+            course=course,
+            font_size=font_size,
+            top_margin=top_margin,
+            bottom_margin=bottom_margin,
+            left_margin=left_margin,
+            right_margin=right_margin,
+            template_docx_path=template_docx_path,
+            answer_sheet_instructions=answer_sheet_instructions,
+        )
 
-        for i in range(num_exams_to_generate):
-            exam_type_name = exam_name_list[i]
+        for i, exam_type_name in enumerate(exam_names):
             exam_df_shuffled = self._build_exam_variant_df(self.exam_df)
-
-            placeholder_map: Dict[str, str] = {
-                "subject": subject or "",
-                "exam": exam or "",
-                "course": course or "",
-                "exam_type": exam_type_name or "",
-            }
 
             # '/', ':' or '?' in the subject or exam name would break the path (and None gave 'None').
             base_filename = 'examen_' + '_'.join(
@@ -1151,173 +1054,8 @@ class ExamGenerator:
                 else:
                     logger.info(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
 
-            exam_text, full_exam_text = self.generate_question_text(
-                exam_df_shuffled.copy(), renumber=False, shuffle_answers=False
-            )
-
-            document = (
-                Document(template_docx_path)
-                if template_docx_path and os.path.exists(template_docx_path)
-                else Document()
-            )
-            self._replace_placeholders_in_document(document, placeholder_map)
-            title_paragraph = document.add_paragraph(subject, style='Heading 1')
-            title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            subtitle_paragraph = document.add_paragraph(
-                f"Examen: {exam} - Curso: {course} - Tipo: {exam_type_name}", style='Heading 1'
-            )
-            subtitle_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            section = document.sections[0]
-            section.top_margin = Inches(top_margin)
-            section.bottom_margin = Inches(bottom_margin)
-            section.left_margin = Inches(left_margin)
-            section.right_margin = Inches(right_margin)
-
-            self._add_student_identification_header(
-                document=document,
-                subject=subject,
-                exam=exam,
-                course=course,
-                exam_type_name=exam_type_name,
-                font_size=font_size,
-            )
-
-            use_two_digits = len(exam_df_shuffled) > 9
-            for _, row in exam_df_shuffled.iterrows():
-                self._add_question_block(
-                    document, row, font_size, include_solution=False, use_two_digits=use_two_digits
-                )
-
-            # Start the answer sheet on an odd page so it prints as a single, self-contained sheet
-            # (front of a physical page) while staying in the same document as the questions.
-            document.add_section(WD_SECTION.ODD_PAGE)
-            document.add_heading('Datos del alumno', level=1)
-            document.paragraphs[-1].runs[0].font.size = Pt(font_size)
-            student_table = document.add_table(rows=4, cols=2)
-            student_table.style = 'Table Grid'
-            # Use a fixed layout so the column widths below are honored by Word.
-            student_table.autofit = False
-            student_data = ['Nombre', 'Apellidos', 'DNI/NIE', 'Firma']
-            for j, data in enumerate(student_data):
-                cell = student_table.cell(j, 0)
-                cell.text = data
-                for paragraph in cell.paragraphs:
-                    paragraph.runs[0].font.size = Pt(font_size)
-            # The label column only needs room for words like 'Apellidos'/'DNI/NIE'; give the rest of
-            # the page width to the data column so there is plenty of space to write name, surname, etc.
-            answer_section = document.sections[-1]
-            available_width = answer_section.page_width - answer_section.left_margin - answer_section.right_margin
-            label_col_width = Cm(3.5)
-            if label_col_width > available_width * 0.5:
-                label_col_width = int(available_width * 0.4)
-            value_col_width = available_width - label_col_width
-            for row in student_table.rows:
-                row.cells[0].width = label_col_width
-                row.cells[1].width = value_col_width
-            student_table.rows[3].height = Inches(1)
-
-            document.add_heading('Hoja de respuestas', level=1)
-            document.paragraphs[-1].runs[0].font.size = Pt(font_size)
-            if answer_sheet_instructions:
-                instructions_title = document.add_paragraph("Instrucciones de cumplimentación:")
-                instructions_title.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
-                instructions_title.runs[0].font.size = Pt(font_size)
-                instructions_paragraph = document.add_paragraph(answer_sheet_instructions)
-                instructions_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
-                instructions_paragraph.runs[0].font.size = Pt(font_size)
-
-            if verbose:
-                logger.info(f"Verbose: Tipo de exam_df_shuffled antes de crear la tabla: {type(exam_df_shuffled)}")
-                if isinstance(exam_df_shuffled, pd.DataFrame):
-                    logger.info(f"Verbose: Longitud de exam_df_shuffled para número de filas: {len(exam_df_shuffled)}")
-                else:
-                    logger.info(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
-
-            # Answer sheet: 'Pregunta' + one column per answer option plus an extra 'NC' (no
-            # contestada) column so students can explicitly mark a question as unanswered instead of
-            # leaving it blank.
-            headers = ['Pregunta', 'a', 'b', 'c', 'd', 'NC']
-            table = document.add_table(rows=len(exam_df_shuffled) + 1, cols=len(headers))
-            table.style = 'Table Grid'
-            # Center the whole table on the page and use a fixed layout so the widths below are kept.
-            table.alignment = WD_TABLE_ALIGNMENT.CENTER
-            table.autofit = False
-            for j, header in enumerate(headers):
-                cell = table.cell(0, j)
-                cell.text = header
-                for paragraph in cell.paragraphs:
-                    paragraph.runs[0].font.size = Pt(font_size)
-            for j, (_, row) in enumerate(exam_df_shuffled.iterrows(), start=1):
-                cell = table.cell(j, 0)
-                cell.text = self._format_question_number(row[schema.QUESTION_NUMBER])
-                for paragraph in cell.paragraphs:
-                    paragraph.runs[0].font.size = Pt(font_size)
-
-            # Column widths: 1 cm by default, growing only when the content needs more room (e.g. the
-            # 'Pregunta' column). The answer columns (a/b/c/d/NC) stay at 1 cm.
-            min_col_width_cm = 1.0
-            approx_char_width_cm = 0.23
-            col_widths = []
-            for j in range(len(headers)):
-                longest = max(len(table.cell(k, j).text) for k in range(len(exam_df_shuffled) + 1))
-                width_cm = max(min_col_width_cm, longest * approx_char_width_cm + 0.2)
-                col_widths.append(Cm(width_cm))
-
-            # Apply the widths to every cell (most reliable in Word) and center the content both
-            # horizontally and vertically, keeping the configured font size.
-            for j in range(len(headers)):
-                for row in table.rows:
-                    cell = row.cells[j]
-                    cell.width = col_widths[j]
-                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                    for paragraph in cell.paragraphs:
-                        paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                        for run in paragraph.runs:
-                            run.font.size = Pt(font_size)
-
-            document = self.add_page_number(document)
-            self._remove_empty_last_section(document)
-            document.save(docx_path)
-
-            full_document = (
-                Document(template_docx_path)
-                if template_docx_path and os.path.exists(template_docx_path)
-                else Document()
-            )
-            self._replace_placeholders_in_document(full_document, placeholder_map)
-            title_paragraph = full_document.add_paragraph(subject, style='Heading 1')
-            title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            subtitle_paragraph = full_document.add_paragraph(
-                f"Examen: {exam} - Curso: {course} - Tipo: {exam_type_name} - Completo", style='Heading 1'
-            )
-            subtitle_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            full_section = full_document.sections[0]
-            full_section.top_margin = Inches(top_margin)
-            full_section.bottom_margin = Inches(bottom_margin)
-            full_section.left_margin = Inches(left_margin)
-            full_section.right_margin = Inches(right_margin)
-
-            full_header = full_section.header
-            # Keep a template header (institution, logo...): only reuse the first paragraph if empty.
-            if full_header.paragraphs and not full_header.paragraphs[0].runs:
-                full_header_paragraph = full_header.paragraphs[0]
-            else:
-                full_header_paragraph = full_header.add_paragraph()
-            full_header_paragraph.text = (
-                f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name} - Completo"
-            )
-            full_header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            full_header_paragraph.runs[0].font.size = Pt(font_size)
-
-            use_two_digits = len(exam_df_shuffled) > 9
-            for _, row in exam_df_shuffled.iterrows():
-                self._add_question_block(
-                    full_document, row, font_size, include_solution=True, use_two_digits=use_two_digits
-                )
-
-            full_document = self.add_page_number(full_document)
-            self._remove_empty_last_section(full_document)
-            full_document.save(full_docx_path)
+            self._write_student_docx(exam_df_shuffled, docx_path, settings, exam_type_name, verbose)
+            self._write_full_docx(exam_df_shuffled, full_docx_path, settings, exam_type_name)
 
             exam_export_df = self._add_exam_usage_column_for_export(exam_df_shuffled, usage_column_name)
             exam_export_df.to_excel(excel_path_out, index=False)
@@ -1352,49 +1090,423 @@ class ExamGenerator:
             self._save_grading_session(session_output_path, subject=subject, exam=exam, course=course)
 
         if update_excel:
-            if usage_column_name not in self.df.columns:
-                self.df[usage_column_name] = 0
+            self._record_usage_in_bank(bank_excel_path, usage_column_name)
 
-            # The selection keeps the bank's row labels, so mark exactly those rows. 'Número de
-            # pregunta' is not unique after merging banks and would mark unrelated questions.
-            self.df.loc[self.exam_df.index, usage_column_name] = 1
+    def _load_acceptable_questions(self, bank_excel_path: str) -> None:
+        """Reads the bank into ``self.df`` and its 'Aceptable' questions into ``self.acceptable_df``.
 
-            usage_columns = [col for col in self.df.columns if col.endswith(schema.USAGE_SUFFIX)]
+        Raises:
+            NoAcceptableQuestionsError: If the bank has no question with status 'Aceptable'.
+        """
+        # Always re-read the bank: a cached DataFrame from a previous call could belong to another
+        # file (or an outdated version of this one) and, with update_excel=True, overwrite it.
+        # Read errors are raised: returning quietly made callers (the GUI) report a generation
+        # that did not happen.
+        self.df = self._read_bank(bank_excel_path)
 
-            if not usage_columns:
-                logger.info("No se encontraron columnas de uso para sumar.")
-                # Si la columna de suma no existe, la creamos.
-                if schema.TIMES_USED not in self.df.columns:
-                    self.df[schema.TIMES_USED] = 0
-            else:
-                logger.info(f"Sumando las siguientes columnas de uso: {usage_columns}")
-                self.df[schema.TIMES_USED] = self.df[usage_columns].sum(axis=1)
+        exam_columns = [col for col in self.df.columns if re.match(r'.*_\d{2}-\d{2}', col)]
+        for col in exam_columns:
+            self.df[col] = self.df[col].fillna(0)
 
-            if schema.TIMES_USED in self.df.columns and schema.RELEVANT_TEXT in self.df.columns:
-                veces_usada_col = self.df.pop(schema.TIMES_USED)
-                try:
-                    texto_relevante_idx = self.df.columns.get_loc(schema.RELEVANT_TEXT)
-                    self.df.insert(texto_relevante_idx + 1, schema.TIMES_USED, veces_usada_col)
-                    logger.info("Columna 'Veces usada en examen' movida a su posición correcta.")
-                except KeyError:
-                    # Si 'Texto relevante' no existe, la añade al final.
-                    self.df[schema.TIMES_USED] = veces_usada_col
-                    logger.warning(
-                        "Advertencia: No se encontró la columna 'Texto relevante'. 'Veces usada en examen' se añadió al final."
-                    )
+        self.acceptable_df = self.df[
+            self.df[schema.STATUS].astype(str).str.strip().str.lower() == schema.STATUS_ACCEPTABLE.lower()
+        ]
 
-            self.df = self.df.loc[:, ~self.df.columns.str.contains('unnamed', case=False)]
+        # Comprobación temprana: si no hay NINGUNA pregunta aceptable, paramos aquí.
+        if self.acceptable_df.empty:
+            raise NoAcceptableQuestionsError(
+                "No se encontraron preguntas con estado 'Aceptable' en el banco de preguntas."
+            )
 
+    def _select_exam_questions(
+        self,
+        questions_per_topic: Optional[dict],
+        selection_method: str,
+        total_questions,
+        total_distribution: str,
+        verbose: bool = False,
+    ) -> pd.DataFrame:
+        """Selects the exam's questions from ``self.acceptable_df``.
+
+        A total (``total_questions``, spread across topics or picked at random) overrides
+        ``questions_per_topic``; with neither, every acceptable question is used. See
+        :meth:`generate_exam_from_excel` for the meaning of each argument.
+
+        Raises:
+            ValueError: If there are not enough acceptable questions (in total or in a topic).
+        """
+        # Normalize the optional total-questions request.
+        total_questions_int = None
+        if total_questions is not None and str(total_questions).strip() != "":
             try:
-                self.df.to_excel(bank_excel_path, index=False)
-                logger.info(
-                    f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'."
+                total_questions_int = int(total_questions)
+            except (TypeError, ValueError):
+                total_questions_int = None
+
+        if total_questions_int and total_questions_int > 0:
+            # A fixed total overrides any per-topic dictionary.
+            available = len(self.acceptable_df)
+            if total_questions_int > available:
+                raise ValueError(
+                    f"Se solicitaron {total_questions_int} preguntas en total, "
+                    f"pero solo hay {available} preguntas 'Aceptables' disponibles."
                 )
-            except Exception as e:
-                # The exams are already written: keep them, but let the caller know that the usage was
-                # not recorded (e.g. the bank is open in Excel) instead of only printing it.
-                self.bank_update_error = f"{type(e).__name__}: {e}"
-                logger.error(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
+            if total_distribution == "azar":
+                # Pick the total at random from the whole acceptable pool, ignoring topics.
+                exam_df = self.acceptable_df.sample(n=total_questions_int).copy()
+            else:
+                # Spread the total across topics as evenly as possible.
+                computed_per_topic = self._distribute_questions_equitably(self.acceptable_df, total_questions_int)
+                if verbose:
+                    logger.info(f"Verbose: Reparto equitativo del total {total_questions_int}: {computed_per_topic}")
+                exam_df = self._select_questions_by_topic(computed_per_topic, selection_method, verbose)
+        elif questions_per_topic:
+            exam_df = self._select_questions_by_topic(questions_per_topic, selection_method, verbose)
+        else:
+            exam_df = self.acceptable_df.copy()
+
+        if verbose:
+            logger.info(f"Verbose: Tipo de self.exam_df antes del bucle: {type(exam_df)}")
+            if isinstance(exam_df, pd.DataFrame):
+                logger.info(f"Verbose: Head de self.exam_df antes del bucle:\n{exam_df.head()}")
+            else:
+                logger.info(f"Verbose: self.exam_df no es un DataFrame: {exam_df}")
+        return exam_df
+
+    def _check_correct_answers(self, exam_df: pd.DataFrame) -> None:
+        """Raises ``ValueError`` listing the selected questions whose correct answer is not A-D."""
+        invalid_answers = self._questions_without_valid_answer(exam_df)
+        if invalid_answers.empty:
+            return
+        # Without a valid letter the exam would have no correct answer (and Moodle rejects it).
+        details = []
+        for _, row in invalid_answers.head(10).iterrows():
+            value = self._cell_text(row.get(schema.CORRECT_ANSWER))
+            details.append(
+                f"nº {self._cell_text(row.get(schema.QUESTION_NUMBER)) or '?'} "
+                f"({self._cell_text(row.get(schema.TOPIC))}): {repr(value) if value else 'vacía'}"
+            )
+        listed = "; ".join(details)
+        raise ValueError(
+            f"{len(invalid_answers)} pregunta(s) seleccionada(s) no tienen una 'Respuesta correcta' "
+            f"válida (debe ser A, B, C o D): {listed}"
+        )
+
+    def _usage_warning_allows_generation(
+        self,
+        enabled: bool,
+        threshold,
+        callback: Optional[Callable[[pd.DataFrame, int, str], bool]],
+    ) -> bool:
+        """Warns about selected questions used more than ``threshold`` times.
+
+        The questions are kept in ``self.last_usage_warning_questions``. With ``callback``, it decides
+        whether to go on; without it, the warning is only logged.
+
+        Returns:
+            bool: False if the callback cancelled the generation.
+        """
+        self.last_usage_warning_questions = pd.DataFrame()
+        if not enabled:
+            return True
+        try:
+            threshold_int = int(threshold)
+        except (TypeError, ValueError):
+            threshold_int = 3
+        self.last_usage_warning_questions = self._questions_over_usage_threshold(self.exam_df, threshold_int)
+        if self.last_usage_warning_questions.empty:
+            return True
+        warning_message = self._format_usage_warning_message(self.last_usage_warning_questions, threshold_int)
+        if callback:
+            return bool(callback(self.last_usage_warning_questions.copy(), threshold_int, warning_message))
+        logger.warning(warning_message)
+        return True
+
+    def _preview_approved(
+        self,
+        subject: Optional[str],
+        exam: Optional[str],
+        course: Optional[str],
+        font_size: int,
+        review_callback: Optional[Callable[[str], bool]],
+    ) -> bool:
+        """Writes a preview of the exam with its solutions and asks whether it is right.
+
+        The answer comes from ``review_callback`` (it receives the preview's path) or, without it,
+        from the console. The preview is deleted when approved.
+
+        Returns:
+            bool: True to generate the exams.
+        """
+        preview_exam_df = self.exam_df.copy()
+        preview_exam_df[schema.QUESTION_NUMBER] = range(1, len(preview_exam_df) + 1)
+        preview_exam_df['Texto respuesta correcta'] = preview_exam_df.apply(self._correct_answer_text, axis=1)
+        preview_exam_text, preview_full_exam_text = self.generate_question_text(
+            preview_exam_df.copy(), renumber=True, shuffle_answers=True
+        )
+        preview_document = Document()
+        title_paragraph = preview_document.add_paragraph(subject, style='Heading 1')
+        title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        subtitle_paragraph = preview_document.add_paragraph(
+            f"Examen: {exam} - Curso: {course} - Tipo: Previsualización", style='Heading 1'
+        )
+        subtitle_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        preview_paragraph = preview_document.add_paragraph(preview_full_exam_text)
+        preview_paragraph.runs[0].font.size = Pt(font_size)
+        preview_document = self.add_page_number(preview_document)
+        # Same rules as the exam files: '/', ':' or '?' would break the path (and None gave 'None').
+        name_parts = '_'.join(safe_filename_part(part) for part in (subject, exam, course))
+        preview_path = f'examen_previsualizacion_{name_parts}_completo.docx'
+        preview_document.save(preview_path)
+
+        logger.info(f"Se ha generado un examen de previsualización: {preview_path}")
+        if review_callback is not None:
+            approved = bool(review_callback(os.path.abspath(preview_path)))
+        else:
+            approved = ask_yes_no("¿El examen es correcto? (sí/no): ")
+
+        if approved:
+            try:
+                os.remove(preview_path)
+                logger.info("Archivo de previsualización eliminado.")
+            except OSError as e:
+                logger.error(f"Error al eliminar el archivo de previsualización: {e}")
+        return approved
+
+    def _new_exam_document(self, settings: _ExamDocumentSettings, exam_type_name: str, subtitle: str) -> Document:
+        """A blank document (or the template, with its placeholders filled) with the title and margins."""
+        placeholder_map: Dict[str, str] = {
+            "subject": settings.subject or "",
+            "exam": settings.exam or "",
+            "course": settings.course or "",
+            "exam_type": exam_type_name or "",
+        }
+        template_docx_path = settings.template_docx_path
+        document = (
+            Document(template_docx_path) if template_docx_path and os.path.exists(template_docx_path) else Document()
+        )
+        self._replace_placeholders_in_document(document, placeholder_map)
+        title_paragraph = document.add_paragraph(settings.subject, style='Heading 1')
+        title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        subtitle_paragraph = document.add_paragraph(subtitle, style='Heading 1')
+        subtitle_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        section = document.sections[0]
+        section.top_margin = Inches(settings.top_margin)
+        section.bottom_margin = Inches(settings.bottom_margin)
+        section.left_margin = Inches(settings.left_margin)
+        section.right_margin = Inches(settings.right_margin)
+        return document
+
+    def _write_student_docx(
+        self,
+        exam_df: pd.DataFrame,
+        docx_path: str,
+        settings: _ExamDocumentSettings,
+        exam_type_name: str,
+        verbose: bool = False,
+    ) -> None:
+        """Writes the students' exam: the questions and, on an odd page, the answer sheet."""
+        font_size = settings.font_size
+        document = self._new_exam_document(
+            settings, exam_type_name, f"Examen: {settings.exam} - Curso: {settings.course} - Tipo: {exam_type_name}"
+        )
+
+        self._add_student_identification_header(
+            document=document,
+            subject=settings.subject,
+            exam=settings.exam,
+            course=settings.course,
+            exam_type_name=exam_type_name,
+            font_size=font_size,
+        )
+
+        use_two_digits = len(exam_df) > 9
+        for _, row in exam_df.iterrows():
+            self._add_question_block(document, row, font_size, include_solution=False, use_two_digits=use_two_digits)
+
+        self._add_answer_sheet(document, exam_df, font_size, settings.answer_sheet_instructions, verbose)
+
+        document = self.add_page_number(document)
+        self._remove_empty_last_section(document)
+        document.save(docx_path)
+
+    def _add_answer_sheet(
+        self,
+        document: Document,
+        exam_df: pd.DataFrame,
+        font_size: int,
+        answer_sheet_instructions: Optional[str] = None,
+        verbose: bool = False,
+    ) -> None:
+        """Adds the student data table and the answer table, starting on an odd page."""
+        # Start the answer sheet on an odd page so it prints as a single, self-contained sheet
+        # (front of a physical page) while staying in the same document as the questions.
+        document.add_section(WD_SECTION.ODD_PAGE)
+        document.add_heading('Datos del alumno', level=1)
+        document.paragraphs[-1].runs[0].font.size = Pt(font_size)
+        student_table = document.add_table(rows=4, cols=2)
+        student_table.style = 'Table Grid'
+        # Use a fixed layout so the column widths below are honored by Word.
+        student_table.autofit = False
+        student_data = ['Nombre', 'Apellidos', 'DNI/NIE', 'Firma']
+        for j, data in enumerate(student_data):
+            cell = student_table.cell(j, 0)
+            cell.text = data
+            for paragraph in cell.paragraphs:
+                paragraph.runs[0].font.size = Pt(font_size)
+        # The label column only needs room for words like 'Apellidos'/'DNI/NIE'; give the rest of
+        # the page width to the data column so there is plenty of space to write name, surname, etc.
+        answer_section = document.sections[-1]
+        available_width = answer_section.page_width - answer_section.left_margin - answer_section.right_margin
+        label_col_width = Cm(3.5)
+        if label_col_width > available_width * 0.5:
+            label_col_width = int(available_width * 0.4)
+        value_col_width = available_width - label_col_width
+        for row in student_table.rows:
+            row.cells[0].width = label_col_width
+            row.cells[1].width = value_col_width
+        student_table.rows[3].height = Inches(1)
+
+        document.add_heading('Hoja de respuestas', level=1)
+        document.paragraphs[-1].runs[0].font.size = Pt(font_size)
+        if answer_sheet_instructions:
+            instructions_title = document.add_paragraph("Instrucciones de cumplimentación:")
+            instructions_title.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            instructions_title.runs[0].font.size = Pt(font_size)
+            instructions_paragraph = document.add_paragraph(answer_sheet_instructions)
+            instructions_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+            instructions_paragraph.runs[0].font.size = Pt(font_size)
+
+        if verbose:
+            logger.info(f"Verbose: Tipo de exam_df_shuffled antes de crear la tabla: {type(exam_df)}")
+            if isinstance(exam_df, pd.DataFrame):
+                logger.info(f"Verbose: Longitud de exam_df_shuffled para número de filas: {len(exam_df)}")
+            else:
+                logger.info(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df}")
+
+        # Answer sheet: 'Pregunta' + one column per answer option plus an extra 'NC' (no
+        # contestada) column so students can explicitly mark a question as unanswered instead of
+        # leaving it blank.
+        headers = ['Pregunta', 'a', 'b', 'c', 'd', 'NC']
+        table = document.add_table(rows=len(exam_df) + 1, cols=len(headers))
+        table.style = 'Table Grid'
+        # Center the whole table on the page and use a fixed layout so the widths below are kept.
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
+        for j, header in enumerate(headers):
+            cell = table.cell(0, j)
+            cell.text = header
+            for paragraph in cell.paragraphs:
+                paragraph.runs[0].font.size = Pt(font_size)
+        for j, (_, row) in enumerate(exam_df.iterrows(), start=1):
+            cell = table.cell(j, 0)
+            cell.text = self._format_question_number(row[schema.QUESTION_NUMBER])
+            for paragraph in cell.paragraphs:
+                paragraph.runs[0].font.size = Pt(font_size)
+
+        # Column widths: 1 cm by default, growing only when the content needs more room (e.g. the
+        # 'Pregunta' column). The answer columns (a/b/c/d/NC) stay at 1 cm.
+        min_col_width_cm = 1.0
+        approx_char_width_cm = 0.23
+        col_widths = []
+        for j in range(len(headers)):
+            longest = max(len(table.cell(k, j).text) for k in range(len(exam_df) + 1))
+            width_cm = max(min_col_width_cm, longest * approx_char_width_cm + 0.2)
+            col_widths.append(Cm(width_cm))
+
+        # Apply the widths to every cell (most reliable in Word) and center the content both
+        # horizontally and vertically, keeping the configured font size.
+        for j in range(len(headers)):
+            for row in table.rows:
+                cell = row.cells[j]
+                cell.width = col_widths[j]
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                for paragraph in cell.paragraphs:
+                    paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                    for run in paragraph.runs:
+                        run.font.size = Pt(font_size)
+
+    def _write_full_docx(
+        self, exam_df: pd.DataFrame, docx_path: str, settings: _ExamDocumentSettings, exam_type_name: str
+    ) -> None:
+        """Writes the teacher's copy: the same questions with the answer, relevant text and topic."""
+        font_size = settings.font_size
+        subject, exam, course = settings.subject, settings.exam, settings.course
+        full_document = self._new_exam_document(
+            settings, exam_type_name, f"Examen: {exam} - Curso: {course} - Tipo: {exam_type_name} - Completo"
+        )
+
+        full_header = full_document.sections[0].header
+        # Keep a template header (institution, logo...): only reuse the first paragraph if empty.
+        if full_header.paragraphs and not full_header.paragraphs[0].runs:
+            full_header_paragraph = full_header.paragraphs[0]
+        else:
+            full_header_paragraph = full_header.add_paragraph()
+        full_header_paragraph.text = (
+            f"Asignatura: {subject} - Examen: {exam} - Curso: {course} - Tipo: {exam_type_name} - Completo"
+        )
+        full_header_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        full_header_paragraph.runs[0].font.size = Pt(font_size)
+
+        use_two_digits = len(exam_df) > 9
+        for _, row in exam_df.iterrows():
+            self._add_question_block(
+                full_document, row, font_size, include_solution=True, use_two_digits=use_two_digits
+            )
+
+        full_document = self.add_page_number(full_document)
+        self._remove_empty_last_section(full_document)
+        full_document.save(docx_path)
+
+    def _record_usage_in_bank(self, bank_excel_path: str, usage_column_name: str) -> None:
+        """Marks the selected questions in ``usage_column_name`` and saves the bank.
+
+        ``Veces usada en examen`` is recomputed from every usage column. If the bank cannot be
+        written, the reason is left in ``self.bank_update_error`` (the exams are already written).
+        """
+        if usage_column_name not in self.df.columns:
+            self.df[usage_column_name] = 0
+
+        # The selection keeps the bank's row labels, so mark exactly those rows. 'Número de
+        # pregunta' is not unique after merging banks and would mark unrelated questions.
+        self.df.loc[self.exam_df.index, usage_column_name] = 1
+
+        usage_columns = [col for col in self.df.columns if col.endswith(schema.USAGE_SUFFIX)]
+
+        if not usage_columns:
+            logger.info("No se encontraron columnas de uso para sumar.")
+            # Si la columna de suma no existe, la creamos.
+            if schema.TIMES_USED not in self.df.columns:
+                self.df[schema.TIMES_USED] = 0
+        else:
+            logger.info(f"Sumando las siguientes columnas de uso: {usage_columns}")
+            self.df[schema.TIMES_USED] = self.df[usage_columns].sum(axis=1)
+
+        if schema.TIMES_USED in self.df.columns and schema.RELEVANT_TEXT in self.df.columns:
+            veces_usada_col = self.df.pop(schema.TIMES_USED)
+            try:
+                texto_relevante_idx = self.df.columns.get_loc(schema.RELEVANT_TEXT)
+                self.df.insert(texto_relevante_idx + 1, schema.TIMES_USED, veces_usada_col)
+                logger.info("Columna 'Veces usada en examen' movida a su posición correcta.")
+            except KeyError:
+                # Si 'Texto relevante' no existe, la añade al final.
+                self.df[schema.TIMES_USED] = veces_usada_col
+                logger.warning(
+                    "Advertencia: No se encontró la columna 'Texto relevante'. 'Veces usada en examen' se añadió al final."
+                )
+
+        self.df = self.df.loc[:, ~self.df.columns.str.contains('unnamed', case=False)]
+
+        try:
+            self.df.to_excel(bank_excel_path, index=False)
+            logger.info(
+                f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'."
+            )
+        except Exception as e:
+            # The exams are already written: keep them, but let the caller know that the usage was
+            # not recorded (e.g. the bank is open in Excel) instead of only printing it.
+            self.bank_update_error = f"{type(e).__name__}: {e}"
+            logger.error(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
 
     def _save_grading_session(
         self,

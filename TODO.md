@@ -84,6 +84,8 @@ búscalas por nombre de función si no coinciden.
   `question_bank_manager.py:778-781`. Devolver lo que devuelve `save_dataframe_to_excel`. — hecho en `8111c5b`.
 - [x] **BUG-11 (P2)** Nombres de archivo de examen sin sanear — `exam_generator.py:1002`.
   `/`, `:` o `?` en asignatura/examen rompen en Windows; `None` produce `examen_None_...`. — hecho en `e7a49a1`.
+  *El nombre de la previsualización de `check=True` se quedó sin sanear: corregido en la rama
+  `refactor/exam-generation-steps` (sigue escribiéndose en la carpeta actual, como antes).*
 - [x] **BUG-12 (P2)** Categoría Moodle con `" -"` final en el XML pero no en
   `suggest_moodle_config` — `exam_generator.py:649-655` vs `:108-113`. Un único helper. — hecho en `e7a49a1`.
 - [x] **BUG-13 (P3)** Placeholders `{{...}}` de la plantilla DOCX partidos entre *runs* de Word no se
@@ -221,6 +223,12 @@ búscalas por nombre de función si no coinciden.
   las rutas de import actuales).*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
+  *Parcial (rama `refactor/exam-generation-steps`, alcance decidido de forma autónoma el
+  2026-10-23): el método encadena pasos privados (cargar el banco, seleccionar, comprobar las
+  respuestas, aviso de uso, previsualización, DOCX del alumno y del profesor, registrar el uso) y
+  los ajustes comunes de los DOCX van en un `_ExamDocumentSettings` interno; con la misma semilla
+  genera lo mismo que antes (comprobado en 12 escenarios). Falta el `ExamConfig` público: cambia
+  la firma de un método público y conviene acordarlo.*
 - [x] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
   acepta exactamente `"sí"`), `grading/extraction.py:1030,1265`. Sustituir por callbacks, como
   `usage_warning_callback`. — hecho en `b53bbcd` (la consola queda como opción por defecto en un
