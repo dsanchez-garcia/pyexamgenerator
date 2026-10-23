@@ -80,18 +80,27 @@ los botones.
 
 - `generate_exam_from_excel(bank_excel_path, output_dir, subject, exam, course, num_exams | exam_names,
   selection_method, questions_per_topic | total_questions + total_distribution, export_moodle_xml,
-  update_excel, template_docx_path, session_output_path, check, review_callback, ...)`:
-  1. Lee el banco (en cada llamada) y filtra `Estado == "aceptable"`
+  update_excel, template_docx_path, session_output_path, check, review_callback, ...)` encadena
+  pasos privados, en este orden:
+  1. `_load_acceptable_questions`: lee el banco (en cada llamada) y filtra `Estado == "aceptable"`
      (sin distinguir mayúsculas); si no hay ninguna, `NoAcceptableQuestionsError`.
-     Tras seleccionar, exige que cada pregunta tenga `Respuesta correcta` A-D (acepta `B)`, ` b `,
-     `(c)`); si no, `ValueError` con las preguntas afectadas.
-  2. Selecciona preguntas: `azar`, `primeras` o `menos usadas`; por tema, número fijo o total
-     (`equitativo`/`azar`).
-  3. Para cada tipo construye una variante barajada con un **orden canónico único**
-     (`_build_exam_variant_df`) que se reutiliza en DOCX, hoja de respuestas y XML.
-  4. Escribe los DOCX (alumno: cabecera con huecos de identificación, hoja de respuestas en página
-     impar con columna `NC`; profesor: `_completo`), el `_completo.xlsx` y el XML de Moodle.
-  5. Opcionalmente actualiza el uso en el banco y escribe una sesión de corrección.
+  2. `_select_exam_questions`: `azar`, `primeras` o `menos usadas`; por tema, número fijo o total
+     (`equitativo`/`azar`). Después, `_check_correct_answers` exige que cada pregunta tenga
+     `Respuesta correcta` A-D (acepta `B)`, ` b `, `(c)`); si no, `ValueError` con las preguntas
+     afectadas.
+  3. `_usage_warning_allows_generation` y, con `check=True`, `_preview_approved`: pueden cancelar
+     (`generation_cancelled`) antes de escribir nada.
+  4. Para cada tipo construye una variante barajada con un **orden canónico único**
+     (`_build_exam_variant_df`) que se reutiliza en DOCX, hoja de respuestas y XML, y escribe los
+     DOCX (`_write_student_docx`: cabecera con huecos de identificación y `_add_answer_sheet`, en
+     página impar y con columna `NC`; `_write_full_docx`: el `_completo` del profesor), el
+     `_completo.xlsx` y el XML de Moodle. Lo que comparten los DOCX de todos los tipos (textos de
+     cabecera, márgenes, plantilla) va en `_ExamDocumentSettings`.
+  5. Opcionalmente escribe una sesión de corrección y registra el uso en el banco
+     (`_record_usage_in_bank`).
+
+  Las llamadas a `random` (selección, previsualización, variantes) siguen siempre este orden: con la
+  misma semilla salen los mismos exámenes, y los tests que comparan órdenes dependen de ello.
 - `generate_moodle_xml_from_existing_exam_xlsx(...)`: XML a partir de un `_completo.xlsx`.
 - `check=True` genera una previsualización y pide confirmación con `review_callback(ruta)`; sin
   callback, pregunta por consola solo desde un terminal (si no, `ValueError` antes de generar).

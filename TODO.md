@@ -221,6 +221,12 @@ búscalas por nombre de función si no coinciden.
   las rutas de import actuales).*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
+  *Parcial (rama `refactor/exam-generation-steps`, alcance decidido de forma autónoma el
+  2026-10-23): el método encadena pasos privados (cargar el banco, seleccionar, comprobar las
+  respuestas, aviso de uso, previsualización, DOCX del alumno y del profesor, registrar el uso) y
+  los ajustes comunes de los DOCX van en un `_ExamDocumentSettings` interno; con la misma semilla
+  genera lo mismo que antes (comprobado en 12 escenarios). Falta el `ExamConfig` público: cambia
+  la firma de un método público y conviene acordarlo.*
 - [x] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
   acepta exactamente `"sí"`), `grading/extraction.py:1030,1265`. Sustituir por callbacks, como
   `usage_warning_callback`. — hecho en `b53bbcd` (la consola queda como opción por defecto en un
