@@ -585,9 +585,9 @@ def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app,
     class FakeExamGenerator:
         generation_cancelled = False
 
-        def generate_exam_from_excel(self, **kwargs):
+        def generate_exam_from_excel(self, bank_excel_path, config):
             seen["thread"] = threading.current_thread()
-            seen["answer"] = kwargs["usage_warning_callback"](pd.DataFrame(), 3, "Hay preguntas muy usadas.")
+            seen["answer"] = config.usage_warning_callback(pd.DataFrame(), 3, "Hay preguntas muy usadas.")
             self.generation_cancelled = not seen["answer"]
 
     def askyesno(title, message, **kwargs):
@@ -771,7 +771,7 @@ def test_exams_generated_without_updating_the_bank_show_a_warning(app, monkeypat
         generation_cancelled = False
         bank_update_error = None
 
-        def generate_exam_from_excel(self, **kwargs):
+        def generate_exam_from_excel(self, bank_excel_path, config):
             self.bank_update_error = "PermissionError: el fichero está abierto en Excel"
 
     monkeypatch.setattr(main_app, "ExamGenerator", LockedBankGenerator)

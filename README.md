@@ -376,6 +376,27 @@ if __name__ == "__main__":
         f"\nExámenes personalizados generados en la carpeta: '{OUTPUT_DIRECTORY}'")
 ```
 
+#### 3.3. Guardar las opciones en un `ExamConfig`
+
+Las opciones de `generate_exam_from_excel` son también los campos de `ExamConfig`: puedes preparar una configuración y reutilizarla. Lo que pases por nombre en la llamada tiene prioridad sobre el `ExamConfig`.
+
+```python
+from pyexamgenerator import ExamConfig, ExamGenerator
+
+config = ExamConfig(
+    subject="Prevención de Riesgos Laborales",
+    exam="Parcial 1",
+    course="24-25",
+    exam_names=["1A", "1B"],
+    export_moodle_xml=True,
+)
+exam_gen = ExamGenerator()
+exam_gen.generate_exam_from_excel("ruta/a/tu/banco_principal.xlsx", config)
+exam_gen.generate_exam_from_excel("ruta/a/tu/banco_principal.xlsx", config, exam="Parcial 2")
+```
+
+El segundo argumento de `generate_exam_from_excel` es el `ExamConfig`: el resto de opciones se pasan siempre por nombre, como en los ejemplos anteriores.
+
 ## Historial de Cambios
 
 Para ver una lista detallada de los cambios, mejoras y correcciones de errores en cada versión, consulta el archivo [CHANGELOG.md](CHANGELOG.md).

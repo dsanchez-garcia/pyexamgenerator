@@ -30,7 +30,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterable, Optional, Tuple, Dict, cast
 
 from pyexamgenerator import schema
@@ -61,20 +61,85 @@ class NoAcceptableQuestionsError(Exception):
     pass
 
 
-@dataclass(frozen=True)
-class _ExamDocumentSettings:
-    """What the DOCX of every exam type share in one call to ``generate_exam_from_excel``."""
+@dataclass
+class ExamConfig:
+    """Options of :meth:`ExamGenerator.generate_exam_from_excel`; all of them are optional (ARC-6).
 
-    subject: Optional[str]
-    exam: Optional[str]
-    course: Optional[str]
-    font_size: int
-    top_margin: float
-    bottom_margin: float
-    left_margin: float
-    right_margin: float
-    template_docx_path: Optional[str]
-    answer_sheet_instructions: Optional[str]
+    Pass one as ``config``. Any option can also be given by name, and then it overrides the one in
+    ``config``::
+
+        config = ExamConfig(subject="PRL", exam="Parcial 1", course="25-26", exam_names=["1A", "1B"])
+        ExamGenerator().generate_exam_from_excel("banco.xlsx", config, export_moodle_xml=True)
+    """
+
+    output_dir: Optional[str] = None
+    """Folder for the generated files (by default, the folder of the bank)."""
+    exam_names: Optional[list] = None
+    """Names of the exam versions, e.g. ``['1A', '1B']`` (by default ``num_exams`` named 'Tipo 1'...)."""
+    questions_per_topic: Optional[dict] = None
+    """How many questions to select from each topic, e.g. ``{'Tema 01': 5}``."""
+    selection_method: str = "azar"
+    """How to pick the questions of a topic: 'azar' (random), 'primeras' (first N) or 'menos usadas'."""
+    total_questions: Optional[int] = None
+    """If > 0, selects this exact total and overrides ``questions_per_topic`` (see ``total_distribution``)."""
+    total_distribution: str = "equitativo"
+    """How to spread ``total_questions``: 'equitativo' or 'azar'.
+
+    'equitativo' gives every topic the same number of questions as far as possible (the first topics
+    get one more when the total is not divisible); 'azar' picks them at random from all the acceptable
+    questions, ignoring topics."""
+    subject: Optional[str] = None
+    """Subject name for the exam header."""
+    exam: Optional[str] = None
+    """Exam name, e.g. 'Parcial 1'."""
+    course: Optional[str] = None
+    """Course name or year, e.g. '24-25'."""
+    num_exams: int = 2
+    """How many versions to generate when ``exam_names`` is not given."""
+    top_margin: float = 1
+    """Top page margin, in inches."""
+    bottom_margin: float = 1
+    """Bottom page margin, in inches."""
+    left_margin: float = 0.5
+    """Left page margin, in inches."""
+    right_margin: float = 0.5
+    """Right page margin, in inches."""
+    export_moodle_xml: bool = False
+    """Also export every version to Moodle XML."""
+    font_size: int = 9
+    """Font size of the documents."""
+    xml_cat_additional_text: Optional[str] = None
+    """Additional text for the Moodle XML category."""
+    penalty: float = -25
+    """Penalty for incorrect answers in the Moodle XML (percentage, e.g. -25)."""
+    xml_use_answer_text: bool = False
+    """Store the question and answer texts in the XML instead of a/b/c/d."""
+    check: bool = False
+    """Generate a preview and wait for confirmation before creating the exams.
+
+    The answer comes from ``review_callback`` or, without it, from the console (only from an
+    interactive terminal; elsewhere a ``ValueError`` is raised before generating anything)."""
+    update_excel: bool = False
+    """Record the usage of the selected questions in the bank.
+
+    If the bank cannot be written (e.g. it is open in Excel), the exams are kept and the reason is left
+    in ``ExamGenerator.bank_update_error``."""
+    answer_sheet_instructions: Optional[str] = None
+    """Instructions printed on the answer sheet."""
+    template_docx_path: Optional[str] = None
+    """DOCX template with placeholders like ``{{subject}}``."""
+    session_output_path: Optional[str] = None
+    """If set, writes a resumable grading session (``.pkl`` + ``.json``) with every generated exam."""
+    usage_warning_enabled: bool = True
+    """Warn when selected questions were used more than ``usage_warning_threshold`` times."""
+    usage_warning_threshold: int = 3
+    """Usage count ('Veces usada en examen') above which a question is reported."""
+    usage_warning_callback: Optional[Callable[[pd.DataFrame, int, str], bool]] = None
+    """Receives ``(warning_df, threshold, message)``; returns True to go on or False to cancel."""
+    verbose: bool = False
+    """Log detailed progress messages."""
+    review_callback: Optional[Callable[[str], bool]] = None
+    """With ``check``, receives the path of the preview DOCX; returns True to generate the exams."""
 
 
 class ExamGenerator:
@@ -910,149 +975,82 @@ class ExamGenerator:
         return os.path.abspath(xml_output_path)
 
     def generate_exam_from_excel(
-        self,
-        bank_excel_path: str,
-        output_dir: Optional[str] = None,
-        exam_names: Optional[list] = None,
-        questions_per_topic: Optional[dict] = None,
-        selection_method: str = "azar",
-        total_questions: Optional[int] = None,
-        total_distribution: str = "equitativo",
-        subject: Optional[str] = None,
-        exam: Optional[str] = None,
-        course: Optional[str] = None,
-        num_exams: int = 2,
-        top_margin: float = 1,
-        bottom_margin: float = 1,
-        left_margin: float = 0.5,
-        right_margin: float = 0.5,
-        export_moodle_xml: bool = False,
-        font_size: int = 9,
-        xml_cat_additional_text: Optional[str] = None,
-        penalty: float = -25,
-        xml_use_answer_text: bool = False,
-        check: bool = False,
-        update_excel: bool = False,
-        answer_sheet_instructions: Optional[str] = None,
-        template_docx_path: Optional[str] = None,
-        session_output_path: Optional[str] = None,
-        usage_warning_enabled: bool = True,
-        usage_warning_threshold: int = 3,
-        usage_warning_callback: Optional[Callable[[pd.DataFrame, int, str], bool]] = None,
-        verbose: bool = False,
-        review_callback: Optional[Callable[[str], bool]] = None,
-    ):
-        """
-        Generates multiple exams in .docx format with varied question and answer orders.
-        This is the main orchestrator method of the class.
+        self, bank_excel_path: str, config: Optional[ExamConfig] = None, **options: Any
+    ) -> None:
+        """Generates several versions of an exam from the question bank (DOCX, XLSX and Moodle XML).
+
+        This is the main orchestrator method of the class. Its options are the fields of
+        :class:`ExamConfig`: pass an ``ExamConfig`` as ``config``, the options by name, or both (an
+        option given by name overrides the one in ``config``).
 
         Args:
             bank_excel_path (str): Path to the Excel file with the question bank.
-            output_dir (Optional[str]): The directory to save the generated exam files.
-                If None, uses the same directory as the bank_excel_path.
-            exam_names (Optional[list]): A list of names for the exam versions (e.g., ['1A', '1B']).
-            questions_per_topic (Optional[dict]): A dictionary specifying how many questions to select from each topic.
-            selection_method (str): Method for selecting questions within each topic: 'azar' (random),
-                'primeras' (first N), 'menos usadas' (least used).
-            total_questions (Optional[int]): If provided (and > 0), selects this exact total number of
-                questions and overrides `questions_per_topic`. The way the total is spread is controlled
-                by `total_distribution`.
-            total_distribution (str): How to spread `total_questions`: 'equitativo' (same number of
-                questions per topic as far as possible; the first topics get one extra when the total is
-                not divisible) or 'azar' (pick the total at random from the whole acceptable pool,
-                ignoring topics).
-            subject (Optional[str]): The subject name for the exam header.
-            exam (Optional[str]): The exam name (e.g., 'Parcial 1').
-            course (Optional[str]): The course name or year (e.g., '24-25').
-            num_exams (int): The number of different exam versions to generate if `exam_names` is not provided.
-            top_margin (float): Top page margin in inches.
-            bottom_margin (float): Bottom page margin in inches.
-            left_margin (float): Left page margin in inches.
-            right_margin (float): Right page margin in inches.
-            export_moodle_xml (bool): If True, exports the exam to Moodle XML format.
-            font_size (int): Font size for the text in the document.
-            xml_cat_additional_text (Optional[str]): Additional text for the Moodle XML category.
-            penalty (float): Penalty for incorrect answers in the Moodle XML export.
-            xml_use_answer_text (bool): If True, XML stores full question and answer text instead of a/b/c/d.
-            check (bool): If True, generates a preview and waits for confirmation before creating all
-                exams: from ``review_callback`` or, without it, by asking in the console (only from an
-                interactive terminal; elsewhere a ``ValueError`` is raised before generating anything).
-            update_excel (bool): If True, updates the source Excel file with usage statistics. If the
-                bank cannot be written (e.g. it is open in Excel), the exams are kept and the reason is
-                left in ``self.bank_update_error``.
-            answer_sheet_instructions (Optional[str]): Text with instructions for the answer sheet.
-            template_docx_path (Optional[str]): Path to a DOCX template with placeholders like {{subject}}.
-            session_output_path (Optional[str]): If set, writes a resumable grading session (``.pkl`` +
-                ``.json``) recording the paths of every generated exam, so correction can be resumed later.
-            usage_warning_enabled (bool): If True, warns when selected questions have been used more than
-                ``usage_warning_threshold`` times according to 'Veces usada en examen'.
-            usage_warning_threshold (int): Usage count threshold for the repeated-question warning.
-            usage_warning_callback (Optional[Callable]): Optional callback that receives
-                ``(warning_df, threshold, message)`` and returns True to continue or False to cancel.
-            verbose (bool): If True, prints detailed progress messages to the console.
-            review_callback (Optional[Callable]): With ``check=True``, receives the path of the preview
-                DOCX and returns True to generate the exams or False to cancel.
+            config (Optional[ExamConfig]): Generation options (``ExamConfig()`` when omitted).
+            **options: Any :class:`ExamConfig` field, e.g. ``subject="PRL"``.
+
+        Raises:
+            TypeError: If ``config`` is not an :class:`ExamConfig` (the other options go by name) or an
+                option does not exist.
         """
+        if config is not None and not isinstance(config, ExamConfig):
+            raise TypeError(
+                "El segundo argumento de generate_exam_from_excel es un ExamConfig; "
+                "pasa las demás opciones por nombre (por ejemplo, output_dir=...)."
+            )
+        cfg = replace(config or ExamConfig(), **options)
+
         # Start a fresh list of generated-exam records for this run.
         self.generated_exams = []
         self.generation_cancelled = False
         self.bank_update_error = None
 
-        if check and review_callback is None and not stdin_is_interactive():
+        if cfg.check and cfg.review_callback is None and not stdin_is_interactive():
             # input() would block or fail in a GUI, a notebook or CI.
             raise ValueError("check=True necesita review_callback cuando no se ejecuta desde un terminal.")
 
-        if template_docx_path and not os.path.exists(template_docx_path):
+        if cfg.template_docx_path and not os.path.exists(cfg.template_docx_path):
             # Silently falling back to a blank document would hide a wrong path.
-            raise FileNotFoundError(f"No se encuentra la plantilla DOCX: {template_docx_path}")
+            raise FileNotFoundError(f"No se encuentra la plantilla DOCX: {cfg.template_docx_path}")
 
         # 1. Selection: the questions that every exam type has, each in its own order.
         self._load_acceptable_questions(bank_excel_path)
         self.exam_df = self._select_exam_questions(
-            questions_per_topic, selection_method, total_questions, total_distribution, verbose
+            cfg.questions_per_topic, cfg.selection_method, cfg.total_questions, cfg.total_distribution, cfg.verbose
         )
         self._check_correct_answers(self.exam_df)
 
         # 2. Confirmations: the usage warning and the preview can cancel before anything is written.
         if not self._usage_warning_allows_generation(
-            usage_warning_enabled, usage_warning_threshold, usage_warning_callback
+            cfg.usage_warning_enabled, cfg.usage_warning_threshold, cfg.usage_warning_callback
         ):
             self.generation_cancelled = True
             logger.info("Generacion de examenes cancelada por alerta de uso de preguntas.")
             return
-        if check and not self._preview_approved(subject, exam, course, font_size, review_callback):
+        if cfg.check and not self._preview_approved(
+            cfg.subject, cfg.exam, cfg.course, cfg.font_size, cfg.review_callback
+        ):
             self.generation_cancelled = True
             logger.info("Generación de exámenes cancelada.")
             return
 
         # 3. One variant per exam type (questions and answers shuffled) and its files.
+        exam_names = cfg.exam_names
         if exam_names is None:
-            exam_names = [f'Tipo {i + 1}' for i in range(num_exams)]
+            exam_names = [f'Tipo {i + 1}' for i in range(cfg.num_exams)]
 
+        output_dir = cfg.output_dir
         if output_dir is None:
             # abspath: a bare file name ('banco.xlsx') has an empty dirname and makedirs('') fails.
             output_dir = os.path.dirname(os.path.abspath(bank_excel_path))
         os.makedirs(output_dir, exist_ok=True)
-        usage_column_name = self._generation_usage_column_name(exam, course, existing_columns=self.df.columns)
-        settings = _ExamDocumentSettings(
-            subject=subject,
-            exam=exam,
-            course=course,
-            font_size=font_size,
-            top_margin=top_margin,
-            bottom_margin=bottom_margin,
-            left_margin=left_margin,
-            right_margin=right_margin,
-            template_docx_path=template_docx_path,
-            answer_sheet_instructions=answer_sheet_instructions,
-        )
+        usage_column_name = self._generation_usage_column_name(cfg.exam, cfg.course, existing_columns=self.df.columns)
 
         for i, exam_type_name in enumerate(exam_names):
             exam_df_shuffled = self._build_exam_variant_df(self.exam_df)
 
             # '/', ':' or '?' in the subject or exam name would break the path (and None gave 'None').
             base_filename = 'examen_' + '_'.join(
-                safe_filename_part(part) for part in (subject, exam, course, exam_type_name)
+                safe_filename_part(part) for part in (cfg.subject, cfg.exam, cfg.course, exam_type_name)
             )
 
             docx_path = os.path.join(output_dir, f'{base_filename}.docx')
@@ -1060,7 +1058,7 @@ class ExamGenerator:
             excel_path_out = os.path.join(output_dir, f'{base_filename}_completo.xlsx')
             xml_path = os.path.join(output_dir, f'{base_filename}.xml')
 
-            if verbose:
+            if cfg.verbose:
                 logger.info(
                     f"Verbose: Iteración {i}, tipo de exam_df_shuffled después de sample: {type(exam_df_shuffled)}"
                 )
@@ -1069,42 +1067,42 @@ class ExamGenerator:
                 else:
                     logger.info(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
 
-            self._write_student_docx(exam_df_shuffled, docx_path, settings, exam_type_name, verbose)
-            self._write_full_docx(exam_df_shuffled, full_docx_path, settings, exam_type_name)
+            self._write_student_docx(exam_df_shuffled, docx_path, cfg, exam_type_name, cfg.verbose)
+            self._write_full_docx(exam_df_shuffled, full_docx_path, cfg, exam_type_name)
 
             exam_export_df = self._add_exam_usage_column_for_export(exam_df_shuffled, usage_column_name)
             exam_export_df.to_excel(excel_path_out, index=False)
 
-            if export_moodle_xml:
+            if cfg.export_moodle_xml:
                 self.generate_moodle_xml(
                     df=exam_df_shuffled.copy(),
                     file_name=xml_path,
                     num_total_questions=len(exam_df_shuffled),
-                    exam=exam,
+                    exam=cfg.exam,
                     exam_type=exam_type_name,
-                    xml_cat_additional_text=xml_cat_additional_text,
-                    penalty=penalty,
-                    xml_use_answer_text=xml_use_answer_text,
+                    xml_cat_additional_text=cfg.xml_cat_additional_text,
+                    penalty=cfg.penalty,
+                    xml_use_answer_text=cfg.xml_use_answer_text,
                 )
 
             # Record this exam type's output paths for the optional resumable session.
             self.generated_exams.append(
                 {
-                    "subject": subject,
-                    "exam": exam,
-                    "course": course,
+                    "subject": cfg.subject,
+                    "exam": cfg.exam,
+                    "course": cfg.course,
                     "exam_type": exam_type_name,
                     "docx": docx_path,
                     "full_docx": full_docx_path,
                     "xlsx": excel_path_out,
-                    "xml": xml_path if export_moodle_xml else None,
+                    "xml": xml_path if cfg.export_moodle_xml else None,
                 }
             )
 
-        if session_output_path:
-            self._save_grading_session(session_output_path, subject=subject, exam=exam, course=course)
+        if cfg.session_output_path:
+            self._save_grading_session(cfg.session_output_path, subject=cfg.subject, exam=cfg.exam, course=cfg.course)
 
-        if update_excel:
+        if cfg.update_excel:
             self._record_usage_in_bank(bank_excel_path, usage_column_name)
 
     def _load_acceptable_questions(self, bank_excel_path: str) -> None:
@@ -1288,7 +1286,7 @@ class ExamGenerator:
                 logger.error(f"Error al eliminar el archivo de previsualización: {e}")
         return approved
 
-    def _new_exam_document(self, settings: _ExamDocumentSettings, exam_type_name: str, subtitle: str) -> DocxDocument:
+    def _new_exam_document(self, settings: ExamConfig, exam_type_name: str, subtitle: str) -> DocxDocument:
         """A blank document (or the template, with its placeholders filled) with the title and margins."""
         placeholder_map: Dict[str, str] = {
             "subject": settings.subject or "",
@@ -1316,7 +1314,7 @@ class ExamGenerator:
         self,
         exam_df: pd.DataFrame,
         docx_path: str,
-        settings: _ExamDocumentSettings,
+        settings: ExamConfig,
         exam_type_name: str,
         verbose: bool = False,
     ) -> None:
@@ -1442,7 +1440,7 @@ class ExamGenerator:
                         run.font.size = Pt(font_size)
 
     def _write_full_docx(
-        self, exam_df: pd.DataFrame, docx_path: str, settings: _ExamDocumentSettings, exam_type_name: str
+        self, exam_df: pd.DataFrame, docx_path: str, settings: ExamConfig, exam_type_name: str
     ) -> None:
         """Writes the teacher's copy: the same questions with the answer, relevant text and topic."""
         font_size = settings.font_size

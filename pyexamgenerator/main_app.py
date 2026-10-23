@@ -28,7 +28,7 @@ from pyexamgenerator.question_generator import (
 )
 from pyexamgenerator import credentials, gui_logic, schema, user_config
 from pyexamgenerator._console import log_to_console
-from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
+from pyexamgenerator.exam_generator import ExamConfig, ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
 import os
@@ -4035,36 +4035,37 @@ class ExamApp:
                 )
             )
 
+        config = ExamConfig(
+            output_dir=output_dir_value,
+            exam_names=exam_name_list,
+            questions_per_topic=questions_per_topic,
+            selection_method=selection_method,
+            total_questions=total_questions,
+            total_distribution=total_distribution,
+            subject=subject,
+            exam=exam_name,
+            course=course,
+            num_exams=num_exams,
+            top_margin=top_margin,
+            bottom_margin=bottom_margin,
+            left_margin=left_margin,
+            right_margin=right_margin,
+            export_moodle_xml=export_moodle,
+            font_size=font_size,
+            xml_cat_additional_text=xml_cat_additional_text,
+            penalty=penalty,
+            xml_use_answer_text=xml_use_answer_text,
+            update_excel=update_excel,
+            answer_sheet_instructions=answer_sheet_instructions,
+            template_docx_path=template_docx_path,
+            session_output_path=session_output_path,
+            usage_warning_enabled=usage_alert_enabled,
+            usage_warning_threshold=usage_alert_threshold,
+            usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None,
+        )
+
         def work():
-            generator.generate_exam_from_excel(
-                bank_excel_path=excel_path,
-                output_dir=output_dir_value,
-                exam_names=exam_name_list,
-                questions_per_topic=questions_per_topic,
-                selection_method=selection_method,
-                total_questions=total_questions,
-                total_distribution=total_distribution,
-                subject=subject,
-                exam=exam_name,
-                course=course,
-                num_exams=num_exams,
-                top_margin=top_margin,
-                bottom_margin=bottom_margin,
-                left_margin=left_margin,
-                right_margin=right_margin,
-                export_moodle_xml=export_moodle,
-                font_size=font_size,
-                xml_cat_additional_text=xml_cat_additional_text,
-                penalty=penalty,
-                xml_use_answer_text=xml_use_answer_text,
-                update_excel=update_excel,
-                answer_sheet_instructions=answer_sheet_instructions,
-                template_docx_path=template_docx_path,
-                session_output_path=session_output_path,
-                usage_warning_enabled=usage_alert_enabled,
-                usage_warning_threshold=usage_alert_threshold,
-                usage_warning_callback=confirm_usage_warning if usage_alert_enabled else None,
-            )
+            generator.generate_exam_from_excel(excel_path, config)
             return bool(getattr(generator, "generation_cancelled", False)), getattr(
                 generator, "bank_update_error", None
             )

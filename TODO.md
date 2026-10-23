@@ -236,7 +236,7 @@ búscalas por nombre de función si no coinciden.
   y la API importan `PIRBonusCalculator`, `ImageExamGrader`… desde ellos). Después, tiparlos con
   mypy (DEV-2).* — hecho en `b420694` (además, `_topics.topic_key` comparte la detección de temas
   entre las justificaciones y el PIR; `extraction` reexporta con un `__getattr__` de módulo).
-- [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
+- [x] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
   *Parcial (`58fe477`, PR #24; alcance decidido de forma autónoma el 2026-10-23): el método
   encadena pasos privados (cargar el banco, seleccionar, comprobar las respuestas, aviso de uso,
@@ -244,10 +244,12 @@ búscalas por nombre de función si no coinciden.
   los ajustes comunes de los DOCX van en un `_ExamDocumentSettings` interno; con la misma semilla
   genera lo mismo que antes (comprobado en 12 escenarios). Falta el `ExamConfig` público: cambia
   la firma de un método público y conviene acordarlo.*
-  *Propuesta (2026-10-23, sin decidir): `ExamConfig` (dataclass pública) con todos los parámetros
+  *Propuesta (aprobada por el mantenedor el 2026-10-23): `ExamConfig` (dataclass pública) con todos los parámetros
   salvo `bank_excel_path`, y `generate_exam_from_excel(bank_excel_path, config=None, **kwargs)`:
   los argumentos actuales siguen valiendo (y se combinan con `config`); la GUI pasa un `ExamConfig`
-  y `_ExamDocumentSettings` se deriva de él.*
+  y `_ExamDocumentSettings` se deriva de él.* — hecho en `8f86f8a` (`_ExamDocumentSettings` desaparece:
+  los DOCX reciben el propio `ExamConfig`; un segundo argumento posicional que no sea un
+  `ExamConfig` da un `TypeError` que pide pasar las opciones por nombre).
 - [x] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
   acepta exactamente `"sí"`), `grading/extraction.py:1030,1265`. Sustituir por callbacks, como
   `usage_warning_callback`. — hecho en `b53bbcd` (la consola queda como opción por defecto en un
