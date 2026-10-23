@@ -186,7 +186,7 @@ búscalas por nombre de función si no coinciden.
 
 ## 4. Arquitectura y mantenibilidad
 
-- [ ] **ARC-1 (P2)** `main_app.py` (3.900 líneas, una clase con ~120 métodos). Dividir por pestaña
+- [x] **ARC-1 (P2)** `main_app.py` (3.900 líneas, una clase con ~120 métodos). Dividir por pestaña
   (`gui/question_tab.py`, `gui/bank_tab.py`, `gui/exam_tab.py`, `gui/grading_tab.py`) y extraer la
   lógica pura a `gui_logic.py` testeable (parsers de pesos, penalización, preguntas por tema,
   mapeos de plantilla/sesión, constructor de avisos OCR).
@@ -199,9 +199,12 @@ búscalas por nombre de función si no coinciden.
   (`questions_tab.py`, `bank_tab.py`, `exam_tab.py`, `grading_tab.py`), cada uno con una clase que
   recibe la app; `main_app.py` queda como módulo de compatibilidad (`ExamApp`, `main`) para el
   comando `pyexamgenerator` y los tests. Un PR por pestaña, empezando por la más pequeña.*
-  *Aprobada por el mantenedor el 2026-10-23. Hecho hasta ahora: «Gestionar Banco de Preguntas» en
-  `gui/bank_tab.py` (`027dba8`; el `messagebox` copiable, en `gui/_dialogs.py`) y «Generar Exámenes»
-  en `gui/exam_tab.py` (`5aa4125`) y «Generar Preguntas» en `gui/questions_tab.py` (`7bd4390`).*
+  *Aprobada por el mantenedor el 2026-10-23.* — hecho: «Gestionar Banco de Preguntas» en
+  `gui/bank_tab.py` (`027dba8`; el `messagebox` copiable, en `gui/_dialogs.py`), «Generar Exámenes»
+  en `gui/exam_tab.py` (`5aa4125`), «Generar Preguntas» en `gui/questions_tab.py` (`7bd4390`),
+  «Corregir Exámenes» en `gui/grading_tab.py` (`4af4552`) y `ExamApp` en `gui/app.py`, con
+  `main_app.py` como módulo de compatibilidad (`50cca3c`). En cada paso, el AST confirma que cada
+  `self.x`/`self.app.x` existe donde se busca y la ventana construye el mismo árbol de 379 widgets.
 - [x] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
   *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*
