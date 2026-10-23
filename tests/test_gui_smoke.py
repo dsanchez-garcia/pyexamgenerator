@@ -642,7 +642,7 @@ def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app,
 def test_mouse_wheel_scrolls_tables_and_text_boxes_inside_the_tabs(app):
     """GUI-6: la rueda del ratón se enlazaba a todos los widgets de la pestaña con "break", así que
     la tabla de modelos, el texto del prompt y la tabla de exámenes no se desplazaban."""
-    for widget in (app.models_tree, app.prompt_text_display, app.update_exams_tree):
+    for widget in (app.models_tree, app.prompt_text_display, app.bank_tab.update_exams_tree):
         assert widget.bind("<MouseWheel>") == ""
         assert widget.bind("<Button-4>") == ""
 
@@ -767,12 +767,24 @@ def test_exam_list_shows_usage_columns_through_the_public_api(app, monkeypatch):
         raise AssertionError("la GUI no debe usar el método privado")
 
     monkeypatch.setattr(QuestionBankManager, "_usage_column_name", private_helper)
-    app.update_exam_specs = [{"path": "examen_Evaluación_1A_completo.xlsx", "label": "Evaluación 1"}]
+    app.bank_tab.update_exam_specs = [{"path": "examen_Evaluación_1A_completo.xlsx", "label": "Evaluación 1"}]
 
-    app._refresh_update_exams_tree()
+    app.bank_tab._refresh_update_exams_tree()
 
-    values = [app.update_exams_tree.item(item, "values") for item in app.update_exams_tree.get_children()]
+    tree = app.bank_tab.update_exams_tree
+    values = [tree.item(item, "values") for item in tree.get_children()]
     assert values == [("examen_Evaluación_1A_completo.xlsx", "Evaluación 1", "Evaluacion_1_uso")]
+
+
+def test_bank_tab_is_its_own_class_and_uses_the_app_dialogs(app):
+    """ARC-1: la pestaña del banco vive en `gui/bank_tab.py` y sus mensajes salen por la ventana."""
+    from pyexamgenerator.gui.bank_tab import BankTab
+
+    assert isinstance(app.bank_tab, BankTab) and app.bank_tab.app is app
+
+    app.bank_tab.add_reviewed_questions_to_bank()  # no files chosen
+
+    assert app.shown_messages == [("error", "Error", "Por favor, seleccione ambos archivos.")]
 
 
 def test_standard_messageboxes_are_not_replaced_for_the_whole_process(app):
