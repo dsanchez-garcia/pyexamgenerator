@@ -363,9 +363,10 @@ búscalas por nombre de función si no coinciden.
   `grading/api.py` y los dataclasses de configuración. — hecho en `b08fab8` (job `mypy` en la CI;
   ir añadiendo módulos a `[tool.mypy]`).
   *Ampliado en `2356d6c` (PR #25, 2026-10-23): `question_generator`, `question_bank_manager`,
-  `tooltip` y `grading/{comparison,data,final_grade,graders}`, casi todo con anotaciones. Quedan
-  `exam_generator` (38 avisos), `main_app` (6) y `grading/{attendance,extraction,integrations}` (15, 20
-  y 18).*
+  `tooltip` y `grading/{comparison,data,final_grade,graders}`, casi todo con anotaciones. Después,
+  `exam_generator` y `main_app` (los DOCX se anotan con la
+  clase `docx.document.Document`; `docx.Document` es una función). Quedan
+  `grading/{attendance,extraction,integrations}` (15, 20 y 18 avisos).*
 - [x] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa
   `setx Path`, que trunca el PATH a 1.024 caracteres. Considerar `py -m pip install -e .` y
   documentar el PATH manualmente, o usar PowerShell. — hecho en `ca7376e` (`add_user_path.ps1`;
