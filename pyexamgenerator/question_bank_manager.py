@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import logging
 import pandas as pd
 from docx import Document
 import os
@@ -21,6 +22,8 @@ import re
 from typing import Optional, List, Tuple
 
 from pyexamgenerator._text import strip_accents
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionBankManager:
@@ -116,7 +119,7 @@ class QuestionBankManager:
             return df
 
         except Exception as e:
-            print(f"Error al leer el archivo DOCX: {e}")
+            logger.error(f"Error al leer el archivo DOCX: {e}")
             return None
 
     def save_questions_to_excel(self, df: pd.DataFrame, output_filename: str = 'preguntas_revisadas') -> None:
@@ -129,11 +132,11 @@ class QuestionBankManager:
                                    Defaults to 'preguntas_revisadas'.
         """
         if not df.empty:
-            print("Guardando preguntas revisadas en:", f'{output_filename}.xlsx')
+            logger.info(f"Guardando preguntas revisadas en: {output_filename}.xlsx")
             df.to_excel(f'{output_filename}.xlsx', index=False)
-            print(f"Preguntas revisadas guardadas en '{output_filename}.xlsx'")
+            logger.info(f"Preguntas revisadas guardadas en '{output_filename}.xlsx'")
         else:
-            print("No hay preguntas revisadas para guardar.")
+            logger.info("No hay preguntas revisadas para guardar.")
 
     def add_questions_without_duplicates(
         self,
@@ -166,25 +169,25 @@ class QuestionBankManager:
             df_existing = pd.read_excel(existing_bank_path)
             df_reviewed = pd.read_excel(reviewed_questions_path)
         except FileNotFoundError:
-            print("Error: Uno o ambos archivos no se encontraron.")
+            logger.error("Error: Uno o ambos archivos no se encontraron.")
             return -1, None
         except Exception as e:
-            print(f"Error al leer los archivos Excel: {e}")
+            logger.error(f"Error al leer los archivos Excel: {e}")
             return -1, None
 
         # Block to filter the reviewed questions DataFrame if the option is enabled.
         if add_only_acceptable:
-            print("Filtrando para añadir solo preguntas con estado 'Aceptable'.")
+            logger.info("Filtrando para añadir solo preguntas con estado 'Aceptable'.")
             if 'Estado' in df_reviewed.columns:
                 original_count = len(df_reviewed)
                 df_reviewed = df_reviewed[
                     df_reviewed['Estado'].astype(str).str.strip().str.lower() == 'aceptable'
                 ].copy()
-                print(f"Se encontraron {len(df_reviewed)} preguntas 'Aceptable' de un total de {original_count}.")
+                logger.info(f"Se encontraron {len(df_reviewed)} preguntas 'Aceptable' de un total de {original_count}.")
                 if df_reviewed.empty:
-                    print("No se encontraron preguntas con estado 'Aceptable' para añadir.")
+                    logger.info("No se encontraron preguntas con estado 'Aceptable' para añadir.")
             else:
-                print(
+                logger.warning(
                     "Advertencia: La columna 'Estado' no se encontró en el archivo a añadir. No se pudo aplicar el filtro."
                 )
 
@@ -470,15 +473,15 @@ class QuestionBankManager:
             df_bank = pd.read_excel(bank_path)
             df_exam = pd.read_excel(exam_path)
         except FileNotFoundError:
-            print("Error: Uno o ambos archivos no se encontraron.")
+            logger.error("Error: Uno o ambos archivos no se encontraron.")
             return -1, None
         except Exception as e:
-            print(f"Error al leer los archivos Excel: {e}")
+            logger.error(f"Error al leer los archivos Excel: {e}")
             return -1, None
 
         missing = [col for col in match_columns if col not in df_bank.columns or col not in df_exam.columns]
         if missing:
-            print(f"Error: faltan columnas para emparejar en el banco o el examen: {missing}")
+            logger.error(f"Error: faltan columnas para emparejar en el banco o el examen: {missing}")
             return -1, None
 
         effective_label = (exam_label or '').strip() or self.label_from_filename(
@@ -538,21 +541,21 @@ class QuestionBankManager:
         specs = self._normalize_exam_specs(exams)
         stats: dict = {"exams": [], "total_matched": 0, "errors": []}
         if not specs:
-            print("Error: no se proporcionó ningún examen para actualizar el banco.")
+            logger.error("Error: no se proporcionó ningún examen para actualizar el banco.")
             return -1, None, stats
 
         try:
             df_bank = pd.read_excel(bank_path)
         except FileNotFoundError:
-            print("Error: no se encontró el banco de preguntas.")
+            logger.error("Error: no se encontró el banco de preguntas.")
             return -1, None, stats
         except Exception as e:
-            print(f"Error al leer el banco de preguntas: {e}")
+            logger.error(f"Error al leer el banco de preguntas: {e}")
             return -1, None, stats
 
         missing_bank = [col for col in match_columns if col not in df_bank.columns]
         if missing_bank:
-            print(f"Error: faltan columnas para emparejar en el banco: {missing_bank}")
+            logger.error(f"Error: faltan columnas para emparejar en el banco: {missing_bank}")
             return -1, None, stats
 
         total_matched = 0
@@ -560,17 +563,17 @@ class QuestionBankManager:
             try:
                 df_exam = pd.read_excel(exam_path)
             except FileNotFoundError:
-                print(f"Advertencia: no se encontró el examen '{exam_path}'. Se omite.")
+                logger.warning(f"Advertencia: no se encontró el examen '{exam_path}'. Se omite.")
                 stats["errors"].append({"path": exam_path, "error": "archivo no encontrado"})
                 continue
             except Exception as e:  # noqa: BLE001 - report and continue with the rest of the exams.
-                print(f"Advertencia: no se pudo leer el examen '{exam_path}': {e}. Se omite.")
+                logger.warning(f"Advertencia: no se pudo leer el examen '{exam_path}': {e}. Se omite.")
                 stats["errors"].append({"path": exam_path, "error": str(e)})
                 continue
 
             missing = [col for col in match_columns if col not in df_exam.columns]
             if missing:
-                print(f"Advertencia: al examen '{exam_path}' le faltan columnas {missing}. Se omite.")
+                logger.warning(f"Advertencia: al examen '{exam_path}' le faltan columnas {missing}. Se omite.")
                 stats["errors"].append({"path": exam_path, "error": f"faltan columnas {missing}"})
                 continue
 
@@ -691,7 +694,7 @@ class QuestionBankManager:
             try:
                 df_bank = pd.read_excel(path)
             except Exception as e:  # noqa: BLE001 - report and continue with the rest of the banks.
-                print(f"Advertencia: no se pudo leer '{path}': {e}")
+                logger.warning(f"Advertencia: no se pudo leer '{path}': {e}")
                 stats["errors"].append({"path": path, "error": str(e)})
                 continue
             stats["banks"].append({"path": path, "rows": int(len(df_bank))})
@@ -699,7 +702,7 @@ class QuestionBankManager:
             frames.append(df_bank)
 
         if not frames:
-            print("No se pudo leer ningún banco de preguntas.")
+            logger.warning("No se pudo leer ningún banco de preguntas.")
             return None, stats
 
         combined = pd.concat(frames, ignore_index=True)
@@ -725,7 +728,7 @@ class QuestionBankManager:
             saved = self.save_dataframe_to_excel(unified_df, output_path, overwrite=True)
             stats["output_path"] = saved
             if saved:
-                print(
+                logger.info(
                     f"Banco unificado guardado en '{saved}': {stats['unified']} preguntas "
                     f"({stats['duplicates_removed']} duplicados eliminados de {stats['total_read']} leídas)."
                 )
@@ -760,7 +763,7 @@ class QuestionBankManager:
                 df.to_excel(new_filepath, index=False)
                 return new_filepath
         except Exception as e:
-            print(f"Error al guardar el archivo Excel: {e}")
+            logger.error(f"Error al guardar el archivo Excel: {e}")
             return None
 
     def generate_excel_from_docx(
@@ -792,10 +795,10 @@ class QuestionBankManager:
         if df_from_docx is not None:
             saved_path = self.save_dataframe_to_excel(df_from_docx, full_output_path, overwrite=True)
             if saved_path:
-                print(f"Archivo Excel generado en: {saved_path}")
+                logger.info(f"Archivo Excel generado en: {saved_path}")
                 return saved_path
         else:
-            print("No se pudo leer el archivo DOCX o no se generó el DataFrame.")
+            logger.warning("No se pudo leer el archivo DOCX o no se generó el DataFrame.")
         return None
 
     def add_reviewed_questions_to_existing_excel(
@@ -815,18 +818,18 @@ class QuestionBankManager:
         added_count, updated_df = self.add_questions_without_duplicates(existing_excel_path, reviewed_excel_path)
 
         if added_count >= 0:
-            print(f"Se añadieron {added_count} preguntas sin duplicados.")
+            logger.info(f"Se añadieron {added_count} preguntas sin duplicados.")
             # Save the updated DataFrame to a new file
             save_path: str = "banco_de_preguntas_actualizado.xlsx"
             # Return the file that was really written (overwrite=False adds a suffix) or None.
             saved_path = self.save_dataframe_to_excel(updated_df, save_path, overwrite=False)
             if saved_path is None:
-                print("Ocurrió un error al guardar el banco de preguntas actualizado.")
+                logger.error("Ocurrió un error al guardar el banco de preguntas actualizado.")
                 return None
-            print(f"Banco de preguntas actualizado guardado en: {saved_path}")
+            logger.info(f"Banco de preguntas actualizado guardado en: {saved_path}")
             return saved_path
         else:
-            print("Ocurrió un error al añadir las preguntas.")
+            logger.error("Ocurrió un error al añadir las preguntas.")
         return None
 
 

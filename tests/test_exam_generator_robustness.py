@@ -1,5 +1,6 @@
 """Regresiones de robustez de `ExamGenerator` (BUG-3, BUG-4, BUG-5, BUG-8)."""
 
+import logging
 import os
 import random
 import xml.etree.ElementTree as ET
@@ -175,10 +176,11 @@ def test_invalid_correct_letter_raises_clear_error(tmp_path):
     assert not (tmp_path / "out" / "examen_Asig_Parcial_25-26_A.docx").exists()
 
 
-def test_preview_that_cannot_be_deleted_is_reported(tmp_path, monkeypatch, capsys):
+def test_preview_that_cannot_be_deleted_is_reported(tmp_path, monkeypatch, caplog):
     """`check=True`: si no se podía borrar la previsualización, el primero de dos `except` repetidos
     decía «Archivo de previsualización eliminado.» (encontrado por ruff, DEV-1)."""
     monkeypatch.chdir(tmp_path)
+    caplog.set_level(logging.INFO, logger="pyexamgenerator")  # «eliminado» would be an INFO message
     _bank().to_excel(tmp_path / "banco.xlsx", index=False)
 
     real_remove = os.remove
@@ -192,7 +194,7 @@ def test_preview_that_cannot_be_deleted_is_reported(tmp_path, monkeypatch, capsy
 
     _generate(tmp_path / "banco.xlsx", out_dir=tmp_path / "salida", check=True, review_callback=lambda path: True)
 
-    output = capsys.readouterr().out
+    output = caplog.text
     assert "Error al eliminar el archivo de previsualización: el fichero está abierto en Word" in output
     assert "Archivo de previsualización eliminado." not in output
     assert list((tmp_path / "salida").glob("*_A.docx"))  # the generation goes on

@@ -1,5 +1,6 @@
 import argparse
 import difflib
+import logging
 import os
 import re
 import shutil
@@ -25,7 +26,7 @@ except ImportError:  # pragma: no cover - depende del entorno
 
     _RAPIDOCR_BACKEND = "legacy"
 
-from pyexamgenerator._console import stdin_is_interactive
+from pyexamgenerator._console import log_to_console, stdin_is_interactive
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import normalize_key, parse_decimal
@@ -34,6 +35,8 @@ from pyexamgenerator.grading.data import (
     build_merged_enrollment_from_sources,
     infer_exam_type_from_xml_filename,
 )
+
+logger = logging.getLogger(__name__)
 
 
 Point = Tuple[float, float]
@@ -1462,7 +1465,7 @@ class ImageExamGrader:
         self.skipped_sheets = skipped
         self.last_incidents_df = incidents_df
         for item in skipped:
-            print(f"AVISO: hoja sin corregir: {item['Imagen']} ({item['Tipo']}).")
+            logger.warning(f"AVISO: hoja sin corregir: {item['Imagen']} ({item['Tipo']}).")
         if output_incidents:
             incidents_df.to_excel(output_incidents, index=False)
 
@@ -1555,6 +1558,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    log_to_console()
     args = _parse_args()
     forced = _parse_forced_type(args.force_type)
 

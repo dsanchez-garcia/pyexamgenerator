@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import logging
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
@@ -31,6 +32,8 @@ from typing import Callable, Iterable, Optional, Tuple, Dict  # Importing Option
 
 from pyexamgenerator._console import ask_yes_no, stdin_is_interactive
 from pyexamgenerator._text import safe_filename_part, strip_accents
+
+logger = logging.getLogger(__name__)
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -471,7 +474,7 @@ class ExamGenerator:
         selected_questions = []
         for topic, quantity in questions_per_topic.items():
             if verbose:
-                print(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
+                logger.info(f"Verbose: Tema: {topic}, Cantidad solicitada: {quantity}")
             topic_questions = self.acceptable_df[self.acceptable_df['Tema'] == topic]
             # Per-topic check: raise a clear error if there are not enough questions for a topic.
             if len(topic_questions) < quantity:
@@ -551,7 +554,7 @@ class ExamGenerator:
         try:
             return self._read_bank(excel_path)
         except Exception as e:
-            print(f"Error al leer el archivo Excel: {e}")
+            logger.error(f"Error al leer el archivo Excel: {e}")
             return None
 
     @staticmethod
@@ -657,7 +660,7 @@ class ExamGenerator:
                     break
             if potential_empty:
                 body.remove(sect_prs[-1])
-                print("Se ha intentado eliminar la última sección vacía (XML revisado con namespace).")
+                logger.info("Se ha intentado eliminar la última sección vacía (XML revisado con namespace).")
 
     def _create_element(self, tag_name: str) -> OxmlElement:
         """Helper function to create an OxmlElement."""
@@ -1017,7 +1020,7 @@ class ExamGenerator:
                 # Spread the total across topics as evenly as possible.
                 computed_per_topic = self._distribute_questions_equitably(self.acceptable_df, total_questions_int)
                 if verbose:
-                    print(f"Verbose: Reparto equitativo del total {total_questions_int}: {computed_per_topic}")
+                    logger.info(f"Verbose: Reparto equitativo del total {total_questions_int}: {computed_per_topic}")
                 self.exam_df = self._select_questions_by_topic(computed_per_topic, selection_method, verbose)
         elif questions_per_topic:
             self.exam_df = self._select_questions_by_topic(questions_per_topic, selection_method, verbose)
@@ -1025,11 +1028,11 @@ class ExamGenerator:
             self.exam_df = self.acceptable_df.copy()
 
         if verbose:
-            print(f"Verbose: Tipo de self.exam_df antes del bucle: {type(self.exam_df)}")
+            logger.info(f"Verbose: Tipo de self.exam_df antes del bucle: {type(self.exam_df)}")
             if isinstance(self.exam_df, pd.DataFrame):
-                print(f"Verbose: Head de self.exam_df antes del bucle:\n{self.exam_df.head()}")
+                logger.info(f"Verbose: Head de self.exam_df antes del bucle:\n{self.exam_df.head()}")
             else:
-                print(f"Verbose: self.exam_df no es un DataFrame: {self.exam_df}")
+                logger.info(f"Verbose: self.exam_df no es un DataFrame: {self.exam_df}")
 
         invalid_answers = self._questions_without_valid_answer(self.exam_df)
         if not invalid_answers.empty:
@@ -1066,10 +1069,10 @@ class ExamGenerator:
                     )
                     if not should_continue:
                         self.generation_cancelled = True
-                        print("Generacion de examenes cancelada por alerta de uso de preguntas.")
+                        logger.info("Generacion de examenes cancelada por alerta de uso de preguntas.")
                         return
                 else:
-                    print(warning_message)
+                    logger.warning(warning_message)
 
         if check:
             preview_exam_df = self.exam_df.copy()
@@ -1091,7 +1094,7 @@ class ExamGenerator:
             preview_path = f'examen_previsualizacion_{subject}_{exam}_{course}_completo.docx'
             preview_document.save(preview_path)
 
-            print(f"Se ha generado un examen de previsualización: {preview_path}")
+            logger.info(f"Se ha generado un examen de previsualización: {preview_path}")
             if review_callback is not None:
                 approved = bool(review_callback(os.path.abspath(preview_path)))
             else:
@@ -1100,12 +1103,12 @@ class ExamGenerator:
             if approved:
                 try:
                     os.remove(preview_path)
-                    print("Archivo de previsualización eliminado.")
+                    logger.info("Archivo de previsualización eliminado.")
                 except OSError as e:
-                    print(f"Error al eliminar el archivo de previsualización: {e}")
+                    logger.error(f"Error al eliminar el archivo de previsualización: {e}")
             else:
                 self.generation_cancelled = True
-                print("Generación de exámenes cancelada.")
+                logger.info("Generación de exámenes cancelada.")
                 return
 
         if exam_names is None:
@@ -1143,11 +1146,13 @@ class ExamGenerator:
             xml_path = os.path.join(output_dir, f'{base_filename}.xml')
 
             if verbose:
-                print(f"Verbose: Iteración {i}, tipo de exam_df_shuffled después de sample: {type(exam_df_shuffled)}")
+                logger.info(
+                    f"Verbose: Iteración {i}, tipo de exam_df_shuffled después de sample: {type(exam_df_shuffled)}"
+                )
                 if isinstance(exam_df_shuffled, pd.DataFrame):
-                    print(f"Verbose: Head de exam_df_shuffled:\n{exam_df_shuffled.head()}")
+                    logger.info(f"Verbose: Head de exam_df_shuffled:\n{exam_df_shuffled.head()}")
                 else:
-                    print(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
+                    logger.info(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
 
             exam_text, full_exam_text = self.generate_question_text(
                 exam_df_shuffled.copy(), renumber=False, shuffle_answers=False
@@ -1225,11 +1230,11 @@ class ExamGenerator:
                 instructions_paragraph.runs[0].font.size = Pt(font_size)
 
             if verbose:
-                print(f"Verbose: Tipo de exam_df_shuffled antes de crear la tabla: {type(exam_df_shuffled)}")
+                logger.info(f"Verbose: Tipo de exam_df_shuffled antes de crear la tabla: {type(exam_df_shuffled)}")
                 if isinstance(exam_df_shuffled, pd.DataFrame):
-                    print(f"Verbose: Longitud de exam_df_shuffled para número de filas: {len(exam_df_shuffled)}")
+                    logger.info(f"Verbose: Longitud de exam_df_shuffled para número de filas: {len(exam_df_shuffled)}")
                 else:
-                    print(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
+                    logger.info(f"Verbose: exam_df_shuffled no es un DataFrame: {exam_df_shuffled}")
 
             # Answer sheet: 'Pregunta' + one column per answer option plus an extra 'NC' (no
             # contestada) column so students can explicitly mark a question as unanswered instead of
@@ -1360,12 +1365,12 @@ class ExamGenerator:
             usage_columns = [col for col in self.df.columns if col.endswith('_uso')]
 
             if not usage_columns:
-                print("No se encontraron columnas de uso para sumar.")
+                logger.info("No se encontraron columnas de uso para sumar.")
                 # Si la columna de suma no existe, la creamos.
                 if 'Veces usada en examen' not in self.df.columns:
                     self.df['Veces usada en examen'] = 0
             else:
-                print(f"Sumando las siguientes columnas de uso: {usage_columns}")
+                logger.info(f"Sumando las siguientes columnas de uso: {usage_columns}")
                 self.df['Veces usada en examen'] = self.df[usage_columns].sum(axis=1)
 
             if 'Veces usada en examen' in self.df.columns and 'Texto relevante' in self.df.columns:
@@ -1373,11 +1378,11 @@ class ExamGenerator:
                 try:
                     texto_relevante_idx = self.df.columns.get_loc('Texto relevante')
                     self.df.insert(texto_relevante_idx + 1, 'Veces usada en examen', veces_usada_col)
-                    print("Columna 'Veces usada en examen' movida a su posición correcta.")
+                    logger.info("Columna 'Veces usada en examen' movida a su posición correcta.")
                 except KeyError:
                     # Si 'Texto relevante' no existe, la añade al final.
                     self.df['Veces usada en examen'] = veces_usada_col
-                    print(
+                    logger.warning(
                         "Advertencia: No se encontró la columna 'Texto relevante'. 'Veces usada en examen' se añadió al final."
                     )
 
@@ -1385,14 +1390,14 @@ class ExamGenerator:
 
             try:
                 self.df.to_excel(bank_excel_path, index=False)
-                print(
+                logger.info(
                     f"Archivo Excel '{bank_excel_path}' actualizado con la columna '{usage_column_name}' y 'Veces usada en examen'."
                 )
             except Exception as e:
                 # The exams are already written: keep them, but let the caller know that the usage was
                 # not recorded (e.g. the bank is open in Excel) instead of only printing it.
                 self.bank_update_error = f"{type(e).__name__}: {e}"
-                print(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
+                logger.error(f"Error al actualizar el archivo Excel '{bank_excel_path}': {e}")
 
     def _save_grading_session(
         self,
@@ -1405,14 +1410,14 @@ class ExamGenerator:
         try:
             from pyexamgenerator.grading.session import GradingSession
         except Exception as exc:  # pragma: no cover - grading is part of the package
-            print(f"No se pudo crear la sesión: {exc}")
+            logger.warning(f"No se pudo crear la sesión: {exc}")
             return None
         name_parts = [str(p) for p in (subject, exam, course) if p]
         session = GradingSession(name=" - ".join(name_parts) or "sesion_pyexamgenerator")
         for record in self.generated_exams:
             session.add_generated_exam(**record)
         pkl_path, json_path = session.save(session_output_path)
-        print(f"Sesión guardada en:\n  {pkl_path}\n  {json_path}")
+        logger.info(f"Sesión guardada en:\n  {pkl_path}\n  {json_path}")
         return pkl_path, json_path
 
     @staticmethod

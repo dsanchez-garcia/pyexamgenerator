@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import logging
 import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, scrolledtext, simpledialog
@@ -26,6 +27,7 @@ from pyexamgenerator.question_generator import (
     GeminiRequestError,
 )
 from pyexamgenerator import credentials, gui_logic, user_config
+from pyexamgenerator._console import log_to_console
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
 from pyexamgenerator.tooltip import ToolTip
@@ -38,6 +40,8 @@ from google import genai
 from pyexamgenerator import __version__
 
 from typing import Optional, List, Dict, Tuple, Any
+
+logger = logging.getLogger(__name__)
 
 
 class _CopyableMessageBox:
@@ -144,7 +148,7 @@ class ExamApp:
         self.api_key = credentials.get_api_key()
         if os.getenv(credentials.ENV_VAR, "").strip():
             initial_status = "Clave API cargada desde la variable de entorno GEMINI_API_KEY."
-            print(initial_status)
+            logger.info(initial_status)
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
@@ -2389,7 +2393,7 @@ class ExamApp:
             )
             self.update_status("Error al cargar modelos.")
             # Imprimimos el error completo en consola para depuración si es necesario
-            print(f"Error detallado al cargar modelos: {e}")
+            logger.error(f"Error detallado al cargar modelos: {e}")
 
         self._run_in_background(
             "Cargando lista de modelos...", work, on_success, on_error, widgets=[self.load_models_button]
@@ -2762,12 +2766,12 @@ class ExamApp:
 
                 self.update_status("Error: Límite de cuota de la API excedido.")
                 messagebox.showerror(title, message)
-                print(f"ERROR: {title}\n{message}")
+                logger.error(f"ERROR: {title}\n{message}")
             elif isinstance(e, ServiceOverloadedError):
                 title = "Servidores de Google Saturados"
                 self.update_status("Error: Modelo de IA saturado.")
                 messagebox.showwarning(title, str(e))  # Usamos warning porque es temporal
-                print(f"ERROR: {title}\n{e}")
+                logger.error(f"ERROR: {title}\n{e}")
             elif isinstance(e, GeminiRequestError):
                 # Invalid key or retired model: the message says what to change.
                 self.update_status("Error: la API de Gemini ha rechazado la petición.")
@@ -2777,7 +2781,7 @@ class ExamApp:
                 messagebox.showerror("Error", f"Error: {e}")
                 import traceback
 
-                print("".join(traceback.format_exception(type(e), e, e.__traceback__)))
+                logger.error("".join(traceback.format_exception(type(e), e, e.__traceback__)))
 
         self._run_in_background(
             "Generando preguntas...", work, on_success, on_error, widgets=[self.generate_questions_button]
@@ -4096,7 +4100,7 @@ class ExamApp:
 
                 self.update_status("Error: No se encontraron preguntas aceptables o suficientes.")
                 messagebox.showerror("Error en el Banco de Preguntas", f"{error_message}\n\n{detailed_error}")
-                print(f"ERROR: {error_message}\n{detailed_error}")
+                logger.error(f"ERROR: {error_message}\n{detailed_error}")
             else:
                 # Mantenemos un bloque genérico para cualquier otro error inesperado
                 self.update_status(f"Error al generar exámenes: {e}")
@@ -4507,6 +4511,7 @@ class ExamApp:
 
 
 def main():
+    log_to_console()
     root = tk.Tk()
     _app = ExamApp(root)
     root.mainloop()

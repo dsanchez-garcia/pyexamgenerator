@@ -220,8 +220,13 @@ búscalas por nombre de función si no coinciden.
   acepta exactamente `"sí"`), `grading/extraction.py:1030,1265`. Sustituir por callbacks, como
   `usage_warning_callback`. — hecho en `b53bbcd` (la consola queda como opción por defecto en un
   terminal, en `_console.py`).
-- [ ] **ARC-8 (P2)** 134 `print()` y 0 usos de `logging`. Introducir `logging.getLogger(__name__)` en
+- [x] **ARC-8 (P2)** 134 `print()` y 0 usos de `logging`. Introducir `logging.getLogger(__name__)` en
   la librería; la GUI puede añadir un handler.
+  *Alcance decidido de forma autónoma (2026-10-23, el mantenedor pidió trabajar sin consultas):
+  `info` para el progreso y `warning`/`error` para avisos y fallos; `print` solo en la consola
+  interactiva y en los `main()` de línea de órdenes, que con la GUI llaman a
+  `_console.log_to_console()` (a stdout, como antes); sin fichero de registro, porque los
+  mensajes pueden incluir nombres de alumnos.* — hecho en la rama `refactor/logging`.
 - [x] **ARC-9 (P2)** ~34 `except Exception`/`except:` que tragan errores (p. ej.
   `exam_generator.py:436,1236`). Revisar uno a uno.
   *Parcial (`9d9fb12`): revisados los de la librería; corregidos los que daban resultados

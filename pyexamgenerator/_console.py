@@ -5,6 +5,7 @@ default for an interactive terminal. Without one (GUI, notebook, CI) ``input()``
 so callers check :func:`stdin_is_interactive` first.
 """
 
+import logging
 import sys
 
 _YES_ANSWERS = {"sí", "si", "s", "yes", "y"}
@@ -21,3 +22,13 @@ def stdin_is_interactive() -> bool:
 def ask_yes_no(question: str) -> bool:
     """Asks ``question`` in the console; accepts sí/si/s/yes/y (any case) as yes."""
     return input(question).strip().lower() in _YES_ANSWERS
+
+
+def log_to_console(level: int = logging.INFO) -> None:
+    """Shows the library's messages in the console, as plain text (entry points: GUI and CLIs).
+
+    The library logs with :mod:`logging` instead of ``print`` (ARC-8): without this, a script only
+    sees warnings and errors. Does nothing if logging is already configured.
+    """
+    # stdout, where these messages went when they were print() calls.
+    logging.basicConfig(level=level, format="%(message)s", stream=sys.stdout)
