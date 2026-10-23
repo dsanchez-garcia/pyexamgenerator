@@ -38,7 +38,7 @@ búscalas por nombre de función si no coinciden.
   *Decidido por el mantenedor (2026-10-22): almacén de credenciales del sistema con `keyring` (y,
   solo si no hay almacén, fichero en la carpeta de configuración del usuario); al arrancar se
   pregunta si mover la clave de un `config.json` antiguo; la librería también usa la clave
-  guardada.* — hecho en la rama `fix/sec-3-clave-api` (`pyexamgenerator/credentials.py`).
+  guardada.* — hecho en `4c9e5f3` (PR #17, `pyexamgenerator/credentials.py`).
 - [x] **SEC-4 (P1)** Imágenes de alumnos copiadas al Escritorio por defecto —
   `grading/extraction.py:658`, `main_app.py:617` (`~/Desktop/pyexamgenerator_temp`). En Windows el
   Escritorio suele sincronizarse con OneDrive (datos personales en la nube, RGPD). Usar
@@ -84,8 +84,8 @@ búscalas por nombre de función si no coinciden.
   `question_bank_manager.py:778-781`. Devolver lo que devuelve `save_dataframe_to_excel`. — hecho en `8111c5b`.
 - [x] **BUG-11 (P2)** Nombres de archivo de examen sin sanear — `exam_generator.py:1002`.
   `/`, `:` o `?` en asignatura/examen rompen en Windows; `None` produce `examen_None_...`. — hecho en `e7a49a1`.
-  *El nombre de la previsualización de `check=True` se quedó sin sanear: corregido en la rama
-  `refactor/exam-generation-steps` (sigue escribiéndose en la carpeta actual, como antes).*
+  *El nombre de la previsualización de `check=True` se quedó sin sanear: corregido en `43caefe`
+  (PR #24; sigue escribiéndose en la carpeta actual, como antes).*
 - [x] **BUG-12 (P2)** Categoría Moodle con `" -"` final en el XML pero no en
   `suggest_moodle_config` — `exam_generator.py:649-655` vs `:108-113`. Un único helper. — hecho en `e7a49a1`.
 - [x] **BUG-13 (P3)** Placeholders `{{...}}` de la plantilla DOCX partidos entre *runs* de Word no se
@@ -119,8 +119,8 @@ búscalas por nombre de función si no coinciden.
   («Mario»/«María» puntúan 0,94), así que solo se asignan coincidencias seguras (correo, mismo nombre
   en cualquier orden, o el único alumno que contiene todas las palabras) y el resto se informa con
   el candidato más parecido; el modo extremo no cuenta los correos clasificados como
-  `no_justifica`; `ExamGrader` usa las mismas reglas con un fichero de incidencias.* — hecho en la
-  rama `fix/grd-6-emparejamiento-seguro` (`grading/_names.py`).
+  `no_justifica`; `ExamGrader` usa las mismas reglas con un fichero de incidencias.* — hecho en
+  `198f49c` (PR #18, `grading/_names.py`).
 - [x] **GRD-7 (P1)** Índice vs posición en el emparejamiento OCR — `grading/extraction.py:282-293`
   (`best_idx` de `iterrows()` usado con `.iloc`); `:295` fija `"Número de ID"` en vez de
   `self.id_col`. — hecho en `9ae14f6`.
@@ -201,11 +201,11 @@ búscalas por nombre de función si no coinciden.
 - [ ] **ARC-3 (P2)** Nombres de columna repetidos como literales en todos los módulos (`'Pregunta'`,
   `'Respuesta A'`, `'Estado'`, `'Veces usada en examen'`, `'_uso'`, `'Número de ID'`…). Crear
   `pyexamgenerator/schema.py` con constantes y usarlo en todas partes.
-  *Parcial (rama `refactor/schema`, alcance decidido de forma autónoma el 2026-10-23): `schema.py`
-  con las columnas del banco y de los exámenes, usado en `question_generator`, `question_bank_manager`,
-  `exam_generator` y la GUI (sustitución comprobada con el AST). Falta `grading`: las columnas de
-  Moodle (`'Número de ID'` aparece 37 veces) se buscan con listas de candidatos y `find_column`,
-  junto con sus variantes *mojibake*; conviene hacerlo con ARC-10.*
+  *Parcial (`13a7743` y `dcf8a36`, PR #23; alcance decidido de forma autónoma el 2026-10-23):
+  `schema.py` con las columnas del banco y de los exámenes, usado en `question_generator`,
+  `question_bank_manager`, `exam_generator` y la GUI (sustitución comprobada con el AST). Falta
+  `grading`: las columnas de Moodle (`'Número de ID'` aparece 37 veces) se buscan con listas de
+  candidatos y `find_column`, junto con sus variantes *mojibake*; conviene hacerlo con ARC-10.*
 - [x] **ARC-4 (P2)** Helpers duplicados en `grading` con reglas ligeramente distintas (`_normalize`,
   `_find_column`, `_parse_grade`, `_clean` en `data.py`, `comparison.py`, `final_grade.py`,
   `integrations.py`, `attendance.py`, `extraction.py`). Unificar en `grading/_text.py`. — hecho en
@@ -223,9 +223,9 @@ búscalas por nombre de función si no coinciden.
   las rutas de import actuales).*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
-  *Parcial (rama `refactor/exam-generation-steps`, alcance decidido de forma autónoma el
-  2026-10-23): el método encadena pasos privados (cargar el banco, seleccionar, comprobar las
-  respuestas, aviso de uso, previsualización, DOCX del alumno y del profesor, registrar el uso) y
+  *Parcial (`58fe477`, PR #24; alcance decidido de forma autónoma el 2026-10-23): el método
+  encadena pasos privados (cargar el banco, seleccionar, comprobar las respuestas, aviso de uso,
+  previsualización, DOCX del alumno y del profesor, registrar el uso) y
   los ajustes comunes de los DOCX van en un `_ExamDocumentSettings` interno; con la misma semilla
   genera lo mismo que antes (comprobado en 12 escenarios). Falta el `ExamConfig` público: cambia
   la firma de un método público y conviene acordarlo.*
@@ -239,7 +239,8 @@ búscalas por nombre de función si no coinciden.
   `info` para el progreso y `warning`/`error` para avisos y fallos; `print` solo en la consola
   interactiva y en los `main()` de línea de órdenes, que con la GUI llaman a
   `_console.log_to_console()` (a stdout, como antes); sin fichero de registro, porque los
-  mensajes pueden incluir nombres de alumnos.* — hecho en la rama `refactor/logging`.
+  mensajes pueden incluir nombres de alumnos.* — hecho en `0e63708` (PR #22; en el mismo PR,
+  `8cf3ff0` importa PyMuPDF como `pymupdf`, porque `fitz` escribía un aviso en stdout).
 - [x] **ARC-9 (P2)** ~34 `except Exception`/`except:` que tragan errores (p. ej.
   `exam_generator.py:436,1236`). Revisar uno a uno.
   *Parcial (`9d9fb12`): revisados los de la librería; corregidos los que daban resultados
@@ -260,8 +261,8 @@ búscalas por nombre de función si no coinciden.
   *Decidido por el mantenedor (2026-10-22): una carpeta por usuario calculada sin dependencias
   (`%APPDATA%\pyexamgenerator`, `~/.config/pyexamgenerator`, `~/Library/Application Support/…`);
   al arrancar se pregunta si mover los ficheros de la carpeta actual (los prompts se combinan); menú
-  «Abrir carpeta de configuración».* — hecho en la rama `refactor/carpeta-configuracion`
-  (`pyexamgenerator/user_config.py`). El `pyexamgenerator/custom_prompts.json` suelto es un fichero
+  «Abrir carpeta de configuración».* — hecho en `52ac18d` (PR #19,
+  `pyexamgenerator/user_config.py`). El `pyexamgenerator/custom_prompts.json` suelto es un fichero
   local, ignorado por git: la aplicación ofrece moverlo si se abre desde esa carpeta.
 - [x] **ARC-13 (P3)** Estado compartido en `self` (`self.text`, `self.quiz`, `self.page_texts`) hace
   que las instancias no sean reutilizables de forma segura. — hecho en `b6913cb`.
@@ -274,8 +275,8 @@ búscalas por nombre de función si no coinciden.
   subir el mínimo a 3.10 y actualizar clasificadores, `tox.ini`, `.readthedocs.yaml` (usa 3.9) y
   README.
   *Decidido por el mantenedor (2026-10-22): mínimo Python 3.10. Anotación corregida en `07e3e4d`;
-  `setup.py`, `tox.ini`, `.readthedocs.yaml`, CI, README y guías actualizados en la rama
-  `build/python-3.10`.*
+  `setup.py`, `tox.ini`, `.readthedocs.yaml`, CI, README y guías actualizados en `c878f8e`
+  (PR #8).*
 - [x] **PKG-2 (P2)** Migrar `setup.py` → `pyproject.toml` (PEP 621) con extras `dev`, `docs`,
   `grading`; centralizar configuración de pytest y ruff. Mantener la versión única en
   `pyexamgenerator/__init__.py` (dinámica). — hecho en `16af861` (ruff en `d1c6542`).
@@ -283,8 +284,8 @@ búscalas por nombre de función si no coinciden.
   (`main_app.py:30`). Eliminar import y dependencia. Igual con `Document` (`:25`) y el fallback
   `importlib_metadata` (`:37-42`, y `importlib-metadata; python_version < "3.8"` en `setup.py`). — hecho en `2fd7db2`.
 - [x] **PKG-4 (P2)** `PyPDF2` está deprecado (avisa en cada test). Migrar a `pypdf`.
-  *Decidido por el mantenedor (2026-10-22): migrar a `pypdf`.* — hecho en la rama `build/pypdf`
-  (`pypdf>=6.21.2`, la primera versión sin los avisos de seguridad publicados en octubre de 2026).
+  *Decidido por el mantenedor (2026-10-22): migrar a `pypdf`.* — hecho en `a83832d` (PR #16;
+  `pypdf>=6.21.2`, la primera versión sin los avisos de seguridad publicados en octubre de 2026).
 - [x] **PKG-5 (P2)** `requirements-dev.txt` duplica las dependencias de `setup.py`. Sustituir por
   `pip install -e .[dev,grading,docs]` cuando exista PKG-2. — hecho en `410a2f1`.
 - [x] **PKG-6 (P2)** `docs/requirements.txt` sin versiones fijadas y RTD con `fail_on_warning: true`:
@@ -355,13 +356,13 @@ búscalas por nombre de función si no coinciden.
   mensaje falso). *Pendiente: aplicar `ruff format` en un PR aparte y ampliar las reglas.*
   *`ruff format` aplicado en `5916315` (decidido por el mantenedor el 2026-10-22: comillas tal como
   estaban, Markdown excluidos; mismo AST antes y después); la CI y pre-commit lo exigen y el commit
-  está en `.git-blame-ignore-revs`. Reglas `B` (bugbear) activadas en la rama `build/ruff-bugbear`
-  (sus 15 avisos corregidos). Otras reglas medidas y descartadas por ahora: `E501` (69 líneas que
+  está en `.git-blame-ignore-revs`. Reglas `B` (bugbear) activadas en `9c4671c` (PR #21;
+  sus 15 avisos corregidos). Otras reglas medidas y descartadas por ahora: `E501` (69 líneas que
   el formateador no puede partir), `UP` (848 cambios de sintaxis) e `I`/`SIM` (cosméticas).*
 - [x] **DEV-2 (P3)** Tipado: añadir `mypy` (o `pyright`) en modo no estricto, empezando por
   `grading/api.py` y los dataclasses de configuración. — hecho en `b08fab8` (job `mypy` en la CI;
   ir añadiendo módulos a `[tool.mypy]`).
-  *Ampliado en la rama `build/mypy-modulos` (2026-10-23): `question_generator`, `question_bank_manager`,
+  *Ampliado en `2356d6c` (PR #25, 2026-10-23): `question_generator`, `question_bank_manager`,
   `tooltip` y `grading/{comparison,data,final_grade,graders}`, casi todo con anotaciones. Quedan
   `exam_generator` (38 avisos), `main_app` (6) y `grading/{attendance,extraction,integrations}` (15, 20
   y 18).*
@@ -388,9 +389,12 @@ búscalas por nombre de función si no coinciden.
 - [x] **REPO-5 (P3)** Docstring de `generate_question_text` dice que devuelve 3 valores y devuelve 2
   (`exam_generator.py:439,520`); además muta su entrada. — hecho en `f40b1b3`.
 - [x] **REPO-6 (P3)** Añadir `CONTRIBUTING.md` (o enlazar `docs/dev/DEVELOPMENT.md` desde el README)
-  y plantillas de issue/PR en `.github/`. — hecho en la rama `fix/p2-correcciones`.
-- [ ] **REPO-7 (P3)** Mezcla de idiomas en identificadores y comentarios (inglés/español). Fijar la
+  y plantillas de issue/PR en `.github/`. — hecho en `88000dd` (PR #7).
+- [x] **REPO-7 (P3)** Mezcla de idiomas en identificadores y comentarios (inglés/español). Fijar la
   convención documentada en `AGENTS.md` y aplicarla progresivamente, sin PRs masivos.
+  — la convención está fijada en `AGENTS.md` («Idioma y estilo»: texto para el usuario en español;
+  identificadores y docstrings preferentemente en inglés; al tocar una función se sigue su idioma
+  y no se traduce código que no se cambia). Se aplica con cada cambio, sin un PR propio.
 
 ---
 
