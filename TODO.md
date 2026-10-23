@@ -194,11 +194,13 @@ búscalas por nombre de función si no coinciden.
   y los avisos de la integración OCR; los mapeos de plantilla/sesión quedan en `ExamApp` porque
   enlazan variables Tk (`0375766`). Falta dividir `main_app.py` por pestañas (conviene acordar
   antes la estructura del subpaquete `gui/`).*
-  *Propuesta (2026-10-23, sin decidir): `pyexamgenerator/gui/app.py` con `ExamApp` (ventana, menús,
+  *Propuesta (2026-10-23): `pyexamgenerator/gui/app.py` con `ExamApp` (ventana, menús,
   barra de estado, `_run_in_background`, `_call_in_main_thread`) y un módulo por pestaña
   (`questions_tab.py`, `bank_tab.py`, `exam_tab.py`, `grading_tab.py`), cada uno con una clase que
   recibe la app; `main_app.py` queda como módulo de compatibilidad (`ExamApp`, `main`) para el
   comando `pyexamgenerator` y los tests. Un PR por pestaña, empezando por la más pequeña.*
+  *Aprobada por el mantenedor el 2026-10-23. Hecho hasta ahora: «Gestionar Banco de Preguntas» en
+  `gui/bank_tab.py` (`027dba8`; el `messagebox` copiable, en `gui/_dialogs.py`).*
 - [x] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
   *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*

@@ -217,10 +217,16 @@ cambia; un fichero mal escrito detiene la corrección con un `ValueError` que di
   `grading/__init__.py` importa los dos dentro de `try/except ImportError` y expone `HAS_OCR`.
 - `docs/source/conf.py` simula `cv2`/`rapidocr*` con `autodoc_mock_imports` para Read the Docs.
 
-## GUI — `main_app.py`
+## GUI — `main_app.py` y `gui/`
 
 - Una clase `ExamApp(root)`; `main()` crea `tk.Tk()` y lanza `mainloop()` (entry point de consola
   `pyexamgenerator`).
+- Las pestañas pasan a clases propias en `gui/` (ARC-1), una por módulo, que reciben la app:
+  `BankTab` (`gui/bank_tab.py`, «Gestionar Banco de Preguntas») ya está separada y se guarda en
+  `app.bank_tab`. Cada pestaña crea sus variables Tk y sus widgets, y usa de la app solo la
+  ventana y sus servicios (`self.app.root`, `_create_scrollable_tab`, `_bind_page_scroll`,
+  `update_status`, `_run_in_background`, `_call_in_main_thread`). El `messagebox` con texto
+  copiable está en `gui/_dialogs.py` y lo comparten la ventana y las pestañas.
 - `__init__` carga la clave (`credentials.get_api_key`: `GEMINI_API_KEY` → almacén de
   credenciales), crea ~70 variables Tkinter y construye las pestañas: `create_question_tab`,
   `create_manage_bank_tab`, `create_exam_tab`, `create_grading_tab`, y el menú «Ayuda». Al final,

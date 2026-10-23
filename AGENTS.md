@@ -66,7 +66,8 @@ pyexamgenerator/
   _text.py                 helpers compartidos: strip_accents, safe_filename_part
   schema.py                nombres de columna del banco (schema.QUESTION…): úsalos, no repitas el literal
   exam_generator.py        ExamGenerator: banco XLSX → exámenes DOCX/XLSX/Moodle XML
-  main_app.py              GUI Tkinter (clase ExamApp, ~3.800 líneas) y entry point main()
+  main_app.py              GUI Tkinter: ExamApp (ventana, menús, estado, tareas en segundo plano) y main()
+  gui/                     una clase por pestaña que recibe la app (ARC-1): bank_tab.py; _dialogs.py (messagebox)
   gui_logic.py             lógica de la GUI sin tkinter: interpretar los campos, avisos (se prueba sin pantalla)
   credentials.py           clave de API de Gemini: GEMINI_API_KEY o almacén de credenciales (keyring)
   user_config.py           carpeta de configuración del usuario (prompts, plantilla): nunca el CWD
@@ -124,7 +125,7 @@ pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [d
   `[grading]`. Los tests de OCR usan `pytest.importorskip`.
 - **La librería no debe depender de la GUI.** Nada en `question_generator.py`,
   `question_bank_manager.py`, `exam_generator.py` ni `grading/` importa `tkinter`. La lógica nueva
-  va en la librería; `main_app.py` solo lee widgets, llama a la librería y muestra resultados. Lo que
+  va en la librería; `main_app.py` y `gui/` solo leen widgets, llaman a la librería y muestran resultados. Lo que
   sea propio de la GUI pero no necesite Tk (interpretar el texto de un campo, componer un aviso) va
   en `gui_logic.py`, con tests en `tests/test_gui_logic.py`.
 - **No añadas `input()` ni prompts interactivos** a la librería: usa callbacks opcionales (como
