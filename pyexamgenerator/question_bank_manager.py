@@ -19,7 +19,7 @@ import pandas as pd
 from docx import Document
 import os
 import re
-from typing import Optional, List, Tuple
+from typing import Any, Optional, List, Tuple, cast
 
 from pyexamgenerator import schema
 from pyexamgenerator._text import strip_accents
@@ -63,7 +63,7 @@ class QuestionBankManager:
         try:
             document = Document(docx_path)
             questions = []
-            current_question = {}
+            current_question: dict = {}
             current_field = None  # Field that receives continuation paragraphs.
 
             for paragraph in document.paragraphs:
@@ -387,7 +387,7 @@ class QuestionBankManager:
         if schema.TIMES_USED in df_bank.columns and schema.RELEVANT_TEXT in df_bank.columns:
             usage_aggregate = df_bank.pop(schema.TIMES_USED)
             try:
-                texto_relevante_idx = df_bank.columns.get_loc(schema.RELEVANT_TEXT)
+                texto_relevante_idx = cast(int, df_bank.columns.get_loc(schema.RELEVANT_TEXT))
                 df_bank.insert(texto_relevante_idx + 1, schema.TIMES_USED, usage_aggregate)
             except KeyError:
                 df_bank[schema.TIMES_USED] = usage_aggregate
@@ -594,7 +594,7 @@ class QuestionBankManager:
         return total_matched, df_bank, stats
 
     @staticmethod
-    def _normalize_text(value: object) -> str:
+    def _normalize_text(value: Any) -> str:
         """Normalizes a cell for duplicate comparison: NaN -> '', trim, lowercase, collapse spaces."""
         if pd.isna(value):
             return ""
@@ -705,7 +705,7 @@ class QuestionBankManager:
         combined = pd.concat(frames, ignore_index=True)
 
         seen = set()
-        keep_indices: List[int] = []
+        keep_indices: List[Any] = []  # row labels
         duplicates_removed = 0
         for idx, row in combined.iterrows():
             key = self._question_dedup_key(row, statement_only, statement_column, answer_columns)
@@ -814,7 +814,7 @@ class QuestionBankManager:
         """
         added_count, updated_df = self.add_questions_without_duplicates(existing_excel_path, reviewed_excel_path)
 
-        if added_count >= 0:
+        if added_count >= 0 and updated_df is not None:
             logger.info(f"Se añadieron {added_count} preguntas sin duplicados.")
             # Save the updated DataFrame to a new file
             save_path: str = "banco_de_preguntas_actualizado.xlsx"

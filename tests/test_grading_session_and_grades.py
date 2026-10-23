@@ -335,6 +335,23 @@ def test_exam_grader_respects_custom_column_names(tmp_path):
     assert row["Calificación/10,00"] == "10,00"
 
 
+def test_exam_grader_question_without_number_gives_a_clear_error(tmp_path):
+    """`questions_info` dado por el llamador: un nombre sin número fallaba con `AttributeError` (DEV-2)."""
+    grader = ExamGrader(
+        exam_xml_path="",
+        answers_xlsx_path="",
+        enrollment_xlsx_path="",
+        questions_info={"Pregunta final": {"a": 100.0, "b": 0.0}},
+        enrollment_df=pd.DataFrame(
+            [{"Apellido(s)": "Gil", "Nombre": "Ana", "Número de ID": "111", "Dirección de correo": "ana@x.com"}]
+        ),
+        answers_df=pd.DataFrame([{"Nombre_Alumno_Generado": "Ana Gil", "Pregunta final": "a"}]),
+    )
+
+    with pytest.raises(ValueError, match="'Pregunta final' no tiene número"):
+        grader.grade_and_export(str(tmp_path / "out.xlsx"))
+
+
 # --- Compare / overwrite results ---------------------------------------------------------------
 
 

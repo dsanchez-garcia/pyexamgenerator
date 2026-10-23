@@ -62,7 +62,7 @@ class FinalGradeCalculator:
         if not sources:
             raise ValueError("Debe indicar al menos un examen (fichero) para la nota final.")
 
-        parsed = []
+        parsed: List[Dict[str, Any]] = []
         used_labels = set()
         for source in sources:
             path = source["path"]

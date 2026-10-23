@@ -273,12 +273,11 @@ class EnrollmentMerger:
 
     def export(self, output_path: str) -> pd.DataFrame:
         """Run :meth:`merge` if needed and write the roster to ``output_path``."""
-        if self.merged_df is None:
-            self.merge()
+        merged = self.merged_df if self.merged_df is not None else self.merge()
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        self.merged_df.to_excel(output_path, index=False)
+        merged.to_excel(output_path, index=False)
         self.output_path = output_path
-        return self.merged_df
+        return merged
 
 
 def build_merged_enrollment_from_sources(paths: Iterable[str], sheet_name: int = 0) -> pd.DataFrame:

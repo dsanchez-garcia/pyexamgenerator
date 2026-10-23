@@ -149,12 +149,12 @@ class ResultComparator:
             new_set = set(new_cols)
             value_columns = [c for c in existing_cols if c in new_set and c not in identity_cols]
 
-        existing_index: Dict[str, int] = {}
+        existing_index: Dict[str, Any] = {}  # key -> row label
         for idx, row in existing.iterrows():
             key = self._row_key(row, e_id, e_first, e_last)
             if key:
                 existing_index.setdefault(key, idx)
-        new_index: Dict[str, int] = {}
+        new_index: Dict[str, Any] = {}
         for idx, row in new.iterrows():
             key = self._row_key(row, n_id, n_first, n_last)
             if key:
