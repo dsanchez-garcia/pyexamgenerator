@@ -194,7 +194,7 @@ class ExamGenerator:
     def _correct_answer_text(cls, row: pd.Series):
         """Returns the text of the correct answer of a question row (None if the letter is invalid)."""
         letter = cls._normalize_correct_letter(row.get(schema.CORRECT_ANSWER))
-        return row[f"Respuesta {letter}"] if letter else None
+        return row[schema.answer_column(letter)] if letter else None
 
     @staticmethod
     def _cell_text(value) -> str:
@@ -262,7 +262,7 @@ class ExamGenerator:
         exam_df_variant[schema.QUESTION_NUMBER] = range(1, len(exam_df_variant) + 1)
 
         def shuffle_row_answers(row):
-            answers = [row[schema.ANSWER_A], row[schema.ANSWER_B], row[schema.ANSWER_C], row[schema.ANSWER_D]]
+            answers = [row[column] for column in schema.ANSWER_COLUMNS]
             # Shuffle positions instead of matching texts afterwards: identical, numeric or empty
             # answer texts can no longer lose or misplace the correct answer.
             order = list(range(4))
@@ -273,8 +273,8 @@ class ExamGenerator:
                 new_correct_answer_letter = 'abcd'[order.index('ABCD'.index(correct_letter))]
             return pd.Series([answers[i] for i in order] + [new_correct_answer_letter])
 
-        exam_df_variant[[schema.ANSWER_A, schema.ANSWER_B, schema.ANSWER_C, schema.ANSWER_D, schema.CORRECT_ANSWER]] = (
-            exam_df_variant.apply(shuffle_row_answers, axis=1)
+        exam_df_variant[[*schema.ANSWER_COLUMNS, schema.CORRECT_ANSWER]] = exam_df_variant.apply(
+            shuffle_row_answers, axis=1
         )
         return exam_df_variant
 
@@ -296,10 +296,10 @@ class ExamGenerator:
                 raw = strip_accents(raw)
             return re.sub(r'[^a-zA-Z0-9_]', '_', raw).strip('_') or default
 
-        name = f'{safe(exam, "examen")}_{safe(course, "curso")}_uso'
+        name = schema.usage_column(f'{safe(exam, "examen")}_{safe(course, "curso")}')
         if existing_columns is not None:
             columns = set(existing_columns)
-            legacy_name = f'{safe(exam, "examen", True)}_{safe(course, "curso", True)}_uso'
+            legacy_name = schema.usage_column(f'{safe(exam, "examen", True)}_{safe(course, "curso", True)}')
             if name not in columns and legacy_name in columns:
                 return legacy_name
         return name
@@ -307,19 +307,17 @@ class ExamGenerator:
     @staticmethod
     def _questions_over_usage_threshold(exam_df: pd.DataFrame, threshold: int) -> pd.DataFrame:
         """Returns selected questions whose aggregate usage is strictly greater than threshold."""
-        usage_column = schema.TIMES_USED
-        if exam_df is None or exam_df.empty or usage_column not in exam_df.columns:
+        if exam_df is None or exam_df.empty or schema.TIMES_USED not in exam_df.columns:
             return pd.DataFrame()
 
-        usage_counts = pd.to_numeric(exam_df[usage_column], errors='coerce').fillna(0)
+        usage_counts = pd.to_numeric(exam_df[schema.TIMES_USED], errors='coerce').fillna(0)
         warning_df = exam_df.loc[usage_counts > threshold].copy()
         if warning_df.empty:
             return pd.DataFrame()
 
-        question_number_column = schema.QUESTION_NUMBER
         display_columns = [
             col
-            for col in [question_number_column, schema.TOPIC, schema.QUESTION, usage_column]
+            for col in [schema.QUESTION_NUMBER, schema.TOPIC, schema.QUESTION, schema.TIMES_USED]
             if col in warning_df.columns
         ]
         return warning_df.loc[:, display_columns].copy()
@@ -332,13 +330,11 @@ class ExamGenerator:
             "",
         ]
         max_rows = 12
-        question_number_column = schema.QUESTION_NUMBER
-        usage_column = schema.TIMES_USED
         for _, row in warning_df.head(max_rows).iterrows():
-            number = row.get(question_number_column, '')
+            number = row.get(schema.QUESTION_NUMBER, '')
             topic = row.get(schema.TOPIC, '')
             statement = str(row.get(schema.QUESTION, '')).strip()
-            usage = row.get(usage_column, '')
+            usage = row.get(schema.TIMES_USED, '')
             prefix_parts = []
             if number != '':
                 prefix_parts.append(f"#{number}")
@@ -374,8 +370,7 @@ class ExamGenerator:
         use_two_digits: bool = False,
     ) -> None:
         """Adds a question as a Heading 2 paragraph plus normal paragraphs with answers/details."""
-        question_number_column = schema.QUESTION_NUMBER
-        pregunta_num = row[question_number_column]
+        pregunta_num = row[schema.QUESTION_NUMBER]
         formatted_pregunta_num = (
             self._format_question_number(pregunta_num) if use_two_digits else str(int(pregunta_num))
         )
@@ -604,7 +599,7 @@ class ExamGenerator:
             full_exam_text += f"{row[schema.QUESTION]}\n"
             # Shuffle answer texts if shuffle_answers is True.
             if shuffle_answers:
-                answers = [row[schema.ANSWER_A], row[schema.ANSWER_B], row[schema.ANSWER_C], row[schema.ANSWER_D]]
+                answers = [row[column] for column in schema.ANSWER_COLUMNS]
                 random.shuffle(answers)  # Shuffle the list of answers.
                 # Identify the new letter of the correct answer.
                 new_correct_answer = None
@@ -803,7 +798,9 @@ class ExamGenerator:
                 answer = SubElement(question, 'answer', fraction='100' if correct_answer == letter else wrong_fraction)
                 answer_text = SubElement(answer, 'text')
                 answer_text.text = (
-                    self._cell_text(row.get(f'Respuesta {letter.upper()}', '')) if xml_use_answer_text else letter
+                    self._cell_text(row.get(schema.answer_column(letter.upper()), ''))
+                    if xml_use_answer_text
+                    else letter
                 )
 
         xml_str = minidom.parseString(tostring(quiz)).toprettyxml(indent="  ")
@@ -845,14 +842,7 @@ class ExamGenerator:
         if df is None:
             raise ValueError(f"No se pudo leer el archivo XLSX: {exam_xlsx_path}")
 
-        required_columns = {
-            schema.QUESTION_NUMBER,
-            schema.CORRECT_ANSWER,
-            schema.ANSWER_A,
-            schema.ANSWER_B,
-            schema.ANSWER_C,
-            schema.ANSWER_D,
-        }
+        required_columns = {schema.QUESTION_NUMBER, schema.CORRECT_ANSWER, *schema.ANSWER_COLUMNS}
         missing_columns = sorted(required_columns.difference(df.columns))
         if missing_columns:
             raise ValueError(
@@ -994,7 +984,9 @@ class ExamGenerator:
         for col in exam_columns:
             self.df[col] = self.df[col].fillna(0)
 
-        self.acceptable_df = self.df[self.df[schema.STATUS].astype(str).str.strip().str.lower() == 'aceptable']
+        self.acceptable_df = self.df[
+            self.df[schema.STATUS].astype(str).str.strip().str.lower() == schema.STATUS_ACCEPTABLE.lower()
+        ]
 
         # Comprobación temprana: si no hay NINGUNA pregunta aceptable, paramos aquí.
         if self.acceptable_df.empty:

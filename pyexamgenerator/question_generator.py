@@ -440,9 +440,7 @@ class QuestionGenerator:
                     prompt_guidance_from_bank_str += f"- Pregunta del banco: {question_text}\n"
                     if self.current_prompt_example_content_type == "enunciados_y_respuestas":
                         options = [
-                            row.get(f'Respuesta {chr(65 + i)}', '')
-                            for i in range(4)
-                            if pd.notna(row.get(f'Respuesta {chr(65 + i)}', ''))
+                            row.get(column, '') for column in schema.ANSWER_COLUMNS if pd.notna(row.get(column, ''))
                         ]
                         options_str = "\n".join([f"  - {opt}" for opt in options if opt])
                         if options_str:

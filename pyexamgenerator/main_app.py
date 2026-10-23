@@ -4167,13 +4167,7 @@ class ExamApp:
         duplicate_check_columns = [schema.QUESTION]  # Default criteria.
 
         if duplicate_criteria == "pregunta_respuestas":
-            duplicate_check_columns = [
-                schema.QUESTION,
-                schema.ANSWER_A,
-                schema.ANSWER_B,
-                schema.ANSWER_C,
-                schema.ANSWER_D,
-            ]
+            duplicate_check_columns = [schema.QUESTION, *schema.ANSWER_COLUMNS]
 
         if not existing_bank_path or not reviewed_add_path:
             messagebox.showerror("Error", "Por favor, seleccione ambos archivos.")

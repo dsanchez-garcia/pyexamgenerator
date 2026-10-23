@@ -52,10 +52,26 @@ pyexamgenerator.question\_generator module
    :undoc-members:
    :show-inheritance:
 
+pyexamgenerator.schema module
+-----------------------------
+
+.. automodule:: pyexamgenerator.schema
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 pyexamgenerator.tooltip module
 ------------------------------
 
 .. automodule:: pyexamgenerator.tooltip
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+pyexamgenerator.user\_config module
+-----------------------------------
+
+.. automodule:: pyexamgenerator.user_config
    :members:
    :undoc-members:
    :show-inheritance:

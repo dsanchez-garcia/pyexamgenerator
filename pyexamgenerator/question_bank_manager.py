@@ -87,7 +87,7 @@ class QuestionBankManager:
                 answer = self._DOCX_ANSWER_LINE.match(text)
                 if answer:
                     # Only the 'A)' prefix is removed: the same characters inside the text are kept.
-                    current_field = f"Respuesta {answer.group(1)}"
+                    current_field = schema.answer_column(answer.group(1))
                     current_question[current_field] = answer.group(2).strip()
                     continue
                 if text.startswith("Texto relevante:"):
@@ -111,18 +111,7 @@ class QuestionBankManager:
 
             df = pd.DataFrame(questions)
             # Ensure column order for consistency
-            expected_columns = [
-                schema.QUESTION_NUMBER,
-                schema.TOPIC,
-                schema.STATUS,
-                schema.QUESTION,
-                schema.ANSWER_A,
-                schema.ANSWER_B,
-                schema.ANSWER_C,
-                schema.ANSWER_D,
-                schema.CORRECT_ANSWER,
-                schema.RELEVANT_TEXT,
-            ]
+            expected_columns = list(schema.BANK_COLUMNS)
             df = df.reindex(columns=expected_columns)
             return df
 
@@ -172,13 +161,7 @@ class QuestionBankManager:
                                                 errors reading the files.
         """
         if duplicate_check_columns is None:
-            duplicate_check_columns = [
-                schema.QUESTION,
-                schema.ANSWER_A,
-                schema.ANSWER_B,
-                schema.ANSWER_C,
-                schema.ANSWER_D,
-            ]
+            duplicate_check_columns = [schema.QUESTION, *schema.ANSWER_COLUMNS]
         try:
             df_existing = pd.read_excel(existing_bank_path)
             df_reviewed = pd.read_excel(reviewed_questions_path)
@@ -195,7 +178,7 @@ class QuestionBankManager:
             if schema.STATUS in df_reviewed.columns:
                 original_count = len(df_reviewed)
                 df_reviewed = df_reviewed[
-                    df_reviewed[schema.STATUS].astype(str).str.strip().str.lower() == 'aceptable'
+                    df_reviewed[schema.STATUS].astype(str).str.strip().str.lower() == schema.STATUS_ACCEPTABLE.lower()
                 ].copy()
                 logger.info(f"Se encontraron {len(df_reviewed)} preguntas 'Aceptable' de un total de {original_count}.")
                 if df_reviewed.empty:
@@ -269,7 +252,7 @@ class QuestionBankManager:
         label = (exam_label or '').strip() or os.path.splitext(os.path.basename(exam_path))[0]
         label = cls._strip_accents(label)
         safe_label = re.sub(r'[^a-zA-Z0-9_]', '_', label)
-        return f'{safe_label}_uso'
+        return schema.usage_column(safe_label)
 
     # Former private name, kept for existing code.
     _usage_column_name = usage_column_name
@@ -692,7 +675,7 @@ class QuestionBankManager:
             )
 
         if answer_columns is None:
-            answer_columns = [schema.ANSWER_A, schema.ANSWER_B, schema.ANSWER_C, schema.ANSWER_D]
+            answer_columns = list(schema.ANSWER_COLUMNS)
 
         frames: List[pd.DataFrame] = []
         stats: dict = {

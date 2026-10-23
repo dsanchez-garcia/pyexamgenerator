@@ -125,6 +125,8 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 ```
 
+Los nombres de las columnas del banco de preguntas están en `pyexamgenerator.schema`, por si tu script lee o crea bancos: por ejemplo, `schema.QUESTION` es `"Pregunta"`, `schema.CORRECT_ANSWER` es `"Respuesta correcta"` y `schema.BANK_COLUMNS` da todas en su orden habitual.
+
 ### 1. Generar Preguntas con `QuestionGenerator`
 
 Este script utiliza la IA para leer uno o más archivos PDF y generar un banco de preguntas, procesando cada página de forma individual para un análisis exhaustivo.
