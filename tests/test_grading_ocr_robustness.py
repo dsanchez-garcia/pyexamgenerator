@@ -193,7 +193,7 @@ def test_doubtful_answers_are_reviewed_through_a_callback(tmp_path):
 
 
 def test_interactive_review_without_a_terminal_needs_a_callback(tmp_path, monkeypatch):
-    monkeypatch.setattr(extraction, "stdin_is_interactive", lambda: False)
+    monkeypatch.setattr("pyexamgenerator.grading.image_grading.stdin_is_interactive", lambda: False)
     grader = _grader([], failed=[])
 
     with pytest.raises(ValueError, match="review_callback"):
@@ -206,10 +206,12 @@ def test_interactive_review_without_a_terminal_needs_a_callback(tmp_path, monkey
         )
 
 
-def test_running_the_module_starts_only_the_grading_command():
-    """ARC-5: el módulo une dos ficheros antiguos y al ejecutarlo corrían sus dos `main` seguidos."""
+@pytest.mark.parametrize("module", ["pyexamgenerator.grading.extraction", "pyexamgenerator.grading.image_grading"])
+def test_running_the_module_starts_only_the_grading_command(module):
+    """ARC-5: el módulo unía dos ficheros antiguos y al ejecutarlo corrían sus dos `main` seguidos. La
+    corrección pasó después a `image_grading`; el comando de siempre (`extraction`) sigue valiendo."""
     result = subprocess.run(
-        [sys.executable, "-m", "pyexamgenerator.grading.extraction", "--help"],
+        [sys.executable, "-m", module, "--help"],
         capture_output=True,
         text=True,
         timeout=300,

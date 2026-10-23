@@ -53,6 +53,13 @@ pyexamgenerator.grading.graders module
    :members:
    :show-inheritance:
 
+pyexamgenerator.grading.image\_grading module
+---------------------------------------------
+
+.. automodule:: pyexamgenerator.grading.image_grading
+   :members:
+   :show-inheritance:
+
 pyexamgenerator.grading.integrations module
 -------------------------------------------
 
@@ -60,9 +67,23 @@ pyexamgenerator.grading.integrations module
    :members:
    :show-inheritance:
 
+pyexamgenerator.grading.pir\_bonus module
+-----------------------------------------
+
+.. automodule:: pyexamgenerator.grading.pir_bonus
+   :members:
+   :show-inheritance:
+
 pyexamgenerator.grading.session module
 --------------------------------------
 
 .. automodule:: pyexamgenerator.grading.session
+   :members:
+   :show-inheritance:
+
+pyexamgenerator.grading.theory\_bonus module
+--------------------------------------------
+
+.. automodule:: pyexamgenerator.grading.theory_bonus
    :members:
    :show-inheritance:

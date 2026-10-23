@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from pyexamgenerator.grading import attendance
+from pyexamgenerator.grading import pir_bonus
 from pyexamgenerator.grading.attendance import AbsenceJustificationManager, PIRBonusCalculator
 
 
@@ -89,12 +89,12 @@ def test_attendance_date_columns_are_detected_for_any_year():
 def test_attendance_and_pir_detect_topics_the_same_way(text, expected):
     """GRD-10: el cálculo PIR solo aceptaba 'Ley 31_95' / 'RD 39_97' y la asistencia también
     'Ley 31/95': la misma sesión contaba como tema en un flujo y no en el otro."""
-    assert attendance._topic_from_text(text) == expected
+    assert pir_bonus._topic_from_text(text) == expected
     assert AbsenceJustificationManager._topic_from_text(text) == expected
 
 
 def test_topic_words_must_be_whole():
-    assert attendance._topic_from_text("Sistema 3D") is None
+    assert pir_bonus._topic_from_text("Sistema 3D") is None
     assert AbsenceJustificationManager._topic_from_text("Sistema 3D") == "Sistema 3D"  # not a known topic
     assert AbsenceJustificationManager._topic_from_text("Prácticas tema 3") == ""  # practice sessions excluded
 

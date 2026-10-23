@@ -77,8 +77,11 @@ pyexamgenerator/
     _paths.py              prepare_output_path: rutas de salida (las absolutas se respetan)
     _text.py               normalize_key, find_column, clean_text, parse_decimal: reglas comunes (úsalas)
     _names.py              match_name: nombre escrito → alumno, solo coincidencias seguras (úsalo)
-    extraction.py          OCR (único módulo que importa cv2/numpy/rapidocr)
-    graders.py, integrations.py, attendance.py, final_grade.py, comparison.py, data.py, session.py
+    _topics.py             topic_key: tema de una sesión o cuestionario (justificaciones y PIR)
+    extraction.py          OCR de las hojas (único módulo que importa cv2/numpy/rapidocr)
+    image_grading.py       ImageExamGrader: hojas escaneadas → notas (usa el OCR de extraction)
+    attendance.py          justificaciones de faltas; pir_bonus.py y theory_bonus.py, el punto extra
+    graders.py, integrations.py, final_grade.py, comparison.py, data.py, session.py
 tests/                     pytest; todos los datos se generan en tmp_path
 .github/workflows/         CI: pytest (Ubuntu/Windows, con y sin [grading]) + sphinx -W
 docs/source/               Sphinx + MyST (Read the Docs); tutoriales en Markdown, API autogenerada
@@ -115,8 +118,8 @@ pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [d
 ### Límites de arquitectura (no romper)
 
 - **El OCR es opcional.** Solo `grading/extraction.py` puede importar `cv2`, `numpy` (como
-  dependencia OCR) o `rapidocr*` a nivel de módulo. `grading/__init__.py` lo importa dentro de
-  `try/except ImportError` y expone `HAS_OCR`. Cualquier otro módulo debe funcionar sin el extra
+  dependencia OCR) o `rapidocr*` a nivel de módulo; `grading/image_grading.py` depende de él.
+  `grading/__init__.py` importa los dos dentro de `try/except ImportError` y expone `HAS_OCR`. Cualquier otro módulo debe funcionar sin el extra
   `[grading]`. Los tests de OCR usan `pytest.importorskip`.
 - **La librería no debe depender de la GUI.** Nada en `question_generator.py`,
   `question_bank_manager.py`, `exam_generator.py` ni `grading/` importa `tkinter`. La lógica nueva

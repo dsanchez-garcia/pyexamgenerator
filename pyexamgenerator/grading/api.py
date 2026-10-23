@@ -436,7 +436,7 @@ class ExamCorrectionAPI:
         cfg: ImageGradingConfig,
         export_steps_dir: Optional[str] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
-        from pyexamgenerator.grading.extraction import ImageExamGrader
+        from pyexamgenerator.grading.image_grading import ImageExamGrader
 
         export_state = self._start_step_export(export_steps_dir, "grade_from_images")
 
@@ -668,12 +668,9 @@ class ExamCorrectionAPI:
         status bar) from the thread that runs the pipeline.
         """
         # OCR first: without the [grading] extra this fails before anything is written.
-        from pyexamgenerator.grading.extraction import ImageExamGrader
-        from pyexamgenerator.grading.attendance import (
-            AbsenceJustificationManager,
-            TheoryBonusApplier,
-            TheoryTopicReporter,
-        )
+        from pyexamgenerator.grading.image_grading import ImageExamGrader
+        from pyexamgenerator.grading.attendance import AbsenceJustificationManager
+        from pyexamgenerator.grading.theory_bonus import TheoryBonusApplier, TheoryTopicReporter
         from pyexamgenerator.grading.data import EnrollmentMerger
         from pyexamgenerator.grading.integrations import OcrGradeIntegrator
 
@@ -905,7 +902,7 @@ class ExamCorrectionAPI:
         cfg: TheoryBonusConfig,
         export_steps_dir: Optional[str] = None,
     ) -> pd.DataFrame:
-        from pyexamgenerator.grading.attendance import apply_theory_bonus_from_attendance_quiz
+        from pyexamgenerator.grading.theory_bonus import apply_theory_bonus_from_attendance_quiz
 
         export_state = self._start_step_export(export_steps_dir, "apply_theory_bonus")
         self._export_step_input(export_state, "theory_input", lambda: pd.read_excel(cfg.theory_xlsx_path))
@@ -939,7 +936,7 @@ class ExamCorrectionAPI:
         cfg: TheoryTopicReportConfig,
         export_steps_dir: Optional[str] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        from pyexamgenerator.grading.attendance import export_theory_topic_reports
+        from pyexamgenerator.grading.theory_bonus import export_theory_topic_reports
 
         output_dir = self._resolve_output_path(cfg.output_dir, None)
         export_state = self._start_step_export(export_steps_dir, "export_theory_topic_reports")
@@ -1066,7 +1063,7 @@ class ExamCorrectionAPI:
         cfg: PIRBonusConfig,
         export_steps_dir: Optional[str] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, List[str], Optional[pd.DataFrame]]:
-        from pyexamgenerator.grading.attendance import PIRBonusCalculator
+        from pyexamgenerator.grading.pir_bonus import PIRBonusCalculator
 
         export_state = self._start_step_export(export_steps_dir, "calculate_pir_bonus")
         self._export_step_input(

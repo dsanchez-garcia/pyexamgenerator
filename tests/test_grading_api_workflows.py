@@ -184,9 +184,9 @@ def _attendance_quiz():
 @pytest.fixture
 def full_pipeline(tmp_path, monkeypatch):
     """Inputs for run_full_pipeline with the OCR and the attendance analysis simulated."""
-    fake_extraction = types.ModuleType("pyexamgenerator.grading.extraction")
-    fake_extraction.ImageExamGrader = _FakeImageExamGrader
-    monkeypatch.setitem(sys.modules, "pyexamgenerator.grading.extraction", fake_extraction)
+    fake_image_grading = types.ModuleType("pyexamgenerator.grading.image_grading")
+    fake_image_grading.ImageExamGrader = _FakeImageExamGrader
+    monkeypatch.setitem(sys.modules, "pyexamgenerator.grading.image_grading", fake_image_grading)
 
     state = {"analyze": _attendance_quiz}
 
