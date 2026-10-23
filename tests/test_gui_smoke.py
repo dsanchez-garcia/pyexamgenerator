@@ -278,7 +278,7 @@ def test_invalid_final_grade_weight_shows_an_error(app, tmp_path):
 
 def test_unreadable_bank_when_listing_topics_shows_an_error(app, tmp_path):
     """GUI-5: un banco inexistente o bloqueado por Excel solo daba un error en la consola."""
-    assert app._read_bank_with_topics(str(tmp_path / "no_existe.xlsx")) is None
+    assert app.exam_tab._read_bank_with_topics(str(tmp_path / "no_existe.xlsx")) is None
     assert [kind for kind, _title, _message in app.shown_messages] == ["error"]
 
 
@@ -603,7 +603,7 @@ def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app,
 
     import pandas as pd
 
-    import pyexamgenerator.main_app as main_app
+    import pyexamgenerator.gui.exam_tab as exam_tab
 
     seen = {}
 
@@ -619,16 +619,16 @@ def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app,
         seen["dialog_thread"] = threading.current_thread()
         return False  # the user cancels the generation
 
-    monkeypatch.setattr(main_app, "ExamGenerator", FakeExamGenerator)
+    monkeypatch.setattr(exam_tab, "ExamGenerator", FakeExamGenerator)
     monkeypatch.setattr(messagebox, "askyesno", askyesno)
     bank = tmp_path / "banco.xlsx"
     pd.DataFrame({"Tema": ["Tema 01"], "Pregunta": ["¿?"]}).to_excel(bank, index=False)
-    app.excel_filepath.set(str(bank))
-    app.selection_method_var.set("diccionario")
-    app.questions_per_topic.set("Tema 01:1")
-    app.usage_alert_enabled_var.set(True)
+    app.exam_tab.excel_filepath.set(str(bank))
+    app.exam_tab.selection_method_var.set("diccionario")
+    app.exam_tab.questions_per_topic.set("Tema 01:1")
+    app.exam_tab.usage_alert_enabled_var.set(True)
 
-    _run_in_mainloop(app, app.generate_exams, done=lambda: bool(app.shown_messages))
+    _run_in_mainloop(app, app.exam_tab.generate_exams, done=lambda: bool(app.shown_messages))
 
     assert seen["thread"] is not threading.main_thread()
     assert seen["dialog_thread"] is threading.main_thread()
@@ -636,7 +636,7 @@ def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app,
     assert app.shown_messages == [
         ("info", "Cancelado", "Generacion de examenes cancelada por la alerta de uso de preguntas.")
     ]
-    assert str(app.generate_exams_button.cget("state")) == "normal"
+    assert str(app.exam_tab.generate_exams_button.cget("state")) == "normal"
 
 
 def test_mouse_wheel_scrolls_tables_and_text_boxes_inside_the_tabs(app):
@@ -682,11 +682,11 @@ def test_topics_load_although_a_question_has_no_topic(app, tmp_path):
     pd.DataFrame({"Pregunta": ["p1", "p2", "p3", "p4"], "Tema": ["Tema 02", None, "Tema 01", 3]}).to_excel(
         bank, index=False
     )
-    app.excel_filepath.set(str(bank))
+    app.exam_tab.excel_filepath.set(str(bank))
 
-    app.load_themes_for_selection()
+    app.exam_tab.load_themes_for_selection()
 
-    assert list(app.theme_quantity_widgets) == [3, "Tema 01", "Tema 02"]
+    assert list(app.exam_tab.theme_quantity_widgets) == [3, "Tema 01", "Tema 02"]
 
 
 @pytest.mark.parametrize("problem", ["missing", "no_topic_column"])
@@ -697,13 +697,13 @@ def test_bank_problems_when_loading_topics_are_shown(app, tmp_path, problem):
     bank = tmp_path / "banco.xlsx"
     if problem == "no_topic_column":
         pd.DataFrame({"Pregunta": ["p1"]}).to_excel(bank, index=False)
-    app.excel_filepath.set(str(bank))
+    app.exam_tab.excel_filepath.set(str(bank))
 
-    app.load_themes_for_selection()
+    app.exam_tab.load_themes_for_selection()
 
-    shown = [w.cget("text") for w in _descendants(app.by_theme_frame) if isinstance(w, ttk.Label)]
+    shown = [w.cget("text") for w in _descendants(app.exam_tab.by_theme_frame) if isinstance(w, ttk.Label)]
     expected = "No se encuentra" if problem == "missing" else "columna 'Tema'"
-    assert app.theme_quantity_widgets == {}
+    assert app.exam_tab.theme_quantity_widgets == {}
     assert any(expected in text for text in shown), shown
     assert expected in app.status_text.get()
 
@@ -711,12 +711,12 @@ def test_bank_problems_when_loading_topics_are_shown(app, tmp_path, problem):
 def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch):
     """ARC-2: guardar y cargar repetían a mano la lista de campos; un campo nuevo podía quedarse fuera."""
     values = [
-        (app.subject, "Física"),
-        (app.num_exams, "3"),
-        (app.penalty, "-1/3"),
-        (app.font_size, "12"),
-        (app.export_moodle, True),
-        (app.usage_alert_threshold_var, "4"),
+        (app.exam_tab.subject, "Física"),
+        (app.exam_tab.num_exams, "3"),
+        (app.exam_tab.penalty, "-1/3"),
+        (app.exam_tab.font_size, "12"),
+        (app.exam_tab.export_moodle, True),
+        (app.exam_tab.usage_alert_threshold_var, "4"),
         (app.grad_enrollment_var, "matricula.xlsx"),
         (app.grad_quizzes_var, "cuestionarios.xlsx"),
         (app.grad_cmp_new_var, "nuevo.xlsx"),
@@ -727,11 +727,11 @@ def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch
         var.set(value)
     app.grad_session_path_var.set(str(tmp_path / "sesion.json"))
 
-    app.save_exam_tab_template()
+    app.exam_tab.save_exam_tab_template()
     app.save_grading_session()
     for var, value in values:
         var.set((not value) if isinstance(value, bool) else "")
-    app.load_exam_tab_template()
+    app.exam_tab.load_exam_tab_template()
     app.load_grading_session()
 
     assert [var.get() for var, _ in values] == [value for _, value in values]
@@ -744,17 +744,17 @@ def test_exam_tab_starts_without_sample_values(app):
     """GUI-10: «Asignatura de Prueba», «Prueba GUI»... venían rellenos y acababan en exámenes reales
     (p. ej. «Prueba GUI» como instrucciones de la hoja de respuestas y en la categoría de Moodle)."""
     for var in (
-        app.excel_filepath,
-        app.subject,
-        app.exam_name,
-        app.course,
-        app.answer_sheet_instructions,
-        app.xml_cat_additional_text,
+        app.exam_tab.excel_filepath,
+        app.exam_tab.subject,
+        app.exam_tab.exam_name,
+        app.exam_tab.course,
+        app.exam_tab.answer_sheet_instructions,
+        app.exam_tab.xml_cat_additional_text,
     ):
         assert var.get() == ""
     assert app.output_filename_var.get() == "preguntas"
 
-    app.generate_exams()
+    app.exam_tab.generate_exams()
 
     assert app.shown_messages == [("error", "Error", "Selecciona el archivo Excel del banco de preguntas.")]
 
@@ -802,7 +802,7 @@ def test_exams_generated_without_updating_the_bank_show_a_warning(app, monkeypat
     generados correctamente» y el error solo salía en la consola."""
     import pandas as pd
 
-    import pyexamgenerator.main_app as main_app
+    import pyexamgenerator.gui.exam_tab as exam_tab
 
     class LockedBankGenerator:
         generation_cancelled = False
@@ -811,15 +811,15 @@ def test_exams_generated_without_updating_the_bank_show_a_warning(app, monkeypat
         def generate_exam_from_excel(self, bank_excel_path, config):
             self.bank_update_error = "PermissionError: el fichero está abierto en Excel"
 
-    monkeypatch.setattr(main_app, "ExamGenerator", LockedBankGenerator)
+    monkeypatch.setattr(exam_tab, "ExamGenerator", LockedBankGenerator)
     bank = tmp_path / "banco.xlsx"
     pd.DataFrame({"Tema": ["Tema 01"], "Pregunta": ["¿?"]}).to_excel(bank, index=False)
-    app.excel_filepath.set(str(bank))
-    app.selection_method_var.set("diccionario")
-    app.questions_per_topic.set("Tema 01:1")
-    app.update_excel.set(True)
+    app.exam_tab.excel_filepath.set(str(bank))
+    app.exam_tab.selection_method_var.set("diccionario")
+    app.exam_tab.questions_per_topic.set("Tema 01:1")
+    app.exam_tab.update_excel.set(True)
 
-    _run_in_mainloop(app, app.generate_exams, done=lambda: bool(app.shown_messages))
+    _run_in_mainloop(app, app.exam_tab.generate_exams, done=lambda: bool(app.shown_messages))
 
     ((kind, title, message),) = app.shown_messages
     assert (kind, title) == ("warning", "Banco sin actualizar")
