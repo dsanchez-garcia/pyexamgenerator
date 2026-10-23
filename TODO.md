@@ -199,6 +199,11 @@ búscalas por nombre de función si no coinciden.
 - [ ] **ARC-3 (P2)** Nombres de columna repetidos como literales en todos los módulos (`'Pregunta'`,
   `'Respuesta A'`, `'Estado'`, `'Veces usada en examen'`, `'_uso'`, `'Número de ID'`…). Crear
   `pyexamgenerator/schema.py` con constantes y usarlo en todas partes.
+  *Parcial (rama `refactor/schema`, alcance decidido de forma autónoma el 2026-10-23): `schema.py`
+  con las columnas del banco y de los exámenes, usado en `question_generator`, `question_bank_manager`,
+  `exam_generator` y la GUI (sustitución comprobada con el AST). Falta `grading`: las columnas de
+  Moodle (`'Número de ID'` aparece 37 veces) se buscan con listas de candidatos y `find_column`,
+  junto con sus variantes *mojibake*; conviene hacerlo con ARC-10.*
 - [x] **ARC-4 (P2)** Helpers duplicados en `grading` con reglas ligeramente distintas (`_normalize`,
   `_find_column`, `_parse_grade`, `_clean` en `data.py`, `comparison.py`, `final_grade.py`,
   `integrations.py`, `attendance.py`, `extraction.py`). Unificar en `grading/_text.py`. — hecho en

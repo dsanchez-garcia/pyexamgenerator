@@ -35,7 +35,7 @@ Las reglas de trabajo están en [`AGENTS.md`](../../AGENTS.md); la deuda técnic
 | Capa | Módulos | Depende de |
 |---|---|---|
 | GUI | `main_app.py` (`ExamApp`), `gui_logic.py` (sin tkinter), `tooltip.py` | tkinter + toda la librería |
-| Generación | `question_generator.py`, `question_bank_manager.py`, `exam_generator.py` | pandas, python-docx, google-genai, pypdf, PyMuPDF |
+| Generación | `question_generator.py`, `question_bank_manager.py`, `exam_generator.py`; columnas del banco en `schema.py` | pandas, python-docx, google-genai, pypdf, PyMuPDF |
 | Corrección | `grading/*` | pandas; OCR opcional (cv2, rapidocr) solo en `grading/extraction.py` |
 | Clave de API | `credentials.py` | keyring |
 
@@ -115,8 +115,13 @@ Columnas, en este orden habitual:
 | `Veces usada en examen` | suma de las columnas `*_uso` |
 | `<etiqueta>_uso` | 0/1 por examen registrado; etiqueta sin tildes |
 
-Los nombres de columna son contrato con los usuarios: no los cambies. Si necesitas referirte a ellos
-en código nuevo, considera crear las constantes de `pyexamgenerator/schema.py` (`ARC-3`).
+Los nombres de columna son contrato con los usuarios: no los cambies. En el código se escriben con las
+constantes de `pyexamgenerator/schema.py` (`schema.QUESTION_NUMBER`, `schema.TOPIC`, `schema.STATUS`,
+`schema.QUESTION`, `schema.ANSWER_COLUMNS`, `schema.CORRECT_ANSWER`, `schema.RELEVANT_TEXT`,
+`schema.TIMES_USED`, `schema.usage_column(etiqueta)`; `schema.BANK_COLUMNS` da el orden habitual), y
+`tests/test_schema.py` fija sus valores. Se quedan como literales las claves de la respuesta de Gemini
+(las fija el texto del prompt), las etiquetas del DOCX de revisión (`Tema:`, `Respuesta correcta:`…)
+y las columnas de `grading` (Moodle, OCR), que se buscan con `find_column`.
 
 ## Subpaquete `grading`
 
@@ -273,6 +278,8 @@ En los tests, `conftest.py` la lleva a `tmp_path`.
 | `conftest.py` | sustituye `google.genai.Client` en todos los tests (ninguno puede llamar a Gemini) |
 | `test_image_mode_unit.py` | utilidades de `input_mode='image'` |
 | `test_exam_question_selection.py` | estado sin mayúsculas, reparto de un total de preguntas entre temas, alerta de uso |
+| `test_schema.py` | nombres de columna del banco (`pyexamgenerator/schema.py`): contrato con los bancos existentes |
+| `test_logging.py` | la librería usa `logging` y no `print`; importar el paquete no escribe en stdout; `log_to_console` |
 | `test_exam_docx_layout.py` | maquetación del DOCX (hoja de respuestas, columna NC, cabecera) y marcadores de plantilla |
 | `test_moodle_xml.py` | XML de Moodle: textos, penalizaciones válidas y XML desde un `_completo.xlsx` |
 | `test_bank_usage.py` | registro de uso desde exámenes, etiquetas derivadas del nombre, columnas sin tildes |

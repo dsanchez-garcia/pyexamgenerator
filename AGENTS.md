@@ -64,6 +64,7 @@ pyexamgenerator/
   question_generator.py    QuestionGenerator: PDFs/imágenes → preguntas con Gemini
   question_bank_manager.py QuestionBankManager: DOCX revisado ↔ XLSX, fusión, uso, unificación
   _text.py                 helpers compartidos: strip_accents, safe_filename_part
+  schema.py                nombres de columna del banco (schema.QUESTION…): úsalos, no repitas el literal
   exam_generator.py        ExamGenerator: banco XLSX → exámenes DOCX/XLSX/Moodle XML
   main_app.py              GUI Tkinter (clase ExamApp, ~3.800 líneas) y entry point main()
   gui_logic.py             lógica de la GUI sin tkinter: interpretar los campos, avisos (se prueba sin pantalla)
@@ -99,7 +100,10 @@ pyproject.toml             empaquetado (PEP 621; extras [grading] OCR, [dev], [d
 - Los **nombres de columna** de Excel son contrato con los usuarios y con Moodle (`'Pregunta'`,
   `'Respuesta A'`…`'Respuesta D'`, `'Respuesta correcta'`, `'Estado'`, `'Tema'`,
   `'Número de pregunta'`, `'Veces usada en examen'`, `'<etiqueta>_uso'`, `'Número de ID'`…). **No los
-  renombres**: rompería bancos existentes. Ver `docs/dev/ARCHITECTURE.md`.
+  renombres**: rompería bancos existentes. Ver `docs/dev/ARCHITECTURE.md`. En el código, las columnas
+  del banco y de los exámenes se escriben con las constantes de `pyexamgenerator/schema.py`
+  (`schema.QUESTION`, `schema.ANSWER_COLUMNS`, `schema.usage_column(etiqueta)`…), no con el literal;
+  `tests/test_schema.py` fija sus valores.
 - El código debe funcionar en la versión mínima declarada en `pyproject.toml` (**Python 3.10**): puedes
   usar `X | Y`, `match` y `tuple[...]`, pero no funciones de 3.11 o posteriores (`tomllib`,
   `ExceptionGroup`/`except*`, `typing.Self`, `enum.StrEnum`, `datetime.UTC`). La CI ejecuta la suite

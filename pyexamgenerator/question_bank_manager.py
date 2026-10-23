@@ -21,6 +21,7 @@ import os
 import re
 from typing import Optional, List, Tuple
 
+from pyexamgenerator import schema
 from pyexamgenerator._text import strip_accents
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,11 @@ class QuestionBankManager:
     # DOTALL: a paragraph may contain soft line breaks ('\n') added while reviewing in Word.
     _DOCX_QUESTION_HEADER = re.compile(r"^Pregunta\s+(\d+)\s*[:.)-]?\s*(.*)$", re.DOTALL)
     _DOCX_ANSWER_LINE = re.compile(r"^([ABCD])\)\s*(.*)$", re.DOTALL)
-    _DOCX_SINGLE_LINE_FIELDS = (("Tema:", "Tema"), ("Estado:", "Estado"), ("Respuesta correcta:", "Respuesta correcta"))
+    _DOCX_SINGLE_LINE_FIELDS = (
+        ("Tema:", schema.TOPIC),
+        ("Estado:", schema.STATUS),
+        ("Respuesta correcta:", schema.CORRECT_ANSWER),
+    )
 
     # TODO: review how the transformation from revised docx to xlsx, etc. is used in the code.
     def read_questions_from_docx(self, docx_path: str) -> Optional[pd.DataFrame]:
@@ -70,8 +75,11 @@ class QuestionBankManager:
                 if header:
                     if current_question:
                         questions.append(current_question)
-                    current_question = {"Número de pregunta": int(header.group(1)), "Pregunta": header.group(2).strip()}
-                    current_field = "Pregunta"
+                    current_question = {
+                        schema.QUESTION_NUMBER: int(header.group(1)),
+                        schema.QUESTION: header.group(2).strip(),
+                    }
+                    current_field = schema.QUESTION
                     continue
                 if not current_question:
                     continue  # Document title or notes before the first question.
@@ -79,18 +87,18 @@ class QuestionBankManager:
                 answer = self._DOCX_ANSWER_LINE.match(text)
                 if answer:
                     # Only the 'A)' prefix is removed: the same characters inside the text are kept.
-                    current_field = f"Respuesta {answer.group(1)}"
+                    current_field = schema.answer_column(answer.group(1))
                     current_question[current_field] = answer.group(2).strip()
                     continue
                 if text.startswith("Texto relevante:"):
-                    current_field = "Texto relevante"
+                    current_field = schema.RELEVANT_TEXT
                     current_question[current_field] = text[len("Texto relevante:") :].strip()
                     continue
 
                 for prefix, field in self._DOCX_SINGLE_LINE_FIELDS:
                     if text.startswith(prefix):
                         value = text[len(prefix) :].strip()
-                        current_question[field] = value.upper() if field == "Respuesta correcta" else value
+                        current_question[field] = value.upper() if field == schema.CORRECT_ANSWER else value
                         current_field = None  # One-line fields never continue.
                         break
                 else:
@@ -103,18 +111,7 @@ class QuestionBankManager:
 
             df = pd.DataFrame(questions)
             # Ensure column order for consistency
-            expected_columns = [
-                'Número de pregunta',
-                'Tema',
-                'Estado',
-                'Pregunta',
-                'Respuesta A',
-                'Respuesta B',
-                'Respuesta C',
-                'Respuesta D',
-                'Respuesta correcta',
-                'Texto relevante',
-            ]
+            expected_columns = list(schema.BANK_COLUMNS)
             df = df.reindex(columns=expected_columns)
             return df
 
@@ -164,7 +161,7 @@ class QuestionBankManager:
                                                 errors reading the files.
         """
         if duplicate_check_columns is None:
-            duplicate_check_columns = ['Pregunta', 'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D']
+            duplicate_check_columns = [schema.QUESTION, *schema.ANSWER_COLUMNS]
         try:
             df_existing = pd.read_excel(existing_bank_path)
             df_reviewed = pd.read_excel(reviewed_questions_path)
@@ -178,10 +175,10 @@ class QuestionBankManager:
         # Block to filter the reviewed questions DataFrame if the option is enabled.
         if add_only_acceptable:
             logger.info("Filtrando para añadir solo preguntas con estado 'Aceptable'.")
-            if 'Estado' in df_reviewed.columns:
+            if schema.STATUS in df_reviewed.columns:
                 original_count = len(df_reviewed)
                 df_reviewed = df_reviewed[
-                    df_reviewed['Estado'].astype(str).str.strip().str.lower() == 'aceptable'
+                    df_reviewed[schema.STATUS].astype(str).str.strip().str.lower() == schema.STATUS_ACCEPTABLE.lower()
                 ].copy()
                 logger.info(f"Se encontraron {len(df_reviewed)} preguntas 'Aceptable' de un total de {original_count}.")
                 if df_reviewed.empty:
@@ -255,7 +252,7 @@ class QuestionBankManager:
         label = (exam_label or '').strip() or os.path.splitext(os.path.basename(exam_path))[0]
         label = cls._strip_accents(label)
         safe_label = re.sub(r'[^a-zA-Z0-9_]', '_', label)
-        return f'{safe_label}_uso'
+        return schema.usage_column(safe_label)
 
     # Former private name, kept for existing code.
     _usage_column_name = usage_column_name
@@ -381,19 +378,19 @@ class QuestionBankManager:
     def _recompute_usage_aggregate(df_bank: pd.DataFrame) -> pd.DataFrame:
         """Recomputes 'Veces usada en examen' from every per-exam '_uso' column and tidies columns."""
         # Recompute the aggregated usage column from every per-exam '_uso' column.
-        usage_columns = [col for col in df_bank.columns if col.endswith('_uso')]
+        usage_columns = [col for col in df_bank.columns if col.endswith(schema.USAGE_SUFFIX)]
         if usage_columns:
-            df_bank['Veces usada en examen'] = df_bank[usage_columns].sum(axis=1)
+            df_bank[schema.TIMES_USED] = df_bank[usage_columns].sum(axis=1)
 
         # Keep 'Veces usada en examen' right after 'Texto relevante' for readability, mirroring the
         # column layout used by the exam generator.
-        if 'Veces usada en examen' in df_bank.columns and 'Texto relevante' in df_bank.columns:
-            usage_aggregate = df_bank.pop('Veces usada en examen')
+        if schema.TIMES_USED in df_bank.columns and schema.RELEVANT_TEXT in df_bank.columns:
+            usage_aggregate = df_bank.pop(schema.TIMES_USED)
             try:
-                texto_relevante_idx = df_bank.columns.get_loc('Texto relevante')
-                df_bank.insert(texto_relevante_idx + 1, 'Veces usada en examen', usage_aggregate)
+                texto_relevante_idx = df_bank.columns.get_loc(schema.RELEVANT_TEXT)
+                df_bank.insert(texto_relevante_idx + 1, schema.TIMES_USED, usage_aggregate)
             except KeyError:
-                df_bank['Veces usada en examen'] = usage_aggregate
+                df_bank[schema.TIMES_USED] = usage_aggregate
 
         return df_bank.loc[:, ~df_bank.columns.str.contains('unnamed', case=False)]
 
@@ -467,7 +464,7 @@ class QuestionBankManager:
             updated bank DataFrame. Returns (-1, None) on read errors or missing match columns.
         """
         if match_columns is None:
-            match_columns = ['Pregunta']
+            match_columns = [schema.QUESTION]
 
         try:
             df_bank = pd.read_excel(bank_path)
@@ -536,7 +533,7 @@ class QuestionBankManager:
             Returns ``(-1, None, stats)`` on bank read errors or missing match columns in the bank.
         """
         if match_columns is None:
-            match_columns = ['Pregunta']
+            match_columns = [schema.QUESTION]
 
         specs = self._normalize_exam_specs(exams)
         stats: dict = {"exams": [], "total_matched": 0, "errors": []}
@@ -633,7 +630,7 @@ class QuestionBankManager:
         bank_paths: List[str],
         output_path: Optional[str] = None,
         duplicate_criterion: str = "enunciado_y_respuestas",
-        statement_column: str = "Pregunta",
+        statement_column: str = schema.QUESTION,
         answer_columns: Optional[List[str]] = None,
         save: bool = True,
     ) -> Tuple[Optional[pd.DataFrame], dict]:
@@ -678,7 +675,7 @@ class QuestionBankManager:
             )
 
         if answer_columns is None:
-            answer_columns = ['Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D']
+            answer_columns = list(schema.ANSWER_COLUMNS)
 
         frames: List[pd.DataFrame] = []
         stats: dict = {

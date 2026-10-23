@@ -26,7 +26,7 @@ from pyexamgenerator.question_generator import (
     ServiceOverloadedError,
     GeminiRequestError,
 )
-from pyexamgenerator import credentials, gui_logic, user_config
+from pyexamgenerator import credentials, gui_logic, schema, user_config
 from pyexamgenerator._console import log_to_console
 from pyexamgenerator.exam_generator import ExamGenerator, NoAcceptableQuestionsError
 from pyexamgenerator.question_bank_manager import QuestionBankManager
@@ -3811,12 +3811,12 @@ class ExamApp:
             except Exception as exc:  # noqa: BLE001 - shown to the user
                 problem = f"No se pudo leer el banco de preguntas ({exc})."
             else:
-                if 'Tema' not in df.columns:
+                if schema.TOPIC not in df.columns:
                     problem = "El banco de preguntas no tiene la columna 'Tema'."
                 else:
                     # An empty cell is not a topic, and sorting as text tolerates mixed types
                     # (sorting NaN with text failed and left the list empty).
-                    topics = [t for t in df['Tema'].dropna().unique() if str(t).strip()]
+                    topics = [t for t in df[schema.TOPIC].dropna().unique() if str(t).strip()]
                     unique_themes = sorted(topics, key=str)
         if problem:
             ttk.Label(self.by_theme_frame, text=problem, wraplength=500).grid(
@@ -3893,7 +3893,7 @@ class ExamApp:
         except Exception as exc:  # noqa: BLE001 - shown to the user
             messagebox.showerror("Error", f"No se pudo leer el banco de preguntas:\n{excel_path}\n\n{exc}")
             return None
-        if 'Tema' not in df.columns:
+        if schema.TOPIC not in df.columns:
             messagebox.showerror("Error", "La columna 'Tema' no se encontró en el archivo Excel.")
             return None
         return df
@@ -3993,7 +3993,7 @@ class ExamApp:
                 df_temp = self._read_bank_with_topics(excel_path)
                 if df_temp is None:
                     return
-                for theme in df_temp['Tema'].unique():
+                for theme in df_temp[schema.TOPIC].unique():
                     questions_per_topic[theme] = num_preguntas
             else:
                 messagebox.showinfo("Información", "Por favor, introduce el número de preguntas por tema.")
@@ -4002,8 +4002,8 @@ class ExamApp:
             df_temp = self._read_bank_with_topics(excel_path)
             if df_temp is None:
                 return
-            if 'Tema' in df_temp.columns:
-                unique_themes = df_temp['Tema'].unique()
+            if schema.TOPIC in df_temp.columns:
+                unique_themes = df_temp[schema.TOPIC].unique()
                 for theme in unique_themes:
                     if theme in self.theme_quantity_widgets:
                         quantity_str = self.theme_quantity_widgets[theme].get()
@@ -4164,10 +4164,10 @@ class ExamApp:
         existing_bank_path = self.existing_bank_path.get()
         reviewed_add_path = self.reviewed_add_path.get()
         duplicate_criteria = self.duplicate_check_var.get()
-        duplicate_check_columns = ['Pregunta']  # Default criteria.
+        duplicate_check_columns = [schema.QUESTION]  # Default criteria.
 
         if duplicate_criteria == "pregunta_respuestas":
-            duplicate_check_columns = ['Pregunta', 'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D']
+            duplicate_check_columns = [schema.QUESTION, *schema.ANSWER_COLUMNS]
 
         if not existing_bank_path or not reviewed_add_path:
             messagebox.showerror("Error", "Por favor, seleccione ambos archivos.")
