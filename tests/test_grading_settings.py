@@ -3,6 +3,7 @@
 import json
 import os
 
+import pandas as pd
 import pytest
 
 from pyexamgenerator.grading import settings
@@ -104,3 +105,38 @@ def test_invalid_settings_say_what_is_wrong(data, message):
     with pytest.raises(ValueError, match=message) as excinfo:
         settings.load_settings()
     assert str(path) in str(excinfo.value)
+
+
+def test_named_topics_come_from_the_settings():
+    from pyexamgenerator.grading._topics import topic_key
+
+    assert topic_key("Sesión Ley 31/95") == "LPRL"
+    _write({"temas_con_nombre": {"PRL": r"\bprevencion\b"}})
+
+    assert topic_key("Prevención de riesgos") == "PRL"
+    assert topic_key("Sesión Ley 31/95") is None
+    assert topic_key("Tema 4") == "TEMA 04"  # numbered topics need no settings
+
+
+def test_groups_come_from_the_settings():
+    from pyexamgenerator.grading import data, pir_bonus
+    from pyexamgenerator.grading.attendance import AbsenceJustificationManager
+
+    _write(
+        {
+            "grupos": [
+                {"nombre": "Mañana", "codigo": "MAN", "en_nombre_de_fichero": ["MANANA"]},
+                {"nombre": "Tarde", "codigo": "TAR", "en_nombre_de_fichero": ["TARDE"]},
+            ]
+        }
+    )
+
+    assert AbsenceJustificationManager._group_from_text("Teoría - Tarde") == "Tarde"
+    assert AbsenceJustificationManager._group_from_text("Teoría - GIM") == ""
+    assert AbsenceJustificationManager._short_group_code("Mañana") == "MAN"
+    assert pir_bonus._group_from_text("Sesión mañana") == "Mañana"
+    assert data._detect_macro_group("matricula_TARDE.xlsx") == "Tarde"
+    quiz_columns = AbsenceJustificationManager._extract_quiz_columns(
+        pd.DataFrame(columns=["Cuestionario:Cuestionario Tema 3 - Tarde (Real)", "Nota"])
+    )
+    assert quiz_columns == {("TEMA 03", "Tarde"): "Cuestionario:Cuestionario Tema 3 - Tarde (Real)"}

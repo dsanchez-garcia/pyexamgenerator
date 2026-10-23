@@ -20,6 +20,7 @@ from pyexamgenerator.grading._names import match_name
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import find_column, normalize_key, parse_decimal
 from pyexamgenerator.grading._topics import topic_key
+from pyexamgenerator.grading.settings import current_settings
 
 # Moved to their own modules (ARC-5); still importable from here.
 from pyexamgenerator.grading.pir_bonus import PIRBonusCalculator as PIRBonusCalculator
@@ -260,10 +261,9 @@ class AbsenceJustificationManager:
     @staticmethod
     def _group_from_text(text: object) -> str:
         normalized = AbsenceJustificationManager._normalize(text)
-        if "gitigiegiei" in normalized:
-            return "GITI-GIE-GIEI"
-        if "gim" in normalized:
-            return "GIM"
+        for group in current_settings().groups_longest_first:
+            if normalize_key(group.name) in normalized:
+                return group.name
         return ""
 
     @staticmethod
@@ -292,17 +292,16 @@ class AbsenceJustificationManager:
         match = re.match(r"^TEMA\s+(\d{1,2})$", text)
         if match:
             return f"T{int(match.group(1)):02d}"
-        if text in {"LPRL", "RSP"}:
+        if text in current_settings().named_topic_names:
             return text
         return "TOP"
 
     @staticmethod
     def _short_group_code(group: object) -> str:
         text = str(group or "").strip().upper()
-        if text == "GIM":
-            return "GIM"
-        if text == "GITI-GIE-GIEI":
-            return "GGG"
+        for known in current_settings().groups:
+            if text == known.name.upper():
+                return known.code
         return "GRP"
 
     @staticmethod
@@ -323,8 +322,9 @@ class AbsenceJustificationManager:
     @staticmethod
     def _extract_quiz_columns(quizzes_df: pd.DataFrame) -> Dict[Tuple[str, str], str]:
         out: Dict[Tuple[str, str], str] = {}
+        quiz_column = current_settings().quiz_column_re()
         for col in quizzes_df.columns:
-            match = re.match(r"^Cuestionario:Cuestionario\s+(.+?)\s+-\s+(GIM|GITI-GIE-GIEI)\s+\(Real\)$", str(col))
+            match = quiz_column.match(str(col))
             if not match:
                 continue
             topic = AbsenceJustificationManager._topic_from_text(match.group(1))
@@ -646,13 +646,14 @@ class AbsenceJustificationManager:
             )
             session_columns.append((str(col), class_label, session_col_name, topic, group))
 
-        # Añade LPRL/RSP desde cuestionarios aunque no existan columnas de asistencia para esas fechas.
+        # Añade los temas con nombre (LPRL/RSP) desde cuestionarios aunque no existan columnas de
+        # asistencia para esas fechas.
         existing_topics = {topic for _, _, _, topic, _ in session_columns if topic}
         synthetic_idx = len(session_columns)
-        for topic in ["LPRL", "RSP"]:
+        for topic in current_settings().named_topic_names:
             if topic in existing_topics:
                 continue
-            for group in ["GIM", "GITI-GIE-GIEI"]:
+            for group in current_settings().group_names:
                 if (topic, group) not in quiz_cols:
                     continue
                 synthetic_idx += 1
@@ -736,7 +737,7 @@ class AbsenceJustificationManager:
 
                 quiz_topic_scores = []
                 if qrow is not None and topic:
-                    for g in ["GIM", "GITI-GIE-GIEI"]:
+                    for g in current_settings().group_names:
                         qcol = quiz_cols.get((topic, g))
                         if not qcol:
                             continue

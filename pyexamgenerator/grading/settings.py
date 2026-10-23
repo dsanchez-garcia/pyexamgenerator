@@ -105,6 +105,11 @@ class GradingSettings:
     def named_topic_names(self) -> List[str]:
         return [name for name, _pattern in self.named_topics]
 
+    def quiz_column_re(self) -> re.Pattern:
+        """Moodle column of a group's class quiz: ``Cuestionario:Cuestionario <tema> - <grupo> (Real)``."""
+        groups = "|".join(re.escape(name) for name in self.group_names)
+        return re.compile(rf"^Cuestionario:Cuestionario\s+(.+?)\s+-\s+({groups})\s+\(Real\)$")
+
     def to_json(self) -> Dict[str, Any]:
         """The settings with the keys of ``grading_settings.json``."""
         return {

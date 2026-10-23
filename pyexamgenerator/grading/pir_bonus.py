@@ -15,6 +15,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._text import normalize_text, parse_decimal
 from pyexamgenerator.grading._topics import topic_key
+from pyexamgenerator.grading.settings import current_settings
 
 
 @dataclass(frozen=True)
@@ -67,10 +68,9 @@ def _topic_from_text(text: object) -> Optional[str]:
 
 def _group_from_text(text: object) -> Optional[str]:
     normalized = normalize_text(text).upper()
-    if "GITI-GIE-GIEI" in normalized:
-        return "GITI-GIE-GIEI"
-    if "GIM" in normalized:
-        return "GIM"
+    for group in current_settings().groups_longest_first:
+        if normalize_text(group.name).upper() in normalized:
+            return group.name
     return None
 
 
@@ -189,9 +189,10 @@ class PIRBonusCalculator:
     @staticmethod
     def _extract_quiz_columns(quizzes_df: pd.DataFrame) -> Dict[Tuple[str, str], str]:
         out: Dict[Tuple[str, str], str] = {}
+        quiz_column = current_settings().quiz_column_re()
         for col in quizzes_df.columns:
             text = str(col)
-            match = re.match(r"^Cuestionario:Cuestionario\s+(.+?)\s+-\s+(GIM|GITI-GIE-GIEI)\s+\(Real\)$", text)
+            match = quiz_column.match(text)
             if not match:
                 continue
             topic = _topic_from_text(match.group(1))
@@ -213,7 +214,7 @@ class PIRBonusCalculator:
         quiz_cols = self._extract_quiz_columns(quizzes_df)
 
         topics = sorted({s.topic for s in sessions})
-        groups = ["GIM", "GITI-GIE-GIEI"]
+        groups = current_settings().group_names
         if not topics:
             # all([]) is True: without this guard every student would receive the bonus.
             warnings.append("No attendance session matched the schedule: no PIR bonus is awarded.")

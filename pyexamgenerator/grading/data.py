@@ -9,6 +9,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._text import clean_text, find_column, normalize_key
+from pyexamgenerator.grading.settings import current_settings
 
 
 QuestionMap = Dict[str, Dict[str, float]]
@@ -146,10 +147,9 @@ def _is_subgroup_selected(value: str) -> bool:
 
 def _detect_macro_group(path: str) -> str:
     name = Path(path).stem.upper()
-    if "GITI" in name or "GIE" in name:
-        return "GITI-GIE-GIEI"
-    if "GIM" in name:
-        return "GIM"
+    for group in current_settings().groups_longest_first:
+        if any(marker.upper() in name for marker in group.file_markers):
+            return group.name
     return Path(path).stem
 
 
