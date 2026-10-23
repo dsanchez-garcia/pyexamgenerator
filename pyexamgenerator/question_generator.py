@@ -18,7 +18,7 @@ import logging
 from google import genai
 from google.genai import types  # Opcional, útil para tipado, pero no estricto
 from pypdf import PdfReader
-from pyexamgenerator import credentials
+from pyexamgenerator import credentials, schema
 import ast
 import json
 import re
@@ -422,9 +422,9 @@ class QuestionGenerator:
             header_for_bank_guidance = ""
 
             if bank_prompt_scope == "mismo_tema":
-                if 'Tema' in existing_questions_df.columns:
+                if schema.TOPIC in existing_questions_df.columns:
                     questions_for_guidance_df = existing_questions_df[
-                        existing_questions_df['Tema'].astype(str).str.lower() == current_topic.lower()
+                        existing_questions_df[schema.TOPIC].astype(str).str.lower() == current_topic.lower()
                     ]
                 if not questions_for_guidance_df.empty:
                     header_for_bank_guidance = "\n\nPara evitar redundancia con el BANCO DE PREGUNTAS EXISTENTE, considera las siguientes preguntas del MISMO TEMA (asegúrate de que las nuevas preguntas sean originales y basadas estrictamente en el FRAGMENTO DE TRABAJO proporcionado):\n"
@@ -436,7 +436,7 @@ class QuestionGenerator:
             if not questions_for_guidance_df.empty:
                 prompt_guidance_from_bank_str += header_for_bank_guidance
                 for _, row in questions_for_guidance_df.iterrows():
-                    question_text = row.get('Pregunta', '')
+                    question_text = row.get(schema.QUESTION, '')
                     prompt_guidance_from_bank_str += f"- Pregunta del banco: {question_text}\n"
                     if self.current_prompt_example_content_type == "enunciados_y_respuestas":
                         options = [
@@ -454,7 +454,7 @@ class QuestionGenerator:
         if questions_from_current_chunk_attempts:  # This is a list of dictionaries
             prompt_guidance_from_current_attempts_str += "\n\nAdicionalmente, para evitar generar preguntas idénticas o muy similares a las YA GENERADAS PARA ESTE MISMO FRAGMENTO en intentos previos, ten en cuenta las siguientes preguntas que ya se han aceptado:\n"
             for question_dict in questions_from_current_chunk_attempts:
-                question_text = question_dict.get('Pregunta', '')
+                question_text = question_dict.get(schema.QUESTION, '')
                 if question_text:
                     prompt_guidance_from_current_attempts_str += (
                         f"- Pregunta ya generada para este fragmento: {question_text}\n"
@@ -555,15 +555,15 @@ class QuestionGenerator:
 
                 # Build the base dictionary for the generated question.
                 question_dict = {
-                    "Tema": f"{topic_number}",
-                    "Estado": "Pendiente de revisar",
-                    "Pregunta": question_data.get("Pregunta", ""),
-                    "Respuesta A": options[0],
-                    "Respuesta B": options[1],
-                    "Respuesta C": options[2],
-                    "Respuesta D": options[3],
-                    "Respuesta correcta": str(question_data.get("Respuesta correcta", "")).strip().upper(),
-                    "Texto relevante": question_data.get("Texto relevante", ""),
+                    schema.TOPIC: f"{topic_number}",
+                    schema.STATUS: schema.STATUS_PENDING,
+                    schema.QUESTION: question_data.get("Pregunta", ""),
+                    schema.ANSWER_A: options[0],
+                    schema.ANSWER_B: options[1],
+                    schema.ANSWER_C: options[2],
+                    schema.ANSWER_D: options[3],
+                    schema.CORRECT_ANSWER: str(question_data.get("Respuesta correcta", "")).strip().upper(),
+                    schema.RELEVANT_TEXT: question_data.get("Texto relevante", ""),
                 }
 
                 if is_similar:
@@ -603,8 +603,8 @@ class QuestionGenerator:
     def save_questions_to_excel(self, df: pd.DataFrame, filepath: str) -> None:
         """Saves the questions to an Excel file."""
         if not df.empty:
-            if 'Número de pregunta' not in df.columns:
-                df.insert(0, 'Número de pregunta', range(1, len(df) + 1))
+            if schema.QUESTION_NUMBER not in df.columns:
+                df.insert(0, schema.QUESTION_NUMBER, range(1, len(df) + 1))
             df.to_excel(filepath, index=False)
             logger.info(f"Preguntas aceptadas guardadas en: '{filepath}'")
         else:
@@ -617,16 +617,16 @@ class QuestionGenerator:
             document.add_heading('Banco de Preguntas - Pendiente de Revisar', level=1)
             for index, row in df.iterrows():
                 pregunta_paragraph = document.add_paragraph()
-                pregunta_run = pregunta_paragraph.add_run(f"Pregunta {index + 1}: {row['Pregunta']}")
+                pregunta_run = pregunta_paragraph.add_run(f"Pregunta {index + 1}: {row[schema.QUESTION]}")
                 pregunta_run.bold = True
-                document.add_paragraph(f"Tema: {row['Tema']}")
-                document.add_paragraph(f"Estado: {row['Estado']}")
-                document.add_paragraph(f"A) {row['Respuesta A']}")
-                document.add_paragraph(f"B) {row['Respuesta B']}")
-                document.add_paragraph(f"C) {row['Respuesta C']}")
-                document.add_paragraph(f"D) {row['Respuesta D']}")
-                document.add_paragraph(f"Respuesta correcta: {row['Respuesta correcta']}")
-                document.add_paragraph(f"Texto relevante: {row['Texto relevante']}")
+                document.add_paragraph(f"Tema: {row[schema.TOPIC]}")
+                document.add_paragraph(f"Estado: {row[schema.STATUS]}")
+                document.add_paragraph(f"A) {row[schema.ANSWER_A]}")
+                document.add_paragraph(f"B) {row[schema.ANSWER_B]}")
+                document.add_paragraph(f"C) {row[schema.ANSWER_C]}")
+                document.add_paragraph(f"D) {row[schema.ANSWER_D]}")
+                document.add_paragraph(f"Respuesta correcta: {row[schema.CORRECT_ANSWER]}")
+                document.add_paragraph(f"Texto relevante: {row[schema.RELEVANT_TEXT]}")
                 document.add_paragraph()
             document.save(filepath)
         else:
@@ -659,14 +659,14 @@ class QuestionGenerator:
             # Information about the discarded question
             p = document.add_paragraph()
             p.add_run('Pregunta descartada: ').bold = True
-            p.add_run(f"{row['Pregunta']}")
+            p.add_run(f"{row[schema.QUESTION]}")
 
-            document.add_paragraph(f"Tema: {row['Tema']}")
-            document.add_paragraph(f"A) {row['Respuesta A']}")
-            document.add_paragraph(f"B) {row['Respuesta B']}")
-            document.add_paragraph(f"C) {row['Respuesta C']}")
-            document.add_paragraph(f"D) {row['Respuesta D']}")
-            document.add_paragraph(f"Respuesta correcta: {row['Respuesta correcta']}")
+            document.add_paragraph(f"Tema: {row[schema.TOPIC]}")
+            document.add_paragraph(f"A) {row[schema.ANSWER_A]}")
+            document.add_paragraph(f"B) {row[schema.ANSWER_B]}")
+            document.add_paragraph(f"C) {row[schema.ANSWER_C]}")
+            document.add_paragraph(f"D) {row[schema.ANSWER_D]}")
+            document.add_paragraph(f"Respuesta correcta: {row[schema.CORRECT_ANSWER]}")
 
             # Information about the reason for rejection
             p_reason = document.add_paragraph()
@@ -724,7 +724,7 @@ class QuestionGenerator:
         normalized_new_question_text = self._normalize_text(new_question_text)
 
         for _, row in self.existing_bank_df.iterrows():
-            existing_question_text_from_bank = row.get('Pregunta')
+            existing_question_text_from_bank = row.get(schema.QUESTION)
             if existing_question_text_from_bank and isinstance(existing_question_text_from_bank, str):
                 normalized_existing_question_text = self._normalize_text(existing_question_text_from_bank)
 
@@ -759,7 +759,7 @@ class QuestionGenerator:
         accepted_rows = []
         rejected_rows = []
         for _, row in generated_questions_df.iterrows():
-            question_text = row.get("Pregunta", "")
+            question_text = row.get(schema.QUESTION, "")
             is_similar, sim_score, matched_text = self._is_similar_question(question_text)
             if is_similar:
                 row_dict = row.to_dict()
@@ -1169,8 +1169,8 @@ class QuestionGenerator:
                             is_dup_within_chunk = False
                             for q_existing_chunk_dict in questions_accepted_for_this_chunk:
                                 # Compare only the statement for duplicates within the chunk
-                                if self._normalize_text(q_new.get("Pregunta", "")) == self._normalize_text(
-                                    q_existing_chunk_dict.get("Pregunta", "")
+                                if self._normalize_text(q_new.get(schema.QUESTION, "")) == self._normalize_text(
+                                    q_existing_chunk_dict.get(schema.QUESTION, "")
                                 ):
                                     is_dup_within_chunk = True
                                     break
