@@ -12,7 +12,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -33,6 +33,14 @@ from pyexamgenerator.grading.extraction import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _question_number(name: str) -> int:
+    """Number of a question name of the Moodle XML ('Pregunta 07' -> 7)."""
+    match = re.search(r"\d+", name)
+    if match is None:  # the XML names are 'Pregunta NN'; a caller's may not be.
+        raise ValueError(f"La pregunta '{name}' no tiene número.")
+    return int(match.group())
 
 
 _REVIEW_ANSWERS = {"a", "b", "c", "d", "nc", "-"}
@@ -384,7 +392,7 @@ class ImageExamGrader:
         return pd.DataFrame(incidents)
 
     @staticmethod
-    def _best_option_from_audit_row(row: Dict[str, object]) -> Tuple[str, float, float]:
+    def _best_option_from_audit_row(row: Dict[str, Any]) -> Tuple[str, float, float]:
         score_map = {
             "a": float(row.get("Score_a", 0.0) or 0.0),
             "b": float(row.get("Score_b", 0.0) or 0.0),
@@ -601,7 +609,7 @@ class ImageExamGrader:
         moodle_rows: List[Dict[str, str]] = []
 
         all_questions = sorted({q for exam in self.questions_by_exam_type.values() for q in exam.keys()})
-        max_question_num = max(int(re.search(r"\d+", q).group()) for q in all_questions)
+        max_question_num = max(_question_number(q) for q in all_questions)
         reference_weight = 10.0 / max_question_num
         reference_weight_str = f"{reference_weight:.2f}".replace(".", ",")
 
@@ -642,7 +650,7 @@ class ImageExamGrader:
                     row["Subgrupo_Practicas"] = str(enrollment_row.get("Subgrupo_Practicas", ""))
 
             for question in all_questions:
-                question_num = int(re.search(r"\d+", question).group())
+                question_num = _question_number(question)
                 col_name = f"P. {question_num} /{reference_weight_str}"
                 row[col_name] = points_by_question.get(question, "-")
 

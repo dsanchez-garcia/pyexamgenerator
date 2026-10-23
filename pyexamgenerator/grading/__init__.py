@@ -40,8 +40,8 @@ try:
 
     HAS_OCR = True
 except ImportError:
-    AnswerSheetExtractor = None
-    ImageExamGrader = None
+    AnswerSheetExtractor = None  # type: ignore[misc, assignment]
+    ImageExamGrader = None  # type: ignore[misc, assignment]
     HAS_OCR = False
 
 __all__ = [

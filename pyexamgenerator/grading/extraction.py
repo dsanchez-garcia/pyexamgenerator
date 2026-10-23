@@ -7,7 +7,7 @@ import tempfile
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -86,7 +86,7 @@ class AnswerSheetExtractor:
     ) -> None:
         self.ocr = RapidOCR()
         self._ocr_backend = _RAPIDOCR_BACKEND
-        self.enrollment_df = None
+        self.enrollment_df: Optional[pd.DataFrame] = None
         self.lookup_names: List[str] = []
         self.debug_dir = debug_dir
         self.min_mark_ratio = float(min_mark_ratio)
@@ -109,13 +109,12 @@ class AnswerSheetExtractor:
 
     def _set_enrollment_df(self, enrollment_df: pd.DataFrame) -> None:
         # A filtered or sorted roster keeps its old labels; reset them so labels and positions agree.
-        self.enrollment_df = enrollment_df.reset_index(drop=True)
-        self.enrollment_df["Lookup_Name"] = (
-            self.enrollment_df["Nombre"].astype(str).str.strip()
-            + " "
-            + self.enrollment_df["Apellido(s)"].astype(str).str.strip()
+        enrollment = enrollment_df.reset_index(drop=True)
+        enrollment["Lookup_Name"] = (
+            enrollment["Nombre"].astype(str).str.strip() + " " + enrollment["Apellido(s)"].astype(str).str.strip()
         ).str.lower()
-        self.lookup_names = self.enrollment_df["Lookup_Name"].tolist()
+        self.enrollment_df = enrollment
+        self.lookup_names = enrollment["Lookup_Name"].tolist()
 
     def _load_enrollment(self, enrollment_xlsx_path: str) -> None:
         self._set_enrollment_df(pd.read_excel(enrollment_xlsx_path))
@@ -274,7 +273,7 @@ class AnswerSheetExtractor:
         if first_name_raw and last_name_raw:
             first_name_norm = self._normalize(first_name_raw)
             last_name_norm = self._normalize(last_name_raw)
-            best_idx = None
+            best_idx: Any = None  # a row label of enrollment_df
             best_score = 0.0
 
             for idx, row in self.enrollment_df.iterrows():
@@ -427,8 +426,8 @@ class AnswerSheetExtractor:
         x_bin_size = 60.0
         bins: Dict[int, List[OcrToken]] = {}
         for t in q_tokens_all:
-            key = int(t.cx // x_bin_size)
-            bins.setdefault(key, []).append(t)
+            bin_key = int(t.cx // x_bin_size)
+            bins.setdefault(bin_key, []).append(t)
 
         best_bin_key = max(bins.keys(), key=lambda k: len(bins[k]))
         best_bin_tokens = bins[best_bin_key]

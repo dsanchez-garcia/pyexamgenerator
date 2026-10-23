@@ -55,6 +55,8 @@ nuevo: ver `docs/dev/DEVELOPMENT.md`.
 `ruff check .` debe pasar (reglas `F` de pyflakes y `B` de bugbear) y el código está formateado
 con `ruff format` (línea de 120, comillas tal como estén; los Markdown se excluyen): ejecútalo antes
 de hacer commit. `pre-commit install` hace las dos cosas en cada commit y la CI las comprueba.
+`mypy` (no estricto) revisa todos los módulos del paquete: si creas uno, añádelo a `files` en
+`[tool.mypy]` de `pyproject.toml`.
 
 ## Mapa del repositorio
 

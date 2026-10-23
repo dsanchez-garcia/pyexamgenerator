@@ -221,3 +221,12 @@ def test_running_the_module_starts_only_the_grading_command(module):
     assert result.returncode == 0, result.stderr
     assert "--xmls" in result.stdout
     assert "Desktop" not in result.stdout  # the temporary copies left the Desktop (SEC-4)
+
+
+def test_question_without_a_number_is_reported_clearly():
+    """DEV-2: el nombre de una pregunta del XML sin número fallaba con un AttributeError sobre None."""
+    from pyexamgenerator.grading.image_grading import _question_number
+
+    assert _question_number("Pregunta 07") == 7
+    with pytest.raises(ValueError, match="no tiene número"):
+        _question_number("Pregunta final")
