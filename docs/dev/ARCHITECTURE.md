@@ -166,7 +166,11 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 `image_grading.py` (ARC-5; en `extraction` con un `__getattr__` del módulo, porque `image_grading`
 lo importa), y `python -m pyexamgenerator.grading.extraction` sigue lanzando la corrección por
 imágenes. El tema de una sesión o un cuestionario (`LPRL`, `RSP`, `TEMA NN`) lo reconoce
-`_topics.topic_key`, igual para las justificaciones y para el PIR.
+`_topics.topic_key`, igual para las justificaciones y para el PIR. Los grupos, los temas con nombre
+propio, la regla PIR y los nombres de las columnas de Moodle salen de `grading/settings.py`
+(`current_settings()`, `moodle_columns("id")`…), que lee `grading_settings.json` de la carpeta de
+configuración del usuario y, sin él, da los valores de la UCA (ARC-10). Lo relee si el fichero
+cambia; un fichero mal escrito detiene la corrección con un `ValueError` que dice qué falla.
 
 - **Rutas de salida:** un nombre relativo se escribe en la carpeta de salida (`output_dir` del
   config o `default_output_dir` de la fachada; solo se conserva el nombre del fichero) y una ruta
@@ -284,6 +288,7 @@ En los tests, `conftest.py` la lleva a `tmp_path`.
 | `test_grading_names.py` | emparejamiento seguro de un nombre con la matrícula (`match_name`) |
 | `test_grading_ocr_sheet.py` | hojas de respuestas PNG sintéticas con RapidOCR simulado, de la imagen a la nota (requiere `[grading]`) |
 | `test_grading_module_split.py` | ARC-5: los nombres movidos de `attendance` y `extraction` se siguen importando desde allí |
+| `test_grading_settings.py` | `grading_settings.json`: valores de la UCA por defecto, errores claros, y grupos, temas, regla PIR y columnas configurados en cada módulo |
 | `test_grading_text_helpers.py` | reglas comunes de `grading/_text.py`; filas sin ID ni nombre en la nota final y la comparación |
 | `test_gui_logic.py` | `gui_logic.py` sin pantalla: listas de rutas, penalización, pesos, tipos forzados, nombres de examen, preguntas por tema |
 | `test_credentials.py` | clave de API: almacén de credenciales (en memoria, `conftest.py`), fichero alternativo, `GEMINI_API_KEY`, `config.json` antiguo y uso desde la librería |

@@ -145,6 +145,31 @@ def test_help_menu_opens_the_configuration_folder(app, monkeypatch):
     assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
 
+def test_help_menu_opens_the_grading_settings(app, monkeypatch):
+    """ARC-10: los grupos, los temas, la regla PIR y las columnas de Moodle se cambian en un fichero."""
+    from pyexamgenerator.grading import settings
+
+    menubar = app.root.nametowidget(app.root["menu"])
+    (help_index,) = [
+        i
+        for i in range(menubar.index("end") + 1)
+        if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") == "Ayuda"
+    ]
+    help_menu = app.root.nametowidget(menubar.entrycget(help_index, "menu"))
+    labels = [
+        help_menu.entrycget(i, "label") for i in range(help_menu.index("end") + 1) if help_menu.type(i) == "command"
+    ]
+    assert "Abrir configuración de corrección" in labels
+    opened = []
+    monkeypatch.setattr(app, "_open_folder", opened.append)
+
+    app.open_grading_settings()
+
+    assert opened == [str(settings.settings_path())]
+    assert settings.load_settings() == settings.GradingSettings()  # written with the default values
+    assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
+
+
 def test_api_key_placeholder_is_never_saved(app, tmp_path):
     """SEC-3: el marcador 'TU_CLAVE_API' del campo se podía guardar como si fuera una clave."""
     app.api_key_var.set("TU_CLAVE_API")

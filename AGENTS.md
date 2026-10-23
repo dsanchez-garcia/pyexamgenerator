@@ -78,6 +78,7 @@ pyexamgenerator/
     _text.py               normalize_key, find_column, clean_text, parse_decimal: reglas comunes (úsalas)
     _names.py              match_name: nombre escrito → alumno, solo coincidencias seguras (úsalo)
     _topics.py             topic_key: tema de una sesión o cuestionario (justificaciones y PIR)
+    settings.py            grading_settings.json: grupos, temas, regla PIR, columnas de Moodle (úsalo)
     extraction.py          OCR de las hojas (único módulo que importa cv2/numpy/rapidocr)
     image_grading.py       ImageExamGrader: hojas escaneadas → notas (usa el OCR de extraction)
     attendance.py          justificaciones de faltas; pir_bonus.py y theory_bonus.py, el punto extra
@@ -197,7 +198,10 @@ Antes de dar una tarea por terminada:
   necesitas conservar ceros iniciales, lee con `dtype=object`.
 - Columnas de Moodle con nombres en español y, a veces, *mojibake* (`"Nmero de ID"`); busca columnas
   y lee notas con `pyexamgenerator.grading._text` (`find_column`, `normalize_key`, `parse_decimal`),
-  que todos los módulos de `grading` comparten. No escribas otra copia con reglas distintas.
+  que todos los módulos de `grading` comparten. No escribas otra copia con reglas distintas. Los
+  nombres de esas columnas, los grupos (`GIM`…), los temas con nombre (`LPRL`…) y la regla PIR salen
+  de `grading/settings.py` (`moodle_columns("id")`, `current_settings()`): no los escribas como
+  literales, o la configuración del usuario no los cambiará.
 - Para asignar un nombre escrito a un alumno de la matrícula usa `grading._names.match_name`, no un
   umbral de parecido (`difflib`): «Mario» y «María» puntúan 0,94 y el parecido asignaría la nota o
   la justificación a otra persona. Lo que no se asigne con seguridad debe acabar en un informe de

@@ -20,6 +20,7 @@ from pyexamgenerator.grading._names import match_name
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import find_column, normalize_key, parse_decimal
 from pyexamgenerator.grading._topics import topic_key
+from pyexamgenerator.grading.settings import current_settings, moodle_columns
 
 # Moved to their own modules (ARC-5); still importable from here.
 from pyexamgenerator.grading.pir_bonus import PIRBonusCalculator as PIRBonusCalculator
@@ -67,7 +68,7 @@ class AbsenceJustificationManager:
         id_col: Optional[str] = None,
         email_col: Optional[str] = None,
         justification_mode: str = "extremo",
-        min_quiz_grade: float = 7.5,
+        min_quiz_grade: Optional[float] = None,
     ) -> None:
         self.attendance_xlsx_path = attendance_xlsx_path
         self.justifications_xlsx_path = justifications_xlsx_path
@@ -89,7 +90,8 @@ class AbsenceJustificationManager:
         self.email_col = email_col
         self.justification_mode = str(justification_mode or "extremo").strip().lower()
         # Class-quiz grade needed in every topic for the theory bonus point.
-        self.min_quiz_grade = float(min_quiz_grade)
+        # None: the minimum of the PIR rule in grading_settings.json (7.5 by default).
+        self.min_quiz_grade = float(current_settings().pir_min_quiz_grade if min_quiz_grade is None else min_quiz_grade)
 
     _normalize = staticmethod(normalize_key)
     _find_column = staticmethod(find_column)
@@ -260,10 +262,9 @@ class AbsenceJustificationManager:
     @staticmethod
     def _group_from_text(text: object) -> str:
         normalized = AbsenceJustificationManager._normalize(text)
-        if "gitigiegiei" in normalized:
-            return "GITI-GIE-GIEI"
-        if "gim" in normalized:
-            return "GIM"
+        for group in current_settings().groups_longest_first:
+            if normalize_key(group.name) in normalized:
+                return group.name
         return ""
 
     @staticmethod
@@ -292,17 +293,16 @@ class AbsenceJustificationManager:
         match = re.match(r"^TEMA\s+(\d{1,2})$", text)
         if match:
             return f"T{int(match.group(1)):02d}"
-        if text in {"LPRL", "RSP"}:
+        if text in current_settings().named_topic_names:
             return text
         return "TOP"
 
     @staticmethod
     def _short_group_code(group: object) -> str:
         text = str(group or "").strip().upper()
-        if text == "GIM":
-            return "GIM"
-        if text == "GITI-GIE-GIEI":
-            return "GGG"
+        for known in current_settings().groups:
+            if text == known.name.upper():
+                return known.code
         return "GRP"
 
     @staticmethod
@@ -323,8 +323,9 @@ class AbsenceJustificationManager:
     @staticmethod
     def _extract_quiz_columns(quizzes_df: pd.DataFrame) -> Dict[Tuple[str, str], str]:
         out: Dict[Tuple[str, str], str] = {}
+        quiz_column = current_settings().quiz_column_re()
         for col in quizzes_df.columns:
-            match = re.match(r"^Cuestionario:Cuestionario\s+(.+?)\s+-\s+(GIM|GITI-GIE-GIEI)\s+\(Real\)$", str(col))
+            match = quiz_column.match(str(col))
             if not match:
                 continue
             topic = AbsenceJustificationManager._topic_from_text(match.group(1))
@@ -385,15 +386,15 @@ class AbsenceJustificationManager:
 
     def _load_enrollment(self) -> pd.DataFrame:
         df = pd.read_excel(self.enrollment_xlsx_path, sheet_name=self.enrollment_sheet)
-        first_name_col = self._find_column(df.columns, self._candidates(self.first_name_col, ["Nombre"]))
-        last_name_col = self._find_column(
-            df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+        first_name_col = self._find_column(
+            df.columns, self._candidates(self.first_name_col, moodle_columns("first_name"))
         )
+        last_name_col = self._find_column(df.columns, self._candidates(self.last_name_col, moodle_columns("last_name")))
         email_col = self._find_column(
             df.columns,
-            self._candidates(self.email_col, ["Dirección de correo", "Direccin de correo", "Correo", "Email"]),
+            self._candidates(self.email_col, [*moodle_columns("email"), "Correo", "Email"]),
         )
-        id_col = self._find_column(df.columns, self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID"]))
+        id_col = self._find_column(df.columns, self._candidates(self.id_col, [*moodle_columns("id"), "ID"]))
 
         if first_name_col is None or last_name_col is None:
             raise ValueError("Enrollment file must contain first and last name columns.")
@@ -442,13 +443,15 @@ class AbsenceJustificationManager:
         attendance_df = pd.read_excel(
             self.attendance_xlsx_path, sheet_name=self.attendance_sheet, header=self.attendance_header_row
         )
-        first_name_col = self._find_column(attendance_df.columns, self._candidates(self.first_name_col, ["Nombre"]))
+        first_name_col = self._find_column(
+            attendance_df.columns, self._candidates(self.first_name_col, moodle_columns("first_name"))
+        )
         last_name_col = self._find_column(
-            attendance_df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+            attendance_df.columns, self._candidates(self.last_name_col, moodle_columns("last_name"))
         )
         id_col = self._find_column(
             attendance_df.columns,
-            self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"]),
+            self._candidates(self.id_col, [*moodle_columns("id"), "ID", "ID de estudiante"]),
         )
 
         if first_name_col is None or last_name_col is None:
@@ -646,13 +649,14 @@ class AbsenceJustificationManager:
             )
             session_columns.append((str(col), class_label, session_col_name, topic, group))
 
-        # Añade LPRL/RSP desde cuestionarios aunque no existan columnas de asistencia para esas fechas.
+        # Añade los temas con nombre (LPRL/RSP) desde cuestionarios aunque no existan columnas de
+        # asistencia para esas fechas.
         existing_topics = {topic for _, _, _, topic, _ in session_columns if topic}
         synthetic_idx = len(session_columns)
-        for topic in ["LPRL", "RSP"]:
+        for topic in current_settings().named_topic_names:
             if topic in existing_topics:
                 continue
-            for group in ["GIM", "GITI-GIE-GIEI"]:
+            for group in current_settings().group_names:
                 if (topic, group) not in quiz_cols:
                     continue
                 synthetic_idx += 1
@@ -668,8 +672,8 @@ class AbsenceJustificationManager:
                     )
                 )
 
-        q_first_col = self._find_column(quizzes_df.columns, ["Nombre"])
-        q_last_col = self._find_column(quizzes_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
+        q_first_col = self._find_column(quizzes_df.columns, moodle_columns("first_name"))
+        q_last_col = self._find_column(quizzes_df.columns, moodle_columns("last_name"))
         if q_first_col is None or q_last_col is None:
             return pd.DataFrame()
 
@@ -679,9 +683,9 @@ class AbsenceJustificationManager:
             if key and key not in quiz_by_key:
                 quiz_by_key[key] = qrow
 
-        a_first_col = self._find_column(attendance_df.columns, ["Nombre"])
-        a_last_col = self._find_column(attendance_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
-        a_id_col = self._find_column(attendance_df.columns, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"])
+        a_first_col = self._find_column(attendance_df.columns, moodle_columns("first_name"))
+        a_last_col = self._find_column(attendance_df.columns, moodle_columns("last_name"))
+        a_id_col = self._find_column(attendance_df.columns, [*moodle_columns("id"), "ID", "ID de estudiante"])
 
         rows: List[Dict[str, object]] = []
         for _, arow in attendance_df.iterrows():
@@ -736,7 +740,7 @@ class AbsenceJustificationManager:
 
                 quiz_topic_scores = []
                 if qrow is not None and topic:
-                    for g in ["GIM", "GITI-GIE-GIEI"]:
+                    for g in current_settings().group_names:
                         qcol = quiz_cols.get((topic, g))
                         if not qcol:
                             continue

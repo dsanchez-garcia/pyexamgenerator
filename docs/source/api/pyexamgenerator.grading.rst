@@ -81,6 +81,13 @@ pyexamgenerator.grading.session module
    :members:
    :show-inheritance:
 
+pyexamgenerator.grading.settings module
+---------------------------------------
+
+.. automodule:: pyexamgenerator.grading.settings
+   :members:
+   :show-inheritance:
+
 pyexamgenerator.grading.theory\_bonus module
 --------------------------------------------
 

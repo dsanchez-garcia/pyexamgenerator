@@ -109,8 +109,8 @@ class PIRBonusConfig:
     summary_output_path: str = "pir_bonus_resumen.xlsx"
     incidents_output_path: str = "pir_bonus_incidencias.xlsx"
     attendance_header_row: int = 3
-    min_quiz_grade: float = 7.5
-    bonus_points: float = 1.0
+    min_quiz_grade: Optional[float] = None  # None: grading_settings.json (7.5 by default)
+    bonus_points: Optional[float] = None  # None: grading_settings.json (1.0 by default)
     theory_xlsx_path: Optional[str] = None
     theory_output_with_bonus_path: Optional[str] = None
     theory_grade_col: str = "Calificación/10,00"
@@ -149,8 +149,8 @@ class AbsenceJustificationConfig:
     id_col: Optional[str] = None
     email_col: Optional[str] = None
     justification_mode: str = "extremo"
-    # Class-quiz grade needed in every topic for the theory bonus point.
-    min_quiz_grade: float = 7.5
+    # Class-quiz grade needed in every topic for the theory bonus point (None: grading_settings.json).
+    min_quiz_grade: Optional[float] = None
 
 
 @dataclass
@@ -161,7 +161,7 @@ class TheoryBonusConfig:
     output_dir: Optional[str] = None
     theory_grade_col: Optional[str] = None
     cap_to_10: bool = True
-    bonus_points: float = 1.0
+    bonus_points: Optional[float] = None  # None: grading_settings.json (1.0 by default)
 
 
 @dataclass
@@ -252,8 +252,8 @@ class FullPipelineConfig:
     justification_mode: str = "extremo"
     theory_grade_col: Optional[str] = None
     cap_to_10: bool = True
-    min_quiz_grade: float = 7.5
-    bonus_points: float = 1.0
+    min_quiz_grade: Optional[float] = None  # None: grading_settings.json (7.5 by default)
+    bonus_points: Optional[float] = None  # None: grading_settings.json (1.0 by default)
     keep_intermediate: bool = False
     sender_col: str = "REMITENTE"
     subject_col: str = "ASUNTO"

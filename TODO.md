@@ -203,7 +203,7 @@ búscalas por nombre de función si no coinciden.
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
   *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*
   — hecho en `0375766` (`_create_scrollable_tab` y un mapa de campos para guardar y cargar).
-- [ ] **ARC-3 (P2)** Nombres de columna repetidos como literales en todos los módulos (`'Pregunta'`,
+- [x] **ARC-3 (P2)** Nombres de columna repetidos como literales en todos los módulos (`'Pregunta'`,
   `'Respuesta A'`, `'Estado'`, `'Veces usada en examen'`, `'_uso'`, `'Número de ID'`…). Crear
   `pyexamgenerator/schema.py` con constantes y usarlo en todas partes.
   *Parcial (`13a7743` y `dcf8a36`, PR #23; alcance decidido de forma autónoma el 2026-10-23):
@@ -211,6 +211,9 @@ búscalas por nombre de función si no coinciden.
   `question_bank_manager`, `exam_generator` y la GUI (sustitución comprobada con el AST). Falta
   `grading`: las columnas de Moodle (`'Número de ID'` aparece 37 veces) se buscan con listas de
   candidatos y `find_column`, junto con sus variantes *mojibake*; conviene hacerlo con ARC-10.*
+  — hecho en `5927384` (con ARC-10: las listas de candidatos de `grading` toman los nombres de
+  `grading/settings.py`; los nombres de las columnas que escriben los flujos siguen siendo los de
+  un Moodle en español).
 - [x] **ARC-4 (P2)** Helpers duplicados en `grading` con reglas ligeramente distintas (`_normalize`,
   `_find_column`, `_parse_grade`, `_clean` en `data.py`, `comparison.py`, `final_grade.py`,
   `integrations.py`, `attendance.py`, `extraction.py`). Unificar en `grading/_text.py`. — hecho en
@@ -269,12 +272,17 @@ búscalas por nombre de función si no coinciden.
   los de `main_app.py` (casi todos informan al usuario) y pasar los `print` a `logging` (ARC-8).*
   — hecho en `ac8e865` (los de `main_app.py`: solo la lista de temas se tragaba los errores; pasar
   los `print` a `logging` sigue en ARC-8).
-- [ ] **ARC-10 (P2)** Valores institucionales fijos en código (grupos `GIM`, `GITI-GIE-GIEI`, regla
+- [x] **ARC-10 (P2)** Valores institucionales fijos en código (grupos `GIM`, `GITI-GIE-GIEI`, regla
   PIR, temas `LPRL`/`RSP`, columnas mojibake `"Nmero de ID"`). Moverlos a configuración.
-  *Propuesta (2026-10-23, sin decidir): un `grading_settings.json` en la carpeta de configuración
+  *Propuesta (aprobada por el mantenedor el 2026-10-23): un `grading_settings.json` en la carpeta de configuración
   del usuario (`user_config`) con los grupos, la regla PIR, los temas y los alias de las columnas
   de Moodle; sin fichero, los valores actuales de la UCA. La librería lo lee si existe y la GUI lo
   abre desde «Ayuda». Las columnas de `grading` pendientes de ARC-3 usarían ese mismo esquema.*
+  — hecho en `f346b14` (el módulo `grading/settings.py`), `7b4592e` (grupos y temas), `5927384`
+  (columnas de Moodle), `32e5ff7` (regla PIR: `min_quiz_grade`/`bonus_points` valen `None` por
+  defecto) y `004e221` (menú «Ayuda > Abrir configuración de corrección» y documentación). Sin
+  fichero, todo funciona como antes; tres listas de columnas aceptan además la variante con la
+  tilde rota que les faltaba.
 - [x] **ARC-11 (P2)** `QuestionGenerator`: errores de cuota/sobrecarga detectados por subcadena
   (`"429"`, `question_generator.py:980,994`) y `time.sleep(1)` fijo. Usar
   `google.genai.errors.APIError.code` y reintentos con backoff exponencial. — hecho en `f61113a`

@@ -15,6 +15,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._text import normalize_text, parse_decimal
 from pyexamgenerator.grading._topics import topic_key
+from pyexamgenerator.grading.settings import current_settings
 
 
 @dataclass(frozen=True)
@@ -67,10 +68,9 @@ def _topic_from_text(text: object) -> Optional[str]:
 
 def _group_from_text(text: object) -> Optional[str]:
     normalized = normalize_text(text).upper()
-    if "GITI-GIE-GIEI" in normalized:
-        return "GITI-GIE-GIEI"
-    if "GIM" in normalized:
-        return "GIM"
+    for group in current_settings().groups_longest_first:
+        if normalize_text(group.name).upper() in normalized:
+            return group.name
     return None
 
 
@@ -84,8 +84,8 @@ class PIRBonusCalculator:
         schedule_sheet: object = None,
         quizzes_path: Optional[str] = None,
         attendance_header_row: int = 3,
-        min_quiz_grade: float = 7.5,
-        bonus_points: float = 1.0,
+        min_quiz_grade: Optional[float] = None,
+        bonus_points: Optional[float] = None,
         **legacy_kwargs,
     ) -> None:
         if attendance_path is None:
@@ -123,8 +123,10 @@ class PIRBonusCalculator:
         self.schedule_sheet = schedule_sheet
         self.quizzes_path = str(quizzes_path)
         self.attendance_header_row = attendance_header_row
-        self.min_quiz_grade = float(min_quiz_grade)
-        self.bonus_points = float(bonus_points)
+        # None: the PIR rule of grading_settings.json (7.5 and 1 point by default).
+        rule = current_settings()
+        self.min_quiz_grade = float(rule.pir_min_quiz_grade if min_quiz_grade is None else min_quiz_grade)
+        self.bonus_points = float(rule.pir_bonus_points if bonus_points is None else bonus_points)
 
     def _load_attendance(self) -> pd.DataFrame:
         return pd.read_excel(self.attendance_path, header=self.attendance_header_row)
@@ -189,9 +191,10 @@ class PIRBonusCalculator:
     @staticmethod
     def _extract_quiz_columns(quizzes_df: pd.DataFrame) -> Dict[Tuple[str, str], str]:
         out: Dict[Tuple[str, str], str] = {}
+        quiz_column = current_settings().quiz_column_re()
         for col in quizzes_df.columns:
             text = str(col)
-            match = re.match(r"^Cuestionario:Cuestionario\s+(.+?)\s+-\s+(GIM|GITI-GIE-GIEI)\s+\(Real\)$", text)
+            match = quiz_column.match(text)
             if not match:
                 continue
             topic = _topic_from_text(match.group(1))
@@ -213,7 +216,7 @@ class PIRBonusCalculator:
         quiz_cols = self._extract_quiz_columns(quizzes_df)
 
         topics = sorted({s.topic for s in sessions})
-        groups = ["GIM", "GITI-GIE-GIEI"]
+        groups = current_settings().group_names
         if not topics:
             # all([]) is True: without this guard every student would receive the bonus.
             warnings.append("No attendance session matched the schedule: no PIR bonus is awarded.")

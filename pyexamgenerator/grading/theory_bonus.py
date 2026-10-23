@@ -15,6 +15,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._text import normalize_key, parse_decimal
+from pyexamgenerator.grading.settings import current_settings, moodle_columns
 
 
 def _normalize_bonus_id(value: object) -> str:
@@ -46,7 +47,8 @@ def _as_dataframe(source: object) -> pd.DataFrame:
 
 
 class TheoryBonusApplier:
-    """Apply the PIR theory bonus (``bonus_points``, +1 by default), retaining inputs and outputs as attributes.
+    """Apply the PIR theory bonus (``bonus_points``; by default that of grading_settings.json, +1), retaining
+    inputs and outputs as attributes.
 
     Inputs (``theory`` and ``attendance_quiz``) may be either a path to an Excel file
     or an in-memory DataFrame, so the step can be chained without writing intermediate
@@ -61,13 +63,13 @@ class TheoryBonusApplier:
         attendance_quiz: object,
         theory_grade_col: Optional[str] = None,
         cap_to_10: bool = True,
-        bonus_points: float = 1.0,
+        bonus_points: Optional[float] = None,
     ) -> None:
         self.theory = theory
         self.attendance_quiz = attendance_quiz
         self.theory_grade_col = theory_grade_col
         self.cap_to_10 = cap_to_10
-        self.bonus_points = float(bonus_points)
+        self.bonus_points = float(current_settings().pir_bonus_points if bonus_points is None else bonus_points)
         self.theory_df: Optional[pd.DataFrame] = None
         self.bonus_df: Optional[pd.DataFrame] = None
         self.grade_columns: Optional[List[str]] = None
@@ -137,7 +139,8 @@ def _compute_theory_bonus(
     out_df["Incremento_Aplicado"] = 0.0
     out_df["Motivo_No_Incremento"] = ""
 
-    id_candidates = ["Número de ID", "Numero de ID", "Nombre de usuario", "ID_Alumno", "ID_Oficial", "ID"]
+    # Exact column names (not normalized): the Moodle ones of grading_settings.json and the usual others.
+    id_candidates = [*moodle_columns("id"), "Numero de ID", "Nombre de usuario", "ID_Alumno", "ID_Oficial", "ID"]
     for idx, row in out_df.iterrows():
         id_keys = [_normalize_bonus_id(row.get(col, "")) for col in id_candidates if col in out_df.columns]
         name_key = normalize_key(f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}")
@@ -192,9 +195,9 @@ def apply_theory_bonus_from_attendance_quiz(
     output_path: str,
     theory_grade_col: Optional[str] = None,
     cap_to_10: bool = True,
-    bonus_points: float = 1.0,
+    bonus_points: Optional[float] = None,
 ) -> pd.DataFrame:
-    """Apply the PIR bonus (``bonus_points``, +1 by default) to a theory workbook using attendance+quiz audit output.
+    """Apply the PIR bonus (``bonus_points``; by default that of grading_settings.json, +1) to a theory workbook using attendance+quiz audit output.
 
     Thin functional wrapper kept for backward compatibility; delegates to
     :class:`TheoryBonusApplier`.
@@ -244,8 +247,10 @@ class TheoryTopicReporter:
 
 
 def _report_topics(columns: Sequence[object]) -> List[str]:
-    """Topics of the per-topic report: LPRL, RSP and T02..T11 (the usual layout) plus any other topic
-    found in the class columns (e.g. ``C01_0303_T12_GIM__Asistencia``), which used to be left out."""
+    """Topics of the per-topic report: the named topics (LPRL, RSP), T02..T11 (the usual layout) and
+    any other topic found in the class columns (e.g. ``C01_0303_T12_GIM__Asistencia``), which used to
+    be left out."""
+    named = current_settings().named_topic_names
     t_codes = {f"T{idx:02d}" for idx in range(2, 12)}
     others: List[str] = []
     for col in columns:
@@ -255,9 +260,9 @@ def _report_topics(columns: Sequence[object]) -> List[str]:
         topic = match.group(1)
         if re.fullmatch(r"T\d{2}", topic):
             t_codes.add(topic)
-        elif topic not in {"LPRL", "RSP", "TOP"} and topic not in others:
+        elif topic not in {*named, "TOP"} and topic not in others:
             others.append(topic)
-    return ["LPRL", "RSP"] + sorted(t_codes) + others
+    return named + sorted(t_codes) + others
 
 
 def _compute_theory_topic_reports(source_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
