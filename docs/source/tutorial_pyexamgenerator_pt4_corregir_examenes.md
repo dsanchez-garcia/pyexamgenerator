@@ -101,9 +101,10 @@ corrección.
 4. **Asistencias + justificaciones + cuestionarios** en modo `extremo`
    (`AbsenceJustificationManager`).
 5. **Punto extra PIR** (`TheoryBonusApplier`): aplica `+1` (con tope en 10) a quien cumple
-   asistencia y cuestionarios. Ambas reglas se pueden cambiar en scripts: los puntos con
-   `bonus_points` y la nota mínima de los cuestionarios en cada tema (7,5) con `min_quiz_grade`
-   (en `TheoryBonusConfig`, `AbsenceJustificationConfig` o `FullPipelineConfig`).
+   asistencia y cuestionarios. Los puntos y la nota mínima de los cuestionarios en cada tema (7,5)
+   están en la [configuración de corrección](#configuracion-de-correccion); en scripts también
+   se pueden pasar a cada flujo con `bonus_points` y `min_quiz_grade` (en `TheoryBonusConfig`,
+   `AbsenceJustificationConfig` o `FullPipelineConfig`).
 6. **Reporte por tema** (`TheoryTopicReporter`): notas de cuestionarios por tema y obtención del
    punto extra.
 
@@ -299,6 +300,43 @@ nada. En el modo `normal` se aplica la misma regla, pero solo a las faltas clara
   una justificación.
 
 La aplicación avisa al terminar si hay correos sin asignar o que no cuentan.
+
+(configuracion-de-correccion)=
+## Configuración de corrección: grupos, temas, punto extra y columnas
+
+Algunos valores dependen de la institución y, por defecto, son los de la Universidad de Cádiz:
+
+- los **grupos** de la asignatura (`GIM`, `GITI-GIE-GIEI`), tal como aparecen en los cuestionarios
+  (`Cuestionario <tema> - <grupo> (Real)`), en los títulos de las sesiones y en el nombre de los
+  ficheros de matrícula;
+- los **temas con nombre propio** (`LPRL` para la Ley 31/95 y `RSP` para el RD 39/97), además de los
+  «Tema NN», que se reconocen siempre;
+- la **regla del punto extra (PIR)**: la nota mínima de cada cuestionario (7,5) y los puntos (1);
+- los **nombres de las columnas** de las exportaciones de Moodle (`Número de ID`, `Nombre`,
+  `Apellido(s)`, `Dirección de correo`, `Calificación/10,00` y sus variantes con las tildes rotas).
+
+Para cambiarlos, usa **Ayuda > Abrir configuración de corrección**: la aplicación crea
+`grading_settings.json` en tu carpeta de configuración con los valores actuales y lo abre. Solo
+cambian las claves que dejes en el fichero, y si lo borras vuelven los valores por defecto. Por
+ejemplo, para dos grupos de mañana y tarde y una nota mínima de 5:
+
+```json
+{
+  "grupos": [
+    {"nombre": "Mañana", "codigo": "MAN", "en_nombre_de_fichero": ["MANANA"]},
+    {"nombre": "Tarde", "codigo": "TAR", "en_nombre_de_fichero": ["TARDE"]}
+  ],
+  "pir": {"nota_minima_cuestionario": 5}
+}
+```
+
+`codigo` es la abreviatura del grupo en las columnas de la tabla de asistencias (solo letras
+mayúsculas) y `en_nombre_de_fichero`, los textos que identifican su fichero de matrícula. Los temas
+con nombre propio se escriben como `"temas_con_nombre": {"LPRL": "<expresión regular>"}`, y los
+nombres de columna, en `"columnas_moodle"` (`id`, `nombre`, `apellidos`, `correo` y `nota`); los
+ficheros que genera la corrección conservan los nombres de un Moodle en español. Si el fichero tiene
+un error, la corrección se detiene con un mensaje que dice qué falla. Desde un script,
+`pyexamgenerator.grading.settings` lee el mismo fichero.
 
 ## Nombres recomendados para Moodle
 

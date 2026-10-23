@@ -262,6 +262,7 @@ class ExamApp:
 
         help_menu.add_command(label="Configurar API Key (Ayuda)...", command=self.open_api_key_help)
         help_menu.add_command(label="Abrir carpeta de configuración", command=self.open_config_folder)
+        help_menu.add_command(label="Abrir configuración de corrección", command=self.open_grading_settings)
         help_menu.add_separator()
         help_menu.add_command(label="Acerca de...", command=self.show_about_dialog)
 
@@ -402,6 +403,27 @@ class ExamApp:
         messagebox.showinfo(
             "Carpeta de configuración",
             f"Tus prompts personalizados y la plantilla de exámenes se guardan en:\n{folder}",
+        )
+
+    def open_grading_settings(self) -> None:
+        """Opens grading_settings.json (groups, named topics, PIR rule, Moodle columns; ARC-10).
+
+        The file is first written with the default values (those of the Universidad de Cádiz) if it
+        does not exist, so there is something to edit.
+        """
+        from pyexamgenerator.grading import settings as grading_settings
+
+        try:
+            path = grading_settings.write_default_settings()
+        except OSError as exc:
+            messagebox.showerror("Error", f"No se pudo crear la configuración de corrección:\n{exc}")
+            return
+        self._open_folder(str(path))
+        messagebox.showinfo(
+            "Configuración de corrección",
+            "Los grupos, los temas con nombre propio, la regla del punto extra (PIR) y los nombres de las "
+            f"columnas de Moodle están en:\n{path}\n\nLa corrección usa los cambios la próxima vez que se "
+            "ejecute. Si borras el fichero, vuelven los valores de la Universidad de Cádiz.",
         )
 
     def _offer_legacy_config_migration(self) -> None:
@@ -1155,7 +1177,8 @@ class ExamApp:
 
     @staticmethod
     def _open_folder(path: str) -> None:
-        """Opens ``path`` in the file browser (Windows only; ignored elsewhere)."""
+        """Opens ``path``, a folder in the file browser or a file with its program (Windows only;
+        ignored elsewhere)."""
         try:
             os.startfile(path)  # type: ignore[attr-defined]
         except Exception:
