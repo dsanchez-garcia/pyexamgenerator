@@ -111,21 +111,14 @@ quote-style = "preserve"
 exclude = ["*.md"]
 
 [tool.mypy]
-# Non-strict type checking (DEV-2), starting with the grading facade, its configs and small helpers.
-# Add modules to `files` as they are typed.
+# Non-strict type checking (DEV-2) of every module of the package: add new modules to `files`.
 python_version = "3.10"
 files = [
+    "pyexamgenerator/__init__.py",
     "pyexamgenerator/_console.py",
     "pyexamgenerator/_text.py",
     "pyexamgenerator/credentials.py",
     "pyexamgenerator/exam_generator.py",
-    "pyexamgenerator/gui/__init__.py",
-    "pyexamgenerator/gui/_dialogs.py",
-    "pyexamgenerator/gui/app.py",
-    "pyexamgenerator/gui/bank_tab.py",
-    "pyexamgenerator/gui/exam_tab.py",
-    "pyexamgenerator/gui/grading_tab.py",
-    "pyexamgenerator/gui/questions_tab.py",
     "pyexamgenerator/gui_logic.py",
     "pyexamgenerator/main_app.py",
     "pyexamgenerator/question_bank_manager.py",
@@ -133,17 +126,32 @@ files = [
     "pyexamgenerator/schema.py",
     "pyexamgenerator/tooltip.py",
     "pyexamgenerator/user_config.py",
+    "pyexamgenerator/grading/__init__.py",
     "pyexamgenerator/grading/_ids.py",
     "pyexamgenerator/grading/_names.py",
     "pyexamgenerator/grading/_paths.py",
     "pyexamgenerator/grading/_text.py",
+    "pyexamgenerator/grading/_topics.py",
     "pyexamgenerator/grading/api.py",
+    "pyexamgenerator/grading/attendance.py",
     "pyexamgenerator/grading/comparison.py",
     "pyexamgenerator/grading/data.py",
+    "pyexamgenerator/grading/extraction.py",
     "pyexamgenerator/grading/final_grade.py",
     "pyexamgenerator/grading/graders.py",
+    "pyexamgenerator/grading/image_grading.py",
+    "pyexamgenerator/grading/integrations.py",
+    "pyexamgenerator/grading/pir_bonus.py",
     "pyexamgenerator/grading/session.py",
     "pyexamgenerator/grading/settings.py",
+    "pyexamgenerator/grading/theory_bonus.py",
+    "pyexamgenerator/gui/__init__.py",
+    "pyexamgenerator/gui/_dialogs.py",
+    "pyexamgenerator/gui/app.py",
+    "pyexamgenerator/gui/bank_tab.py",
+    "pyexamgenerator/gui/exam_tab.py",
+    "pyexamgenerator/gui/grading_tab.py",
+    "pyexamgenerator/gui/questions_tab.py",
 ]
 ignore_missing_imports = true
 follow_imports = "silent"

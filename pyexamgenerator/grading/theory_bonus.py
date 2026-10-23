@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
@@ -92,12 +92,11 @@ class TheoryBonusApplier:
         return self.result_df
 
     def export(self, output_path: str) -> pd.DataFrame:
-        if self.result_df is None:
-            self.apply()
+        result = self.result_df if self.result_df is not None else self.apply()
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        self.result_df.to_excel(output_path, index=False)
+        result.to_excel(output_path, index=False)
         self.output_path = output_path
-        return self.result_df
+        return result
 
 
 def _compute_theory_bonus(
@@ -106,7 +105,7 @@ def _compute_theory_bonus(
     theory_grade_col: Optional[str] = None,
     cap_to_10: bool = True,
     bonus_points: float = 1.0,
-    grade_columns_out: Optional[object] = None,
+    grade_columns_out: Optional[Any] = None,
 ) -> pd.DataFrame:
     if "Tiene_Punto_Adicional_Teoria" not in bonus_df.columns:
         raise ValueError("El archivo de asistencia+cuestionarios no incluye Tiene_Punto_Adicional_Teoria.")
@@ -236,17 +235,19 @@ class TheoryTopicReporter:
 
     def export(self, output_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         if self.attendance_report_df is None or self.quiz_report_df is None:
-            self.build()
+            attendance_report_df, quiz_report_df = self.build()
+        else:
+            attendance_report_df, quiz_report_df = self.attendance_report_df, self.quiz_report_df
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         self.attendance_output_path = str(out_dir / "asistencia_teoria_por_tema.xlsx")
         self.quiz_output_path = str(out_dir / "cuestionarios_por_tema_y_punto_extra.xlsx")
-        self.attendance_report_df.to_excel(self.attendance_output_path, index=False)
-        self.quiz_report_df.to_excel(self.quiz_output_path, index=False)
-        return self.attendance_report_df, self.quiz_report_df
+        attendance_report_df.to_excel(self.attendance_output_path, index=False)
+        quiz_report_df.to_excel(self.quiz_output_path, index=False)
+        return attendance_report_df, quiz_report_df
 
 
-def _report_topics(columns: Sequence[object]) -> List[str]:
+def _report_topics(columns: Iterable[object]) -> List[str]:
     """Topics of the per-topic report: the named topics (LPRL, RSP), T02..T11 (the usual layout) and
     any other topic found in the class columns (e.g. ``C01_0303_T12_GIM__Asistencia``), which used to
     be left out."""

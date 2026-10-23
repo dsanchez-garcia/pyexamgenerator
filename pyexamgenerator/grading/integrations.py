@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -15,6 +15,11 @@ from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
 from pyexamgenerator.grading.settings import moodle_columns
 
 logger = logging.getLogger(__name__)
+
+
+def _row_number(label: Any) -> int:
+    """Label of a row of a DataFrame read from Excel (its index is 0, 1, 2...) as an int."""
+    return int(label)
 
 
 def _grade_or_na(value):
@@ -216,7 +221,7 @@ class MoodleGradeIntegrator:
 
         normalized_rows = []
         for _, row in df.iterrows():
-            best_grade = pd.NA
+            best_grade: Any = pd.NA
             best_exam_type = ""
             best_group = ""
 
@@ -346,12 +351,14 @@ class MoodleGradeIntegrator:
 
 # Backward-compatible alias
 IntegradorCalificacionesMoodle = MoodleGradeIntegrator
-MoodleGradeIntegrator.construir_rutas_desde_lista_y_tipos = staticmethod(
+MoodleGradeIntegrator.construir_rutas_desde_lista_y_tipos = staticmethod(  # type: ignore[attr-defined]
     MoodleGradeIntegrator.build_paths_from_list_and_types
 )
-MoodleGradeIntegrator.construir_rutas_desde_plantilla = staticmethod(MoodleGradeIntegrator.build_paths_from_template)
-MoodleGradeIntegrator.integrar = MoodleGradeIntegrator.integrate_grades
-MoodleGradeIntegrator.integrar_y_exportar = MoodleGradeIntegrator.integrate_and_export
+MoodleGradeIntegrator.construir_rutas_desde_plantilla = staticmethod(  # type: ignore[attr-defined]
+    MoodleGradeIntegrator.build_paths_from_template
+)
+MoodleGradeIntegrator.integrar = MoodleGradeIntegrator.integrate_grades  # type: ignore[attr-defined]
+MoodleGradeIntegrator.integrar_y_exportar = MoodleGradeIntegrator.integrate_and_export  # type: ignore[attr-defined]
 
 
 # OCR overlay integration
@@ -492,7 +499,7 @@ class OcrGradeIntegrator:
         ocr_exam_type_col: Optional[str],
         ocr_image_col: Optional[str],
         severity: str = "alta",
-    ) -> Dict[str, str]:
+    ) -> Dict[str, object]:
         return {
             "Fila_OCR": int(row_index),
             "Imagen": "" if ocr_image_col is None else self._clean_text(ocr_row.get(ocr_image_col, "")),
@@ -519,7 +526,7 @@ class OcrGradeIntegrator:
         ocr_row: pd.Series,
         row_index: int,
         **incident_cols,
-    ) -> Optional[Dict[str, str]]:
+    ) -> Optional[Dict[str, object]]:
         """One incident per OCR row whose grades replaced different grades that were already there.
 
         The OCR grade is still applied, but it is reported: the student may also have taken the
@@ -546,7 +553,7 @@ class OcrGradeIntegrator:
             **incident_cols,
         )
 
-    def _set_last_integration_report(self, summary: Dict[str, int], incidents: List[Dict[str, str]]) -> None:
+    def _set_last_integration_report(self, summary: Dict[str, int], incidents: List[Dict[str, object]]) -> None:
         self.last_integration_summary = {str(k): int(v) for k, v in summary.items()}
         self.last_integration_incidents_df = pd.DataFrame(incidents, columns=self._incident_columns())
 
@@ -556,10 +563,8 @@ class OcrGradeIntegrator:
         return pd.read_excel(file_path, sheet_name=sheet_name, dtype=object, keep_default_na=False)
 
     @staticmethod
-    def _best_grade_from_quiz_columns(
-        row: pd.Series, quiz_columns: List[Tuple[str, str, str]]
-    ) -> Tuple[object, str, str]:
-        best_grade = pd.NA
+    def _best_grade_from_quiz_columns(row: pd.Series, quiz_columns: List[Tuple[str, str, str]]) -> Tuple[Any, str, str]:
+        best_grade: Any = pd.NA
         best_group = ""
         best_exam_type = ""
         for col, group_name, exam_type in quiz_columns:
@@ -708,7 +713,7 @@ class OcrGradeIntegrator:
             )
 
         summary = self._new_integration_summary(len(ocr_df))
-        incidents: List[Dict[str, str]] = []
+        incidents: List[Dict[str, object]] = []
 
         general_df, dropped_summary_rows = self._drop_general_summary_rows(
             general_df,
@@ -757,7 +762,7 @@ class OcrGradeIntegrator:
                 incidents.append(
                     self._build_integration_incident(
                         ocr_row,
-                        int(ocr_index),
+                        _row_number(ocr_index),
                         "MISSING_IDENTITY",
                         "Fila OCR sin ID oficial y sin nombre+apellidos; no se integra.",
                         ocr_id_col=ocr_id_col,
@@ -791,7 +796,7 @@ class OcrGradeIntegrator:
                 incidents.append(
                     self._build_integration_incident(
                         ocr_row,
-                        int(ocr_index),
+                        _row_number(ocr_index),
                         "UNMATCHED_STUDENT",
                         "No se encontró alumno en teoría para esta fila OCR.",
                         ocr_id_col=ocr_id_col,
@@ -820,7 +825,7 @@ class OcrGradeIntegrator:
                 incidents.append(
                     self._build_integration_incident(
                         ocr_row,
-                        int(ocr_index),
+                        _row_number(ocr_index),
                         "MISSING_TARGET_COLUMN",
                         f"No se encontró columna destino para Tipo_Examen='{exam_type or '-'}'.",
                         ocr_id_col=ocr_id_col,
@@ -838,7 +843,7 @@ class OcrGradeIntegrator:
                 incidents.append(
                     self._build_integration_incident(
                         ocr_row,
-                        int(ocr_index),
+                        _row_number(ocr_index),
                         "MISSING_GRADE",
                         "La fila OCR no tiene nota total válida; no se integra.",
                         ocr_id_col=ocr_id_col,
@@ -854,7 +859,7 @@ class OcrGradeIntegrator:
             overwritten = self._overwritten_grade_incident(
                 [change] if change else [],
                 ocr_row,
-                int(ocr_index),
+                _row_number(ocr_index),
                 ocr_id_col=ocr_id_col,
                 ocr_first_name_col=ocr_first_name_col,
                 ocr_last_name_col=ocr_last_name_col,
@@ -933,7 +938,7 @@ class OcrGradeIntegrator:
         ocr_group_col = self._find_column(ocr_cols, ["tipoexamen", "tipogrupo", "tipo"])
 
         summary = self._new_integration_summary(len(ocr_df))
-        incidents: List[Dict[str, str]] = []
+        incidents: List[Dict[str, object]] = []
 
         general_df, dropped_summary_rows = self._drop_general_summary_rows(
             general_df,
@@ -975,7 +980,7 @@ class OcrGradeIntegrator:
                 incidents.append(
                     self._build_integration_incident(
                         ocr_row,
-                        int(ocr_index),
+                        _row_number(ocr_index),
                         "MISSING_IDENTITY",
                         "Fila OCR sin ID oficial y sin nombre+apellidos; no se integra.",
                         ocr_id_col=ocr_id_col,
@@ -1010,7 +1015,7 @@ class OcrGradeIntegrator:
                     incidents.append(
                         self._build_integration_incident(
                             ocr_row,
-                            int(ocr_index),
+                            _row_number(ocr_index),
                             "UNMATCHED_STUDENT",
                             "No se encontró alumno en teoría para esta fila OCR.",
                             ocr_id_col=ocr_id_col,
@@ -1088,7 +1093,7 @@ class OcrGradeIntegrator:
             overwritten = self._overwritten_grade_incident(
                 overwritten_grades,
                 ocr_row,
-                int(ocr_index),
+                _row_number(ocr_index),
                 ocr_id_col=ocr_id_col,
                 ocr_first_name_col=ocr_first_name_col,
                 ocr_last_name_col=ocr_last_name_col,
@@ -1145,7 +1150,7 @@ def main() -> None:
 
 # Backward-compatible alias
 IntegradorCalificacionesOCR = OcrGradeIntegrator
-OcrGradeIntegrator.integrar = OcrGradeIntegrator.integrate
+OcrGradeIntegrator.integrar = OcrGradeIntegrator.integrate  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -120,7 +120,7 @@ class PIRBonusCalculator:
 
         self.attendance_path = str(attendance_path)
         self.schedule_path = str(schedule_path)
-        self.schedule_sheet = schedule_sheet
+        self.schedule_sheet: Any = schedule_sheet
         self.quizzes_path = str(quizzes_path)
         self.attendance_header_row = attendance_header_row
         # None: the PIR rule of grading_settings.json (7.5 and 1 point by default).

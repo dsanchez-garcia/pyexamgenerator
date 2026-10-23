@@ -10,7 +10,7 @@ import argparse
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import pandas as pd
 
@@ -74,7 +74,7 @@ class AbsenceJustificationManager:
         self.justifications_xlsx_path = justifications_xlsx_path
         self.enrollment_xlsx_path = enrollment_xlsx_path
         self.schedule_xlsx_path = schedule_xlsx_path
-        self.schedule_sheet = schedule_sheet
+        self.schedule_sheet: Any = schedule_sheet
         self.quizzes_xlsx_path = quizzes_xlsx_path
         self.attendance_header_row = int(attendance_header_row)
         self.attendance_sheet = int(attendance_sheet)
@@ -104,7 +104,7 @@ class AbsenceJustificationManager:
         return list(defaults)
 
     @staticmethod
-    def _normalize_justification_date(value: object) -> str:
+    def _normalize_justification_date(value: Any) -> str:
         """Normalizes a justification date to ISO ``YYYY-MM-DD``.
 
         The template asks for ``mm/dd/aaaa``; if the first field is > 12 it is treated as ``dd/mm/aaaa``.
@@ -208,12 +208,12 @@ class AbsenceJustificationManager:
         return "Todos los estudiantes" in text and re.search(r"\b(19|20)\d{2}\b", text) is not None
 
     @staticmethod
-    def _is_present_value(value: object) -> bool:
+    def _is_present_value(value: Any) -> bool:
         text = "" if pd.isna(value) else str(value).strip().upper()
         return text.startswith("P")
 
     @staticmethod
-    def _is_absence_value(value: object) -> bool:
+    def _is_absence_value(value: Any) -> bool:
         text = "" if pd.isna(value) else str(value).strip().upper()
         if not text or text == "?":
             return False
@@ -251,7 +251,7 @@ class AbsenceJustificationManager:
             return None
 
     @staticmethod
-    def _topic_from_text(text: object) -> str:
+    def _topic_from_text(text: Any) -> str:
         raw = "" if pd.isna(text) else str(text).strip()
         normalized = AbsenceJustificationManager._normalize(raw)
         if "practic" in normalized:
@@ -335,7 +335,7 @@ class AbsenceJustificationManager:
         return out
 
     @staticmethod
-    def _classify_justification_text(subject: object, message: object) -> Tuple[str, int, str]:
+    def _classify_justification_text(subject: Any, message: Any) -> Tuple[str, int, str]:
         text = f"{'' if pd.isna(subject) else str(subject)}\n{'' if pd.isna(message) else str(message)}".lower()
         text = re.sub(r"\s+", " ", text).strip()
         if not text:
@@ -678,10 +678,10 @@ class AbsenceJustificationManager:
             return pd.DataFrame()
 
         quiz_by_key = {}
-        for _, qrow in quizzes_df.iterrows():
-            key = self._student_name_key(qrow.get(q_first_col, ""), qrow.get(q_last_col, ""))
+        for _, quiz_row in quizzes_df.iterrows():
+            key = self._student_name_key(quiz_row.get(q_first_col, ""), quiz_row.get(q_last_col, ""))
             if key and key not in quiz_by_key:
-                quiz_by_key[key] = qrow
+                quiz_by_key[key] = quiz_row
 
         a_first_col = self._find_column(attendance_df.columns, moodle_columns("first_name"))
         a_last_col = self._find_column(attendance_df.columns, moodle_columns("last_name"))
