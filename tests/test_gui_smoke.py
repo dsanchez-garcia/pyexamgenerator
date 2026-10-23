@@ -266,11 +266,11 @@ def test_selecting_source_files_twice_keeps_a_valid_list(app, tmp_path, monkeypa
 
 def test_invalid_final_grade_weight_shows_an_error(app, tmp_path):
     """GUI-5: un peso no numérico lanzaba ValueError fuera de cualquier try (solo salía por consola)."""
-    app.grad_out_var.set(str(tmp_path))
-    app.grad_final_mode_var.set("by_file")
-    app.grad_final_files_var.set(f"{tmp_path / 'notas.xlsx'}|cuarenta")
+    app.grading_tab.grad_out_var.set(str(tmp_path))
+    app.grading_tab.grad_final_mode_var.set("by_file")
+    app.grading_tab.grad_final_files_var.set(f"{tmp_path / 'notas.xlsx'}|cuarenta")
 
-    app.run_final_grade()
+    app.grading_tab.run_final_grade()
 
     assert [kind for kind, _title, _message in app.shown_messages] == ["error"]
     assert "cuarenta" in app.shown_messages[0][2]
@@ -297,13 +297,13 @@ def test_only_one_grading_job_runs_at_a_time(app):
     def drive():
         # Runs inside mainloop: the worker thread can only talk to Tk while it is running.
         if not steps:
-            app._grad_run_async("Trabajando", slow_job)
+            app.grading_tab._grad_run_async("Trabajando", slow_job)
             steps.append("first")
         elif steps == ["first"] and started.is_set():
-            app._grad_run_async("Otra vez", lambda: "no debería ejecutarse")
+            app.grading_tab._grad_run_async("Otra vez", lambda: "no debería ejecutarse")
             steps.append("second")
             release.set()
-        elif steps == ["first", "second"] and not app._grad_job_running:
+        elif steps == ["first", "second"] and not app.grading_tab._grad_job_running:
             app.root.quit()
             return
         app.root.after(20, drive)
@@ -316,7 +316,7 @@ def test_only_one_grading_job_runs_at_a_time(app):
     assert steps == ["first", "second"]
     assert [kind for kind, _title, _message in app.shown_messages].count("warning") == 1
     assert ("info", "Corrección", "hecho") in app.shown_messages
-    assert not app._grad_job_running
+    assert not app.grading_tab._grad_job_running
 
 
 def _run_in_mainloop(app, action, done=None, timeout_ms=15000):
@@ -328,7 +328,7 @@ def _run_in_mainloop(app, action, done=None, timeout_ms=15000):
     if done is None:
 
         def done():
-            return not getattr(app, "_grad_job_running", False)
+            return not getattr(app.grading_tab, "_grad_job_running", False)
 
     def poll():
         if done():
@@ -403,20 +403,20 @@ def grading_backend(app, tmp_path, monkeypatch):
 
     out = str(tmp_path / "salida")
     for var, value in [
-        (app.grad_enrollment_var, "matricula_GIM.xlsx"),
-        (app.grad_xmls_var, "examen_1A.xml"),
-        (app.grad_images_var, "hoja1.jpg;hoja2.jpg"),
-        (app.grad_answers_var, "respuestas.xlsx"),
-        (app.grad_theory_var, "teoria.xlsx"),
-        (app.grad_attendance_var, "asistencias.xlsx"),
-        (app.grad_schedule_var, "horario.xlsx"),
-        (app.grad_justif_var, "justificaciones.xlsx"),
-        (app.grad_quizzes_var, "cuestionarios.xlsx"),
-        (app.grad_out_var, out),
-        (app.grad_final_files_var, "notas.xlsx|1"),
-        (app.grad_cmp_existing_var, "antes.xlsx"),
-        (app.grad_cmp_new_var, "despues.xlsx"),
-        (app.grad_forced_var, "hoja2.jpg=1B"),
+        (app.grading_tab.grad_enrollment_var, "matricula_GIM.xlsx"),
+        (app.grading_tab.grad_xmls_var, "examen_1A.xml"),
+        (app.grading_tab.grad_images_var, "hoja1.jpg;hoja2.jpg"),
+        (app.grading_tab.grad_answers_var, "respuestas.xlsx"),
+        (app.grading_tab.grad_theory_var, "teoria.xlsx"),
+        (app.grading_tab.grad_attendance_var, "asistencias.xlsx"),
+        (app.grading_tab.grad_schedule_var, "horario.xlsx"),
+        (app.grading_tab.grad_justif_var, "justificaciones.xlsx"),
+        (app.grading_tab.grad_quizzes_var, "cuestionarios.xlsx"),
+        (app.grading_tab.grad_out_var, out),
+        (app.grading_tab.grad_final_files_var, "notas.xlsx|1"),
+        (app.grading_tab.grad_cmp_existing_var, "antes.xlsx"),
+        (app.grading_tab.grad_cmp_new_var, "despues.xlsx"),
+        (app.grading_tab.grad_forced_var, "hoja2.jpg=1B"),
     ]:
         var.set(value)
     return SimpleNamespace(calls=calls, reads_outside_main_thread=reads_outside_main_thread, out=out)
@@ -438,7 +438,7 @@ def test_grading_jobs_read_tk_variables_only_in_the_main_thread(app, grading_bac
     """GUI-2: los hilos de corrección leían variables Tk (`*_var.get()`), lo que no es seguro."""
     for action, library_call in GRADING_ACTIONS:  # one window for all: building it is slow
         app.shown_messages.clear()
-        method = getattr(app, action)
+        method = getattr(app.grading_tab, action)
         _run_in_mainloop(app, (lambda method=method: method(False)) if action == "run_compare_results" else method)
 
         assert library_call in grading_backend.calls, action
@@ -448,9 +448,9 @@ def test_grading_jobs_read_tk_variables_only_in_the_main_thread(app, grading_bac
 
 def test_full_pipeline_button_uses_the_library_pipeline(app, grading_backend):
     """GUI-7: «Pipeline completo» delega en `ExamCorrectionAPI.run_full_pipeline`."""
-    app.grad_att_header_var.set("4")
+    app.grading_tab.grad_att_header_var.set("4")
 
-    _run_in_mainloop(app, app.run_grading)
+    _run_in_mainloop(app, app.grading_tab.run_grading)
 
     cfg = grading_backend.calls["run_full_pipeline"]
     assert cfg.output_dir == grading_backend.out
@@ -725,22 +725,22 @@ def test_exam_template_and_grading_session_round_trip(app, tmp_path, monkeypatch
         (app.exam_tab.font_size, "12"),
         (app.exam_tab.export_moodle, True),
         (app.exam_tab.usage_alert_threshold_var, "4"),
-        (app.grad_enrollment_var, "matricula.xlsx"),
-        (app.grad_quizzes_var, "cuestionarios.xlsx"),
-        (app.grad_cmp_new_var, "nuevo.xlsx"),
-        (app.grad_id_col_var, "DNI"),
-        (app.grad_append_unmatched_var, False),
+        (app.grading_tab.grad_enrollment_var, "matricula.xlsx"),
+        (app.grading_tab.grad_quizzes_var, "cuestionarios.xlsx"),
+        (app.grading_tab.grad_cmp_new_var, "nuevo.xlsx"),
+        (app.grading_tab.grad_id_col_var, "DNI"),
+        (app.grading_tab.grad_append_unmatched_var, False),
     ]
     for var, value in values:
         var.set(value)
-    app.grad_session_path_var.set(str(tmp_path / "sesion.json"))
+    app.grading_tab.grad_session_path_var.set(str(tmp_path / "sesion.json"))
 
     app.exam_tab.save_exam_tab_template()
-    app.save_grading_session()
+    app.grading_tab.save_grading_session()
     for var, value in values:
         var.set((not value) if isinstance(value, bool) else "")
     app.exam_tab.load_exam_tab_template()
-    app.load_grading_session()
+    app.grading_tab.load_grading_session()
 
     assert [var.get() for var, _ in values] == [value for _, value in values]
     # ARC-12: the template goes to the user's configuration folder, never to the current one.

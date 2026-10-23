@@ -66,10 +66,10 @@ pyexamgenerator/
   _text.py                 helpers compartidos: strip_accents, safe_filename_part
   schema.py                nombres de columna del banco (schema.QUESTION…): úsalos, no repitas el literal
   exam_generator.py        ExamGenerator: banco XLSX → exámenes DOCX/XLSX/Moodle XML
-  main_app.py              GUI Tkinter: ExamApp (ventana, menús, estado, tareas en segundo plano) y main()
-  gui/                     una clase por pestaña que recibe la app (ARC-1): questions_tab.py, bank_tab.py,
-                           exam_tab.py;
-                           _dialogs.py (messagebox)
+  main_app.py              punto de entrada del comando `pyexamgenerator`: reexporta ExamApp y main()
+  gui/                     la GUI Tkinter (ARC-1): app.py (ExamApp: ventana, menús, estado, tareas en
+                           segundo plano) y una clase por pestaña que recibe la app: questions_tab.py,
+                           bank_tab.py, exam_tab.py, grading_tab.py; _dialogs.py (messagebox)
   gui_logic.py             lógica de la GUI sin tkinter: interpretar los campos, avisos (se prueba sin pantalla)
   credentials.py           clave de API de Gemini: GEMINI_API_KEY o almacén de credenciales (keyring)
   user_config.py           carpeta de configuración del usuario (prompts, plantilla): nunca el CWD
@@ -215,7 +215,8 @@ Antes de dar una tarea por terminada:
   y se saltan donde no hay pantalla (la CI de Linux las ejecuta con `xvfb-run`). Usa su fixture `app`: crea una sola raíz
   Tk por módulo (crear `tk.Tk()` varias veces en un proceso falla de forma intermitente en Windows con
   «Can't find a usable tk.tcl») y registra los diálogos en `app.shown_messages` en lugar de quedarse
-  bloqueada en ellos. Si cambias `main_app.py`, ejecútalas y describe lo que no pudiste probar a mano.
+  bloqueada en ellos. Las pestañas están en `app.questions_tab`, `app.bank_tab`, `app.exam_tab` y
+  `app.grading_tab`. Si cambias `gui/`, ejecútalas y describe lo que no pudiste probar a mano.
 - Si editas ficheros con un script (heredoc de Python en Bash), cuidado con las barras invertidas:
   `\n` o `\b` pueden acabar como saltos de línea o caracteres de control dentro del código. Prefiere la
   herramienta de edición y compila después (`pytest tests/test_package_smoke.py`).
