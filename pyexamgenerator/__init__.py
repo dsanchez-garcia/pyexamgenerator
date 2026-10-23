@@ -7,7 +7,7 @@ __version__ = "0.3.0"  # 0.3.0: integración del subpaquete de corrección `grad
 # "Promueve" las clases y excepciones principales al espacio de nombres del paquete.
 # Esto permite a los usuarios importarlas directamente desde 'pyexamgenerator'.
 
-from .exam_generator import ExamGenerator, NoAcceptableQuestionsError
+from .exam_generator import ExamConfig, ExamGenerator, NoAcceptableQuestionsError
 from .question_generator import (
     QuestionGenerator,
     QuotaExceededError,
@@ -23,6 +23,7 @@ from . import grading
 # (Opcional pero muy recomendado) Define explícitamente la API pública.
 # Esto controla lo que se importa cuando un usuario hace `from pyexamgenerator import *`.
 __all__ = [
+    'ExamConfig',
     'ExamGenerator',
     'NoAcceptableQuestionsError',
     'QuestionGenerator',

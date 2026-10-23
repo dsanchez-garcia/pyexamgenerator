@@ -78,9 +78,11 @@ los botones.
 
 ### `ExamGenerator()` — `exam_generator.py`
 
-- `generate_exam_from_excel(bank_excel_path, output_dir, subject, exam, course, num_exams | exam_names,
-  selection_method, questions_per_topic | total_questions + total_distribution, export_moodle_xml,
-  update_excel, template_docx_path, session_output_path, check, review_callback, ...)` encadena
+- `generate_exam_from_excel(bank_excel_path, config=None, **opciones)`: las opciones son los campos
+  de `ExamConfig` (`output_dir`, `subject`, `exam`, `course`, `num_exams | exam_names`,
+  `selection_method`, `questions_per_topic | total_questions + total_distribution`,
+  `export_moodle_xml`, `update_excel`, `template_docx_path`, `session_output_path`, `check`,
+  `review_callback`…), en un `ExamConfig`, por nombre o ambos (el nombre manda). Encadena
   pasos privados, en este orden:
   1. `_load_acceptable_questions`: lee el banco (en cada llamada) y filtra `Estado == "aceptable"`
      (sin distinguir mayúsculas); si no hay ninguna, `NoAcceptableQuestionsError`.
@@ -94,8 +96,8 @@ los botones.
      (`_build_exam_variant_df`) que se reutiliza en DOCX, hoja de respuestas y XML, y escribe los
      DOCX (`_write_student_docx`: cabecera con huecos de identificación y `_add_answer_sheet`, en
      página impar y con columna `NC`; `_write_full_docx`: el `_completo` del profesor), el
-     `_completo.xlsx` y el XML de Moodle. Lo que comparten los DOCX de todos los tipos (textos de
-     cabecera, márgenes, plantilla) va en `_ExamDocumentSettings`.
+     `_completo.xlsx` y el XML de Moodle. Los DOCX de todos los tipos reciben el mismo `ExamConfig`
+     (textos de cabecera, márgenes, plantilla).
   5. Opcionalmente escribe una sesión de corrección y registra el uso en el banco
      (`_record_usage_in_bank`).
 
