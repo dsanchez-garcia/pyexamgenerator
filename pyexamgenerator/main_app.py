@@ -154,7 +154,7 @@ class ExamApp:
         self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
         self._install_copyable_messageboxes()
 
-        self.question_generator = None
+        self.question_generator: Optional[QuestionGenerator] = None
         self.exam_generator = ExamGenerator()
         self.prompt_types = self.load_prompt_types()
         self.selected_prompt_type = tk.StringVar()
@@ -1858,7 +1858,7 @@ class ExamApp:
 
         def work():
             def progress(message: str) -> None:
-                self.root.after(0, lambda m=message: self.update_status(f"Corrigiendo… {m}"))
+                self.root.after(0, self.update_status, f"Corrigiendo… {message}")
 
             api = self._grad_api(out_dir)
             api.run_full_pipeline(cfg, progress_callback=progress)
@@ -4184,7 +4184,7 @@ class ExamApp:
             add_only_acceptable=only_acceptable,
         )
 
-        if added_count == -1:
+        if added_count == -1 or df_updated is None:
             messagebox.showerror("Error", "Error al procesar los archivos.")
             return
 
@@ -4352,7 +4352,7 @@ class ExamApp:
         exams = [{"path": spec["path"], "label": spec["label"]} for spec in self.update_exam_specs]
         total_matched, df_updated, stats = self.question_bank_manager.update_bank_with_exams(bank_path, exams)
 
-        if total_matched == -1:
+        if total_matched == -1 or df_updated is None:
             messagebox.showerror("Error", "Error al procesar los archivos. Revise la consola para más detalles.")
             return
 

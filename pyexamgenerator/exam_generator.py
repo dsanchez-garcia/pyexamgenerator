@@ -16,11 +16,13 @@
 
 import logging
 from docx import Document
-from docx.shared import Inches, Pt, Cm, RGBColor
+from docx.document import Document as DocxDocument  # the class; docx.Document is a factory function
+from docx.shared import Inches, Pt, Cm, Length, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, ns
+from docx.oxml.xmlchemy import BaseOxmlElement
 
 import pandas as pd
 import random
@@ -29,13 +31,24 @@ from xml.dom import minidom
 import re
 import os
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional, Tuple, Dict  # Importing Optional and Tuple for type hinting
+from typing import Any, Callable, Iterable, Optional, Tuple, Dict, cast
 
 from pyexamgenerator import schema
 from pyexamgenerator._console import ask_yes_no, stdin_is_interactive
 from pyexamgenerator._text import safe_filename_part, strip_accents
 
 logger = logging.getLogger(__name__)
+
+
+def _text_width(section) -> Length:
+    """Width between the side margins of a DOCX ``section``.
+
+    python-docx types the page width and the margins as optional; a document always has them (its
+    default template sets them).
+    """
+    return Length(
+        cast(Length, section.page_width) - cast(Length, section.left_margin) - cast(Length, section.right_margin)
+    )
 
 
 # Define the WordML namespace used for direct XML manipulation in docx files.
@@ -380,7 +393,7 @@ class ExamGenerator:
 
     def _add_question_block(
         self,
-        document: Document,
+        document: DocxDocument,
         row: pd.Series,
         font_size: int,
         include_solution: bool = False,
@@ -415,7 +428,7 @@ class ExamGenerator:
 
     @staticmethod
     def _add_student_identification_header(
-        document: Document,
+        document: DocxDocument,
         subject: Optional[str],
         exam: Optional[str],
         course: Optional[str],
@@ -436,7 +449,7 @@ class ExamGenerator:
         for run in header_paragraph.runs:
             run.font.size = Pt(font_size)
 
-        available_width = section.page_width - section.left_margin - section.right_margin
+        available_width = _text_width(section)
         table = header.add_table(rows=2, cols=4, width=available_width)
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -444,7 +457,7 @@ class ExamGenerator:
 
         labels = [["Nombre", "Apellidos"], ["DNI/NIE", "Firma"]]
         label_width = Cm(2.1)
-        value_width = int((available_width - (label_width * 2)) / 2)
+        value_width = Length(int((available_width - (label_width * 2)) / 2))
         for row_idx, row_labels in enumerate(labels):
             for pair_idx, label in enumerate(row_labels):
                 label_cell = table.cell(row_idx, pair_idx * 2)
@@ -515,7 +528,7 @@ class ExamGenerator:
         return pd.DataFrame(columns=self.acceptable_df.columns)
 
     @staticmethod
-    def _distribute_questions_equitably(acceptable_df: pd.DataFrame, total_questions: int) -> Dict[str, int]:
+    def _distribute_questions_equitably(acceptable_df: pd.DataFrame, total_questions: int) -> Dict[Any, int]:
         """Spreads `total_questions` across the available topics as evenly as possible.
 
         Each topic receives the same number of questions; when the total is not divisible by the number
@@ -528,7 +541,7 @@ class ExamGenerator:
             total_questions (int): The total number of questions to distribute.
 
         Returns:
-            Dict[str, int]: Mapping of topic -> number of questions assigned (topics with 0 are omitted).
+            Dict[Any, int]: Mapping of topic -> number of questions assigned (topics with 0 are omitted).
 
         Raises:
             ValueError: If `total_questions` exceeds the number of available questions.
@@ -607,7 +620,7 @@ class ExamGenerator:
         # Create the "Texto respuesta correcta" (Correct answer text) column for shuffling.
         df['Texto respuesta correcta'] = df.apply(self._correct_answer_text, axis=1)
         for index, row in df.iterrows():
-            pregunta_num = row[schema.QUESTION_NUMBER] if renumber else index + 1
+            pregunta_num = row[schema.QUESTION_NUMBER] if renumber else index + 1  # type: ignore[operator]
             formatted_pregunta_num = f"{pregunta_num:02d}" if use_two_digits else str(pregunta_num)
 
             exam_text += f"Pregunta {formatted_pregunta_num}:\n"
@@ -661,7 +674,7 @@ class ExamGenerator:
         df.drop('Texto respuesta correcta', axis=1, inplace=True)
         return exam_text, full_exam_text
 
-    def _remove_empty_last_section(self, document: Document):
+    def _remove_empty_last_section(self, document: DocxDocument):
         """
         Attempts to remove the last section if it appears empty based on XML analysis.
         This is a workaround for a common issue in python-docx where an extra blank page is added.
@@ -679,15 +692,15 @@ class ExamGenerator:
                 body.remove(sect_prs[-1])
                 logger.info("Se ha intentado eliminar la última sección vacía (XML revisado con namespace).")
 
-    def _create_element(self, tag_name: str) -> OxmlElement:
+    def _create_element(self, tag_name: str) -> BaseOxmlElement:
         """Helper function to create an OxmlElement."""
         return OxmlElement(tag_name)
 
-    def _create_attribute(self, element: OxmlElement, name: str, value: str):
+    def _create_attribute(self, element: BaseOxmlElement, name: str, value: str):
         """Helper function to set an attribute on an OxmlElement."""
         element.set(ns.qn(name), value)
 
-    def add_page_number(self, document: Document) -> Document:
+    def add_page_number(self, document: DocxDocument) -> DocxDocument:
         """
         Adds page numbers to the footer of a Word document using direct docx XML manipulation.
         The format will be "Página X de Y".
@@ -758,6 +771,8 @@ class ExamGenerator:
             question_text (str): The text of the questions to be saved.
             file_name (Optional[str], optional): The name of the .docx file.
         """
+        if file_name is None:
+            raise ValueError("Indica el fichero DOCX en el que guardar las preguntas (file_name).")
         document = Document()
         document.add_paragraph(question_text)
         document.save(file_name)
@@ -1245,7 +1260,7 @@ class ExamGenerator:
             preview_exam_df.copy(), renumber=True, shuffle_answers=True
         )
         preview_document = Document()
-        title_paragraph = preview_document.add_paragraph(subject, style='Heading 1')
+        title_paragraph = preview_document.add_paragraph(subject or '', style='Heading 1')
         title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         subtitle_paragraph = preview_document.add_paragraph(
             f"Examen: {exam} - Curso: {course} - Tipo: Previsualización", style='Heading 1'
@@ -1273,7 +1288,7 @@ class ExamGenerator:
                 logger.error(f"Error al eliminar el archivo de previsualización: {e}")
         return approved
 
-    def _new_exam_document(self, settings: _ExamDocumentSettings, exam_type_name: str, subtitle: str) -> Document:
+    def _new_exam_document(self, settings: _ExamDocumentSettings, exam_type_name: str, subtitle: str) -> DocxDocument:
         """A blank document (or the template, with its placeholders filled) with the title and margins."""
         placeholder_map: Dict[str, str] = {
             "subject": settings.subject or "",
@@ -1286,7 +1301,7 @@ class ExamGenerator:
             Document(template_docx_path) if template_docx_path and os.path.exists(template_docx_path) else Document()
         )
         self._replace_placeholders_in_document(document, placeholder_map)
-        title_paragraph = document.add_paragraph(settings.subject, style='Heading 1')
+        title_paragraph = document.add_paragraph(settings.subject or '', style='Heading 1')
         title_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         subtitle_paragraph = document.add_paragraph(subtitle, style='Heading 1')
         subtitle_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -1332,7 +1347,7 @@ class ExamGenerator:
 
     def _add_answer_sheet(
         self,
-        document: Document,
+        document: DocxDocument,
         exam_df: pd.DataFrame,
         font_size: int,
         answer_sheet_instructions: Optional[str] = None,
@@ -1357,11 +1372,11 @@ class ExamGenerator:
         # The label column only needs room for words like 'Apellidos'/'DNI/NIE'; give the rest of
         # the page width to the data column so there is plenty of space to write name, surname, etc.
         answer_section = document.sections[-1]
-        available_width = answer_section.page_width - answer_section.left_margin - answer_section.right_margin
-        label_col_width = Cm(3.5)
+        available_width = _text_width(answer_section)
+        label_col_width: Length = Cm(3.5)
         if label_col_width > available_width * 0.5:
-            label_col_width = int(available_width * 0.4)
-        value_col_width = available_width - label_col_width
+            label_col_width = Length(int(available_width * 0.4))
+        value_col_width = Length(available_width - label_col_width)
         for row in student_table.rows:
             row.cells[0].width = label_col_width
             row.cells[1].width = value_col_width
@@ -1530,7 +1545,7 @@ class ExamGenerator:
         return pkl_path, json_path
 
     @staticmethod
-    def _replace_placeholders_in_document(document: Document, values: Dict[str, str]) -> None:
+    def _replace_placeholders_in_document(document: DocxDocument, values: Dict[str, str]) -> None:
         """Replaces placeholders in the format {{field}}. Missing placeholders are ignored."""
 
         def replace_in_paragraphs(paragraphs):

@@ -245,6 +245,12 @@ def test_preview_name_follows_the_exam_file_name_rules(tmp_path, monkeypatch):
     assert list((tmp_path / "salida").glob("*_A.docx"))
 
 
+def test_save_questions_to_docx_needs_a_file_name():
+    """Sin `file_name`, `ExamGenerator.save_questions_to_docx` fallaba dentro de python-docx (DEV-2)."""
+    with pytest.raises(ValueError, match="file_name"):
+        ExamGenerator().save_questions_to_docx("Pregunta 1: ...")
+
+
 def test_check_without_a_terminal_or_callback_fails_before_generating(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _bank().to_excel(tmp_path / "banco.xlsx", index=False)
