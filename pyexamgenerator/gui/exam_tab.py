@@ -270,7 +270,7 @@ class ExamTab:
         usage_alert_frame.grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky='ew')
         usage_alert_check = ttk.Checkbutton(
             usage_alert_frame,
-            text="Avisar si alguna pregunta supera este numero de usos:",
+            text="Avisar si alguna pregunta supera este número de usos:",
             variable=self.usage_alert_enabled_var,
         )
         usage_alert_check.grid(row=0, column=0, padx=5, pady=5, sticky='w')

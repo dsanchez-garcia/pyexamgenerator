@@ -16,7 +16,7 @@ Un "Prompt" son las instrucciones que le damos a la inteligencia artificial.
     > ¿Necesitas generar preguntas de Historia, Biología o Matemáticas? ¡Puedes crear tus propios prompts!
     >
     > *   **Añadir:** Haz clic en el botón "Añadir". Escribe un nombre (ej. "Historia") y las instrucciones para la IA (ej. "Genera preguntas sobre fechas clave...").
-    > *   **Editar:** Selecciona un prompt existente y haz clic en "Editar" para mejorarlo.
+    > *   **Editar:** Selecciona un prompt existente (también los predeterminados, como PRL) y haz clic en "Editar" para mejorarlo.
     > *   **Guardar:** Al crear o editar, el programa guarda tus prompts en el archivo `custom_prompts.json` de **tu carpeta de configuración** (en Windows, `%APPDATA%\pyexamgenerator`). El menú **Ayuda > Abrir carpeta de configuración** la abre, por si quieres copiar tus prompts a otro equipo.
     > *   **Reutilizar:** Tus prompts aparecerán en la lista cada vez que abras `pyexamgenerator`, sin importar desde qué carpeta lo hagas. Si una versión anterior los guardó en la carpeta desde la que abrías el programa, al abrirlo desde allí te ofrecerá moverlos a tu carpeta de configuración.
 *   **Acción para nuestro ejemplo:** Selecciona **PRL** en el menú desplegable.

@@ -37,7 +37,7 @@ import keyring
 from pyexamgenerator import user_config
 
 ENV_VAR = "GEMINI_API_KEY"
-PLACEHOLDER = "TU_CLAVE_API"  # shown in the GUI's empty key field: never a key
+PLACEHOLDER = "TU_CLAVE_API"  # put in the GUI's empty key field by older versions: never a key
 _SERVICE = "pyexamgenerator"
 _ACCOUNT = "gemini_api_key"
 _KEY_FILE_NAME = "credentials.json"

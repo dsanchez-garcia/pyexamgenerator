@@ -58,7 +58,8 @@ class QuestionsTab:
         self.pdf_files_var = tk.StringVar()
         self.num_questions_var = tk.StringVar(value="5")
         self.output_filename_var = tk.StringVar(value="preguntas")
-        self.api_key_var = tk.StringVar(value=self.api_key if self.api_key else credentials.PLACEHOLDER)
+        # Empty without a key: the masked entry showed the 'TU_CLAVE_API' placeholder as a saved key.
+        self.api_key_var = tk.StringVar(value=self.api_key or "")
         self.gen_questions_output_dir_var = tk.StringVar()
         self.selected_model_var = tk.StringVar(value='')
         self.existing_bank_for_gen_path = tk.StringVar()
@@ -122,8 +123,12 @@ class QuestionsTab:
         """
         Saves custom prompt types to a JSON file in the user's configuration folder.
         """
-        # Filtra para guardar solo los prompts que no son los predeterminados.
-        custom_prompts = {k: v for k, v in self.prompt_types.items() if k not in self.load_default_prompt_types()}
+        # Guarda los prompts propios y los predeterminados (PRL, PM) cuyo texto se ha editado: antes,
+        # esa edición se descartaba aquí y se perdía al cerrar la aplicación.
+        defaults = self.load_default_prompt_types()
+        custom_prompts = {
+            k: v for k, v in self.prompt_types.items() if k not in defaults or v.strip() != defaults[k].strip()
+        }
         try:
             user_config.write_json(user_config.PROMPTS_FILE, custom_prompts)
         except OSError as exc:
@@ -489,7 +494,7 @@ class QuestionsTab:
         )
 
         scope_frame = ttk.LabelFrame(
-            prompt_inclusion_frame, text="Alcance de Preguntas de para evitar similares en Prompt"
+            prompt_inclusion_frame, text="Alcance de Preguntas para evitar similares en Prompt"
         )
         scope_frame.pack(fill='x', padx=5, pady=(5, 0))
 
@@ -514,7 +519,7 @@ class QuestionsTab:
         ToolTip(all_topics_radio, "Se usarán como ejemplo todas las preguntas del banco, independientemente del tema.")
 
         content_frame = ttk.LabelFrame(
-            prompt_inclusion_frame, text="Contenido de Preguntas de para evitar similares en Prompt"
+            prompt_inclusion_frame, text="Contenido de Preguntas para evitar similares en Prompt"
         )
         content_frame.pack(fill='x', padx=5, pady=5)
 
@@ -871,7 +876,7 @@ class QuestionsTab:
         Saves the API key currently entered in the GUI.
 
         It goes encrypted to the system credential store (``credentials.save_api_key``); the
-        "TU_CLAVE_API" placeholder of the entry is never stored as if it were a key.
+        "TU_CLAVE_API" placeholder (older versions put it in the entry) is never stored as a key.
         It also shows informational or error messages to the user via messagebox.
         """
         try:
@@ -892,7 +897,7 @@ class QuestionsTab:
             messagebox.showinfo("Clave de API", "No había ninguna clave de API guardada en este equipo.")
             return
         self.api_key = credentials.get_api_key()  # GEMINI_API_KEY may still give one
-        self.api_key_var.set(self.api_key or credentials.PLACEHOLDER)
+        self.api_key_var.set(self.api_key or "")
         message = "Clave de API borrada de este equipo."
         if self.api_key:
             message += "\n\nLa variable de entorno GEMINI_API_KEY sigue definida y la aplicación la seguirá usando."
