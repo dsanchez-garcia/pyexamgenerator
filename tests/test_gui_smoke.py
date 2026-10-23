@@ -69,15 +69,15 @@ def test_main_window_builds_all_tabs(app):
 
 def test_edit_prompt_dialog_shows_the_existing_text(app):
     """GUI-1: «Editar» abría el diálogo con el prompt vacío (ganaba una copia duplicada del método)."""
-    app.add_edit_prompt_type(existing_type="PRL")
+    app.questions_tab.add_edit_prompt_type(existing_type="PRL")
 
     text_widget = next(w for w in _descendants(_last_dialog(app)) if isinstance(w, tk.Text))
-    assert text_widget.get("1.0", "end-1c").strip() == app.prompt_types["PRL"].strip()
+    assert text_widget.get("1.0", "end-1c").strip() == app.questions_tab.prompt_types["PRL"].strip()
 
 
 def test_renaming_a_custom_prompt_replaces_it(app, tmp_path):
-    app.prompt_types["Historia"] = "Prompt de historia"
-    app.add_edit_prompt_type(existing_type="Historia")
+    app.questions_tab.prompt_types["Historia"] = "Prompt de historia"
+    app.questions_tab.add_edit_prompt_type(existing_type="Historia")
     dialog = _last_dialog(app)
 
     entry = next(w for w in _descendants(dialog) if isinstance(w, ttk.Entry))
@@ -86,12 +86,12 @@ def test_renaming_a_custom_prompt_replaces_it(app, tmp_path):
     next(w for w in _descendants(dialog) if isinstance(w, ttk.Button)).invoke()
 
     assert app.shown_messages == []
-    assert "Historia" not in app.prompt_types
-    assert app.prompt_types["Historia moderna"] == "Prompt de historia"
+    assert "Historia" not in app.questions_tab.prompt_types
+    assert app.questions_tab.prompt_types["Historia moderna"] == "Prompt de historia"
     # ARC-12: in the user's configuration folder, not in the current one (tmp_path).
     assert user_config.read_json("custom_prompts.json") == {"Historia moderna": "Prompt de historia"}
     assert not (tmp_path / "custom_prompts.json").exists()
-    assert app.selected_prompt_type.get() == "Historia moderna"
+    assert app.questions_tab.selected_prompt_type.get() == "Historia moderna"
 
 
 def _old_config_files(folder):
@@ -107,7 +107,7 @@ def test_config_files_of_older_versions_are_moved_when_accepted(app, tmp_path):
 
     assert not (tmp_path / "custom_prompts.json").exists()
     assert not (tmp_path / "exam_generation_template.json").exists()
-    assert app.prompt_types["Historia"] == "Prompt antiguo"
+    assert app.questions_tab.prompt_types["Historia"] == "Prompt antiguo"
     assert user_config.read_json("exam_generation_template.json") == {"subject": "Física"}
     assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
@@ -119,7 +119,7 @@ def test_config_files_of_older_versions_stay_unused_when_declined(app, tmp_path,
     app._offer_legacy_config_migration()
 
     assert (tmp_path / "custom_prompts.json").exists()
-    assert "Historia" not in app.prompt_types
+    assert "Historia" not in app.questions_tab.prompt_types
     assert user_config.read_json("custom_prompts.json") is None
 
 
@@ -172,8 +172,8 @@ def test_help_menu_opens_the_grading_settings(app, monkeypatch):
 
 def test_api_key_placeholder_is_never_saved(app, tmp_path):
     """SEC-3: el marcador 'TU_CLAVE_API' del campo se podía guardar como si fuera una clave."""
-    app.api_key_var.set("TU_CLAVE_API")
-    app.save_current_api_key()
+    app.questions_tab.api_key_var.set("TU_CLAVE_API")
+    app.questions_tab.save_current_api_key()
 
     assert credentials.get_saved_api_key() is None
     assert not (tmp_path / "config.json").exists()
@@ -182,19 +182,19 @@ def test_api_key_placeholder_is_never_saved(app, tmp_path):
 
 def test_api_key_is_saved_encrypted_with_a_single_confirmation(app, tmp_path, memory_keyring):
     """SEC-3: «Guardar Clave» la escribía sin cifrar en config.json de la carpeta actual."""
-    app.api_key_var.set("  clave-de-prueba  ")
-    app.save_current_api_key()
+    app.questions_tab.api_key_var.set("  clave-de-prueba  ")
+    app.questions_tab.save_current_api_key()
 
     assert memory_keyring.passwords == {("pyexamgenerator", "gemini_api_key"): "clave-de-prueba"}
     assert not (tmp_path / "config.json").exists()
     assert [(kind, "cifrada" in message) for kind, _title, message in app.shown_messages] == [("info", True)]
-    assert app.api_key == "clave-de-prueba"
+    assert app.questions_tab.api_key == "clave-de-prueba"
 
 
 def test_saved_placeholder_from_older_versions_is_ignored(app, tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({"api_key": "TU_CLAVE_API"}), encoding="utf-8")
 
-    app._offer_legacy_key_migration()
+    app.questions_tab._offer_legacy_key_migration()
 
     assert app.shown_messages == []
     assert (tmp_path / "config.json").exists()
@@ -204,11 +204,11 @@ def test_unencrypted_key_from_older_versions_is_moved_to_the_store(app, tmp_path
     """SEC-3: al arrancar se ofrece mover la clave de un config.json antiguo al almacén y borrarlo."""
     (tmp_path / "config.json").write_text(json.dumps({"api_key": "clave-antigua"}), encoding="utf-8")
 
-    app._offer_legacy_key_migration()  # askyesno answers "yes" in these tests
+    app.questions_tab._offer_legacy_key_migration()  # askyesno answers "yes" in these tests
 
     assert credentials.get_saved_api_key() == "clave-antigua"
     assert not (tmp_path / "config.json").exists()
-    assert (app.api_key, app.api_key_var.get()) == ("clave-antigua", "clave-antigua")
+    assert (app.questions_tab.api_key, app.questions_tab.api_key_var.get()) == ("clave-antigua", "clave-antigua")
     assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
 
@@ -216,18 +216,18 @@ def test_declined_move_keeps_the_old_file_and_uses_its_key(app, tmp_path, monkey
     (tmp_path / "config.json").write_text(json.dumps({"api_key": "clave-antigua"}), encoding="utf-8")
     monkeypatch.setattr(messagebox, "askyesno", lambda *args, **kwargs: False)
 
-    app._offer_legacy_key_migration()
+    app.questions_tab._offer_legacy_key_migration()
 
     assert credentials.get_saved_api_key() is None
     assert (tmp_path / "config.json").exists()
-    assert app.api_key == "clave-antigua"
+    assert app.questions_tab.api_key == "clave-antigua"
 
 
 def test_old_copy_is_deleted_when_a_key_is_already_saved(app, tmp_path):
     credentials.save_api_key("clave-actual")
     (tmp_path / "config.json").write_text(json.dumps({"api_key": "clave-antigua"}), encoding="utf-8")
 
-    app._offer_legacy_key_migration()
+    app.questions_tab._offer_legacy_key_migration()
 
     assert credentials.get_saved_api_key() == "clave-actual"
     assert not (tmp_path / "config.json").exists()
@@ -235,12 +235,12 @@ def test_old_copy_is_deleted_when_a_key_is_already_saved(app, tmp_path):
 
 def test_saved_api_key_can_be_deleted(app):
     credentials.save_api_key("clave-guardada")
-    app.api_key_var.set("clave-guardada")
+    app.questions_tab.api_key_var.set("clave-guardada")
 
-    app.delete_saved_api_key()
+    app.questions_tab.delete_saved_api_key()
 
     assert credentials.get_saved_api_key() is None
-    assert app.api_key_var.get() == "TU_CLAVE_API"
+    assert app.questions_tab.api_key_var.get() == "TU_CLAVE_API"
     assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
 
@@ -255,13 +255,13 @@ def test_selecting_source_files_twice_keeps_a_valid_list(app, tmp_path, monkeypa
         open(path, "wb").close()
 
     monkeypatch.setattr(filedialog, "askopenfilenames", lambda **kwargs: (first,))
-    app.select_pdf_files()
+    app.questions_tab.select_pdf_files()
     monkeypatch.setattr(filedialog, "askopenfilenames", lambda **kwargs: (first, second))
-    app.select_pdf_files()
+    app.questions_tab.select_pdf_files()
     monkeypatch.setattr(filedialog, "askopenfilenames", lambda **kwargs: ())
-    app.select_pdf_files()  # cancelled dialog: the list is kept
+    app.questions_tab.select_pdf_files()  # cancelled dialog: the list is kept
 
-    assert gui_logic.split_paths(app.pdf_files_var.get()) == [first, second]
+    assert gui_logic.split_paths(app.questions_tab.pdf_files_var.get()) == [first, second]
 
 
 def test_invalid_final_grade_weight_shows_an_error(app, tmp_path):
@@ -491,7 +491,7 @@ def test_question_generation_runs_in_the_background(app, monkeypatch, tmp_path):
 
     import pandas as pd
 
-    import pyexamgenerator.main_app as main_app
+    import pyexamgenerator.gui.questions_tab as questions_tab
 
     release = threading.Event()
     seen = {}
@@ -505,19 +505,19 @@ def test_question_generation_runs_in_the_background(app, monkeypatch, tmp_path):
             release.wait(timeout=10)
             return pd.DataFrame({"Pregunta": ["¿Primera?", "¿Segunda?"]})
 
-    monkeypatch.setattr(main_app, "QuestionGenerator", FakeQuestionGenerator)
-    app.api_key_var.set("clave-de-prueba")
-    app.selected_model_var.set("models/gemini-de-prueba")
-    app.pdf_files_var.set(str(tmp_path / "tema1.pdf"))
+    monkeypatch.setattr(questions_tab, "QuestionGenerator", FakeQuestionGenerator)
+    app.questions_tab.api_key_var.set("clave-de-prueba")
+    app.questions_tab.selected_model_var.set("models/gemini-de-prueba")
+    app.questions_tab.pdf_files_var.set(str(tmp_path / "tema1.pdf"))
     button_states = []
 
     def while_generating():
         # The window keeps processing events while Gemini works, with the button disabled.
-        button_states.append(str(app.generate_questions_button.cget("state")))
+        button_states.append(str(app.questions_tab.generate_questions_button.cget("state")))
         release.set()
 
     def start():
-        app.generate_questions()
+        app.questions_tab.generate_questions()
         app.root.after(50, while_generating)
 
     _run_in_mainloop(app, start, done=lambda: bool(app.shown_messages))
@@ -525,13 +525,13 @@ def test_question_generation_runs_in_the_background(app, monkeypatch, tmp_path):
     assert seen["model"] == "models/gemini-de-prueba"
     assert seen["thread"] is not threading.main_thread()
     assert button_states == ["disabled"]
-    assert str(app.generate_questions_button.cget("state")) == "normal"
+    assert str(app.questions_tab.generate_questions_button.cget("state")) == "normal"
     assert app.shown_messages == [("info", "Éxito", "Preguntas generadas y guardadas (2 en total).")]
 
 
 def test_rejected_gemini_request_is_shown_with_its_own_title(app, monkeypatch, tmp_path):
     """ARC-11/PKG-8: una clave no válida o un modelo retirado se explican en un diálogo propio."""
-    import pyexamgenerator.main_app as main_app
+    import pyexamgenerator.gui.questions_tab as questions_tab
     from pyexamgenerator import GeminiRequestError
 
     class RetiredModelGenerator:
@@ -541,12 +541,12 @@ def test_rejected_gemini_request_is_shown_with_its_own_title(app, monkeypatch, t
         def generate_multiple_choice_questions(self, **kwargs):
             raise GeminiRequestError("El modelo 'models/viejo' no existe o ya no está disponible (Error 404).")
 
-    monkeypatch.setattr(main_app, "QuestionGenerator", RetiredModelGenerator)
-    app.api_key_var.set("clave-de-prueba")
-    app.selected_model_var.set("models/viejo")
-    app.pdf_files_var.set(str(tmp_path / "tema1.pdf"))
+    monkeypatch.setattr(questions_tab, "QuestionGenerator", RetiredModelGenerator)
+    app.questions_tab.api_key_var.set("clave-de-prueba")
+    app.questions_tab.selected_model_var.set("models/viejo")
+    app.questions_tab.pdf_files_var.set(str(tmp_path / "tema1.pdf"))
 
-    _run_in_mainloop(app, app.generate_questions, done=lambda: bool(app.shown_messages))
+    _run_in_mainloop(app, app.questions_tab.generate_questions, done=lambda: bool(app.shown_messages))
 
     assert app.shown_messages == [
         (
@@ -555,14 +555,14 @@ def test_rejected_gemini_request_is_shown_with_its_own_title(app, monkeypatch, t
             "El modelo 'models/viejo' no existe o ya no está disponible (Error 404).",
         )
     ]
-    assert str(app.generate_questions_button.cget("state")) == "normal"
+    assert str(app.questions_tab.generate_questions_button.cget("state")) == "normal"
 
 
 def test_model_list_is_loaded_in_the_background(app, monkeypatch):
     """GUI-3: «Cargar Modelos» esperaba a la red con la ventana congelada."""
     import threading
 
-    import pyexamgenerator.main_app as main_app
+    import pyexamgenerator.gui.questions_tab as questions_tab
 
     seen = {}
 
@@ -584,13 +584,17 @@ def test_model_list_is_loaded_in_the_background(app, monkeypatch):
                 SimpleNamespace(name="models/otro-modelo"),
             ]
 
-    monkeypatch.setattr(main_app.genai, "Client", FakeClient)
-    app.api_key_var.set("clave-de-prueba")
+    monkeypatch.setattr(questions_tab.genai, "Client", FakeClient)
+    app.questions_tab.api_key_var.set("clave-de-prueba")
 
-    _run_in_mainloop(app, app.populate_models_table, done=lambda: str(app.load_models_button.cget("state")) == "normal")
+    _run_in_mainloop(
+        app,
+        app.questions_tab.populate_models_table,
+        done=lambda: str(app.questions_tab.load_models_button.cget("state")) == "normal",
+    )
 
     assert seen["thread"] is not threading.main_thread()
-    rows = [app.models_tree.item(item, "values") for item in app.models_tree.get_children()]
+    rows = [app.questions_tab.models_tree.item(item, "values") for item in app.questions_tab.models_tree.get_children()]
     assert [row[0] for row in rows] == ["models/gemini-de-prueba"]
     assert rows[0][-1] == "Línea 1 Línea 2"
     assert app.status_text.get().startswith("Se cargaron 1 modelos")
@@ -642,12 +646,16 @@ def test_exam_generation_runs_in_the_background_and_asks_in_the_main_thread(app,
 def test_mouse_wheel_scrolls_tables_and_text_boxes_inside_the_tabs(app):
     """GUI-6: la rueda del ratón se enlazaba a todos los widgets de la pestaña con "break", así que
     la tabla de modelos, el texto del prompt y la tabla de exámenes no se desplazaban."""
-    for widget in (app.models_tree, app.prompt_text_display, app.bank_tab.update_exams_tree):
+    for widget in (
+        app.questions_tab.models_tree,
+        app.questions_tab.prompt_text_display,
+        app.bank_tab.update_exams_tree,
+    ):
         assert widget.bind("<MouseWheel>") == ""
         assert widget.bind("<Button-4>") == ""
 
     # The rest of the tab still scrolls the page from any widget.
-    assert app.pdf_entry.bind("<MouseWheel>") != ""
+    assert app.questions_tab.pdf_entry.bind("<MouseWheel>") != ""
 
 
 def _page_widgets(widget, self_scrolling):
@@ -752,7 +760,7 @@ def test_exam_tab_starts_without_sample_values(app):
         app.exam_tab.xml_cat_additional_text,
     ):
         assert var.get() == ""
-    assert app.output_filename_var.get() == "preguntas"
+    assert app.questions_tab.output_filename_var.get() == "preguntas"
 
     app.exam_tab.generate_exams()
 

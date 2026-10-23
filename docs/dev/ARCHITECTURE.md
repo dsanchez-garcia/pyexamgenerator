@@ -222,8 +222,10 @@ cambia; un fichero mal escrito detiene la corrección con un `ValueError` que di
 - Una clase `ExamApp(root)`; `main()` crea `tk.Tk()` y lanza `mainloop()` (entry point de consola
   `pyexamgenerator`).
 - Las pestañas pasan a clases propias en `gui/` (ARC-1), una por módulo, que reciben la app:
-  `BankTab` (`gui/bank_tab.py`, «Gestionar Banco de Preguntas», en `app.bank_tab`) y `ExamTab`
-  (`gui/exam_tab.py`, «Generar Exámenes», en `app.exam_tab`) ya están separadas. Cada pestaña crea sus variables Tk y sus widgets, y usa de la app solo la
+  `QuestionsTab` (`gui/questions_tab.py`, «Generar Preguntas», en `app.questions_tab`, con la clave
+  de API y los tipos de prompt), `BankTab` (`gui/bank_tab.py`, «Gestionar Banco de Preguntas», en
+  `app.bank_tab`) y `ExamTab` (`gui/exam_tab.py`, «Generar Exámenes», en `app.exam_tab`) ya están
+  separadas. Cada pestaña crea sus variables Tk y sus widgets, y usa de la app solo la
   ventana y sus servicios (`self.app.root`, `_create_scrollable_tab`, `_bind_page_scroll`,
   `update_status`, `_run_in_background`, `_call_in_main_thread`). El `messagebox` con texto
   copiable está en `gui/_dialogs.py` y lo comparten la ventana y las pestañas.
@@ -231,7 +233,7 @@ cambia; un fichero mal escrito detiene la corrección con un `ValueError` que di
   credenciales), crea ~70 variables Tkinter y construye las pestañas: `create_question_tab`,
   `create_manage_bank_tab`, `create_exam_tab`, `create_grading_tab`, y el menú «Ayuda». Al final,
   si hay un `config.json` antiguo con la clave sin cifrar en el directorio actual, ofrece moverla al
-  almacén y borrarlo (`_offer_legacy_key_migration`).
+  almacén y borrarlo (`QuestionsTab._offer_legacy_key_migration`).
 - Hilos: las tareas largas se ejecutan fuera del hilo de la interfaz. Generación con Gemini, carga
   de modelos y generación de exámenes usan `_run_in_background` (deshabilita el botón, ejecuta en
   un hilo y llama a `on_success`/`on_error` en el hilo principal); la corrección usa
