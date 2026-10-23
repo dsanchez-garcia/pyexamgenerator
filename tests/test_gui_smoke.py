@@ -94,6 +94,22 @@ def test_renaming_a_custom_prompt_replaces_it(app, tmp_path):
     assert app.questions_tab.selected_prompt_type.get() == "Historia moderna"
 
 
+def test_edited_default_prompt_is_kept_after_restart(app):
+    """El texto editado de un prompt predeterminado (PRL, PM) no se guardaba: se perdía al cerrar."""
+    app.questions_tab.add_edit_prompt_type(existing_type="PRL")
+    dialog = _last_dialog(app)
+
+    text_widget = next(w for w in _descendants(dialog) if isinstance(w, tk.Text))
+    text_widget.delete("1.0", tk.END)
+    text_widget.insert("1.0", "Preguntas de PRL a mi manera.")
+    next(w for w in _descendants(dialog) if isinstance(w, ttk.Button)).invoke()
+
+    assert app.shown_messages == []
+    # Only the edited default is saved (PM is unchanged); on the next start it replaces the default.
+    assert user_config.read_json("custom_prompts.json") == {"PRL": "Preguntas de PRL a mi manera."}
+    assert app.questions_tab.load_prompt_types()["PRL"] == "Preguntas de PRL a mi manera."
+
+
 def _old_config_files(folder):
     (folder / "custom_prompts.json").write_text(json.dumps({"Historia": "Prompt antiguo"}), encoding="utf-8")
     (folder / "exam_generation_template.json").write_text(json.dumps({"subject": "Física"}), encoding="utf-8")
@@ -170,6 +186,13 @@ def test_help_menu_opens_the_grading_settings(app, monkeypatch):
     assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
 
+def test_api_key_field_is_empty_without_a_key(app):
+    """Sin clave, el campo mostraba asteriscos (el marcador 'TU_CLAVE_API', oculto) como si hubiera
+    una clave guardada, y una clave pegada detrás se guardaba como 'TU_CLAVE_API...'."""
+    assert app.questions_tab.api_key is None
+    assert app.questions_tab.api_key_var.get() == ""
+
+
 def test_api_key_placeholder_is_never_saved(app, tmp_path):
     """SEC-3: el marcador 'TU_CLAVE_API' del campo se podía guardar como si fuera una clave."""
     app.questions_tab.api_key_var.set("TU_CLAVE_API")
@@ -240,7 +263,7 @@ def test_saved_api_key_can_be_deleted(app):
     app.questions_tab.delete_saved_api_key()
 
     assert credentials.get_saved_api_key() is None
-    assert app.questions_tab.api_key_var.get() == "TU_CLAVE_API"
+    assert app.questions_tab.api_key_var.get() == ""
     assert [kind for kind, _title, _message in app.shown_messages] == ["info"]
 
 

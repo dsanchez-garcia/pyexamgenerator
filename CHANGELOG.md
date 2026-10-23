@@ -132,6 +132,9 @@ y este proyecto se adhiere al [Versionado Semántico](https://semver.org/spec/v2
 - **`ExamGrader` con un `questions_info` propio:** una pregunta sin número en el nombre fallaba con un `AttributeError` sin explicación; ahora da un `ValueError` que la nombra (los nombres que se leen del XML de Moodle siempre lo tienen). La corrección desde imágenes (`ImageExamGrader`) da el mismo error si una pregunta de un XML editado a mano no tiene número.
 - **`ExamGenerator.save_questions_to_docx` sin `file_name`:** fallaba dentro de python-docx (`AttributeError`); ahora da un `ValueError` que lo explica.
 - **Columnas de Moodle con las tildes rotas en algunos flujos:** la nota final no reconocía «Calificacin/10,00», la comparación de resultados «Direccin de correo» y el punto extra de teoría «Nmero de ID», aunque el resto de la corrección sí. Ahora todos usan los mismos nombres.
+- **Campo «Clave API de Gemini» sin clave:** mostraba asteriscos (el marcador `TU_CLAVE_API`, oculto) como si hubiera una clave guardada, y si se pegaba la clave sin borrarlos se guardaba `TU_CLAVE_API` seguido de la clave, que no funcionaba. Ahora el campo está vacío mientras no haya clave.
+- **Prompts predeterminados editados:** el texto de PRL o PM cambiado con «Editar» se usaba en la sesión, pero no se guardaba y se perdía al cerrar la aplicación. Ahora se guarda con tus prompts personalizados (los predeterminados sin cambios no se copian).
+- **Erratas en la interfaz:** «Avisar si alguna pregunta supera este número de usos» y «Alcance/Contenido de Preguntas para evitar similares en Prompt» decían «numero» y «de para».
 
 ## [0.3.0] - 2026-09-15
 
