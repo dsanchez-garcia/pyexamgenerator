@@ -34,9 +34,9 @@ try:
     import pymupdf as fitz
 except ImportError:
     try:
-        import fitz  # PyMuPDF < 1.24
+        import fitz  # type: ignore[no-redef]  # PyMuPDF < 1.24
     except ImportError:
-        fitz = None
+        fitz = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ class QuestionGenerator:
             Genera preguntas tipo test de opción múltiple enfocadas en Gestión de Proyectos.
             """,
         }
-        self.existing_bank_df = None
+        self.existing_bank_df: Optional[pd.DataFrame] = None
         self.similarity_threshold = 0.8  # Default threshold
         self.current_prompt_example_content_type = "solo_enunciados"  # Default value
 
@@ -270,7 +270,7 @@ class QuestionGenerator:
         doc = fitz.open(pdf_path)
         matrix = fitz.Matrix(zoom, zoom)
         try:
-            for page in doc:
+            for page in doc:  # type: ignore[attr-defined]  # iterable through __getitem__
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
                 rendered_pages.append(
                     {
@@ -615,7 +615,9 @@ class QuestionGenerator:
             document.add_heading('Banco de Preguntas - Pendiente de Revisar', level=1)
             for index, row in df.iterrows():
                 pregunta_paragraph = document.add_paragraph()
-                pregunta_run = pregunta_paragraph.add_run(f"Pregunta {index + 1}: {row[schema.QUESTION]}")
+                pregunta_run = pregunta_paragraph.add_run(
+                    f"Pregunta {index + 1}: {row[schema.QUESTION]}"  # type: ignore[operator]  # index: int
+                )
                 pregunta_run.bold = True
                 document.add_paragraph(f"Tema: {row[schema.TOPIC]}")
                 document.add_paragraph(f"Estado: {row[schema.STATUS]}")
@@ -1013,7 +1015,7 @@ class QuestionGenerator:
         os.makedirs(output_dir, exist_ok=True)
 
         self.final_df = pd.DataFrame()
-        self.rejected_questions_list = []  # Accumulates all rejected questions
+        self.rejected_questions_list: List[Dict] = []  # Accumulates all rejected questions
 
         if similarity_threshold is not None and 0 <= similarity_threshold <= 1.0:
             self.similarity_threshold = similarity_threshold
@@ -1114,7 +1116,7 @@ class QuestionGenerator:
                     current_chunk_images = image_chunks_to_process[i]
 
                 logger.info(f"\nProcesando fragmento {i + 1}/{chunks_count}...")
-                questions_accepted_for_this_chunk = []  # This list will hold question dicts
+                questions_accepted_for_this_chunk: List[Dict] = []
                 attempts_for_this_chunk = 0
 
                 while (
@@ -1141,6 +1143,7 @@ class QuestionGenerator:
                     )
 
                     try:
+                        contents: list | str
                         if input_mode == "image":
                             image_parts = [
                                 types.Part.from_bytes(data=item["bytes"], mime_type=item["mime_type"])

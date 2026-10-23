@@ -24,9 +24,9 @@ class ToolTip(object):
     """
 
     # Tooltips currently shown, hidden together when their window is hidden or closed.
-    _shown = set()
+    _shown: "set[ToolTip]" = set()
     # Toplevel windows that already have the handler that hides them (one per window).
-    _watched_toplevels = set()
+    _watched_toplevels: set[tk.Misc] = set()
 
     def __init__(self, widget, text=''):
         """

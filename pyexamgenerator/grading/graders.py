@@ -139,7 +139,10 @@ class ExamGrader:
             per_question_scores = {}
 
             for question_name, answer_map in self.questions_info.items():
-                question_num = int(re.search(r"\d+", question_name).group())
+                number = re.search(r"\d+", question_name)
+                if number is None:  # The XML names are 'Pregunta NN'; a caller's may not be.
+                    raise ValueError(f"La pregunta '{question_name}' no tiene número.")
+                question_num = int(number.group())
                 output_col = f"P. {question_num} /{points_str}"
 
                 student_answer = None
