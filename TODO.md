@@ -194,6 +194,11 @@ búscalas por nombre de función si no coinciden.
   y los avisos de la integración OCR; los mapeos de plantilla/sesión quedan en `ExamApp` porque
   enlazan variables Tk (`0375766`). Falta dividir `main_app.py` por pestañas (conviene acordar
   antes la estructura del subpaquete `gui/`).*
+  *Propuesta (2026-10-23, sin decidir): `pyexamgenerator/gui/app.py` con `ExamApp` (ventana, menús,
+  barra de estado, `_run_in_background`, `_call_in_main_thread`) y un módulo por pestaña
+  (`questions_tab.py`, `bank_tab.py`, `exam_tab.py`, `grading_tab.py`), cada uno con una clase que
+  recibe la app; `main_app.py` queda como módulo de compatibilidad (`ExamApp`, `main`) para el
+  comando `pyexamgenerator` y los tests. Un PR por pestaña, empezando por la más pequeña.*
 - [x] **ARC-2 (P2)** Código de pestaña con scroll copiado 4 veces (`:582,1646,2385,2758`) y
   guardado/carga de plantilla y sesión con listas de campos duplicadas (`:3821-3913`, `:1354-1443`).
   *Parcial (`dc0dc50`): la rueda del ratón de dos pestañas usa un único helper (`_bind_page_scroll`).*
@@ -221,6 +226,15 @@ búscalas por nombre de función si no coinciden.
   quedaban a mitad de fichero suben a la cabecera y cada bloque `__main__` queda al final. Falta
   dividir `attendance.py` y `extraction.py` (conviene acordar antes los módulos nuevos y mantener
   las rutas de import actuales).*
+  *Propuesta (2026-10-23, sin decidir): `attendance.py` se queda con las justificaciones
+  (`AbsenceJustificationManager`, su resultado y la CLI); `pir_bonus.py` con `PIRSession`,
+  `PIRBonusCalculator` y sus helpers de fechas, temas y grupos; `theory_bonus.py` con
+  `TheoryBonusApplier`, `apply_theory_bonus_from_attendance_quiz`, `TheoryTopicReporter` y
+  `export_theory_topic_reports`. `extraction.py` se queda con el OCR (`AnswerSheetExtractor`,
+  `SheetResult`…; sigue siendo el único con cv2/numpy/rapidocr) e `image_grading.py` recibe
+  `ImageExamGrader`, `QuestionInfo` y la CLI. Los módulos actuales reexportan lo movido (los tests
+  y la API importan `PIRBonusCalculator`, `ImageExamGrader`… desde ellos). Después, tiparlos con
+  mypy (DEV-2).*
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
   *Parcial (`58fe477`, PR #24; alcance decidido de forma autónoma el 2026-10-23): el método
@@ -229,6 +243,10 @@ búscalas por nombre de función si no coinciden.
   los ajustes comunes de los DOCX van en un `_ExamDocumentSettings` interno; con la misma semilla
   genera lo mismo que antes (comprobado en 12 escenarios). Falta el `ExamConfig` público: cambia
   la firma de un método público y conviene acordarlo.*
+  *Propuesta (2026-10-23, sin decidir): `ExamConfig` (dataclass pública) con todos los parámetros
+  salvo `bank_excel_path`, y `generate_exam_from_excel(bank_excel_path, config=None, **kwargs)`:
+  los argumentos actuales siguen valiendo (y se combinan con `config`); la GUI pasa un `ExamConfig`
+  y `_ExamDocumentSettings` se deriva de él.*
 - [x] **ARC-7 (P2)** `input()` en código de librería — `exam_generator.py:965` (`check=True`, solo
   acepta exactamente `"sí"`), `grading/extraction.py:1030,1265`. Sustituir por callbacks, como
   `usage_warning_callback`. — hecho en `b53bbcd` (la consola queda como opción por defecto en un
@@ -250,6 +268,10 @@ búscalas por nombre de función si no coinciden.
   los `print` a `logging` sigue en ARC-8).
 - [ ] **ARC-10 (P2)** Valores institucionales fijos en código (grupos `GIM`, `GITI-GIE-GIEI`, regla
   PIR, temas `LPRL`/`RSP`, columnas mojibake `"Nmero de ID"`). Moverlos a configuración.
+  *Propuesta (2026-10-23, sin decidir): un `grading_settings.json` en la carpeta de configuración
+  del usuario (`user_config`) con los grupos, la regla PIR, los temas y los alias de las columnas
+  de Moodle; sin fichero, los valores actuales de la UCA. La librería lo lee si existe y la GUI lo
+  abre desde «Ayuda». Las columnas de `grading` pendientes de ARC-3 usarían ese mismo esquema.*
 - [x] **ARC-11 (P2)** `QuestionGenerator`: errores de cuota/sobrecarga detectados por subcadena
   (`"429"`, `question_generator.py:980,994`) y `time.sleep(1)` fijo. Usar
   `google.genai.errors.APIError.code` y reintentos con backoff exponencial. — hecho en `f61113a`
