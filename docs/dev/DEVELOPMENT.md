@@ -34,7 +34,7 @@ venv/Scripts/python.exe -m mypy                           # tipos (módulos en [
 
 La CI también ejecuta `ruff check` (reglas `F` de pyflakes y `B` de bugbear), `ruff format
 --check` y `mypy` en modo no estricto sobre los módulos listados en `[tool.mypy]` de `pyproject.toml`
-(añade ahí los que tipes). Para revisar y formatear en cada commit:
+(están todos los del paquete: añade ahí los módulos nuevos). Para revisar y formatear en cada commit:
 `venv/Scripts/pre-commit.exe install` (configuración en `.pre-commit-config.yaml`).
 
 El commit que formateó todo el código está en `.git-blame-ignore-revs`: GitHub lo salta en la vista
