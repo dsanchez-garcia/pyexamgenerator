@@ -31,7 +31,8 @@ keys present in the file change; the others keep their default::
 - **pir**: the minimum grade of every topic quiz and the points of the bonus, when a flow is not given
   other values.
 - **columnas_moodle**: the names a Moodle export may give each column (the misspelt ones, like
-  «Nmero de ID», come from exports with broken accents).
+  «Nmero de ID», come from exports with broken accents). They are looked for when reading; the
+  files the flows write keep the column names of a Spanish Moodle.
 """
 
 from __future__ import annotations

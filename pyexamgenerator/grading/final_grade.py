@@ -18,20 +18,23 @@ import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._text import clean_text, find_column, normalize_key, parse_decimal
+from pyexamgenerator.grading.settings import moodle_columns
 
 
-_ID_CANDIDATES = ["Número de ID", "Numero de ID", "Nmero de ID", "ID", "Nombre de usuario", "DNI"]
-_FIRST_CANDIDATES = ["Nombre"]
-_LAST_CANDIDATES = ["Apellido(s)", "Apellidos", "Apellido"]
-_GRADE_CANDIDATES = [
-    "Calificación/10,00",
-    "Calificacion/10,00",
-    "Nota_Final",
-    "Nota",
-    "Calificación",
-    "Calificacion",
-    "Grade",
-]
+# The names of the Moodle export come from grading_settings.json (ARC-10): read at each use.
+def _id_candidates() -> List[str]:
+    return [*moodle_columns("id"), "ID", "Nombre de usuario", "DNI"]
+
+
+def _grade_candidates() -> List[str]:
+    return [
+        *moodle_columns("grade"),
+        "Nota_Final",
+        "Nota",
+        "Calificación",
+        "Calificacion",
+        "Grade",
+    ]
 
 
 class FinalGradeCalculator:
@@ -76,10 +79,10 @@ class FinalGradeCalculator:
                 label, copy_number = f"{base_label} ({copy_number})", copy_number + 1
             used_labels.add(label)
             weight = float(source.get("weight", 1.0))
-            id_col = source.get("id_col") or self.id_col or find_column(columns, _ID_CANDIDATES)
-            first_col = self.first_name_col or find_column(columns, _FIRST_CANDIDATES)
-            last_col = self.last_name_col or find_column(columns, _LAST_CANDIDATES)
-            grade_col = source.get("grade_col") or find_column(columns, _GRADE_CANDIDATES)
+            id_col = source.get("id_col") or self.id_col or find_column(columns, _id_candidates())
+            first_col = self.first_name_col or find_column(columns, moodle_columns("first_name"))
+            last_col = self.last_name_col or find_column(columns, moodle_columns("last_name"))
+            grade_col = source.get("grade_col") or find_column(columns, _grade_candidates())
             if grade_col is None:
                 raise ValueError(f"No se encontró una columna de nota en '{path}'. Indique 'grade_col' explícitamente.")
             parsed.append(

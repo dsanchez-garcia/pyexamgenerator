@@ -16,6 +16,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._text import clean_text, find_column, normalize_key, parse_decimal
+from pyexamgenerator.grading.settings import moodle_columns
 
 
 def _values_differ(old: Any, new: Any) -> bool:
@@ -26,10 +27,13 @@ def _values_differ(old: Any, new: Any) -> bool:
     return clean_text(old) != clean_text(new)
 
 
-_ID_CANDIDATES = ["Número de ID", "Numero de ID", "Nmero de ID", "ID", "Nombre de usuario", "DNI"]
-_FIRST_CANDIDATES = ["Nombre"]
-_LAST_CANDIDATES = ["Apellido(s)", "Apellidos", "Apellido"]
-_EMAIL_CANDIDATES = ["Dirección de correo", "Direccion de correo", "Correo", "Email"]
+# The names of the Moodle export come from grading_settings.json (ARC-10): read at each use.
+def _id_candidates() -> List[str]:
+    return [*moodle_columns("id"), "ID", "Nombre de usuario", "DNI"]
+
+
+def _email_candidates() -> List[str]:
+    return [*moodle_columns("email"), "Correo", "Email"]
 
 
 @dataclass
@@ -67,16 +71,16 @@ class ResultComparator:
         self.last_name_col = last_name_col
 
     def _resolve_keys(self, columns: Sequence[str]):
-        id_col = self.id_col if (self.id_col and self.id_col in columns) else find_column(columns, _ID_CANDIDATES)
+        id_col = self.id_col if (self.id_col and self.id_col in columns) else find_column(columns, _id_candidates())
         first_col = (
             self.first_name_col
             if (self.first_name_col and self.first_name_col in columns)
-            else find_column(columns, _FIRST_CANDIDATES)
+            else find_column(columns, moodle_columns("first_name"))
         )
         last_col = (
             self.last_name_col
             if (self.last_name_col and self.last_name_col in columns)
-            else find_column(columns, _LAST_CANDIDATES)
+            else find_column(columns, moodle_columns("last_name"))
         )
         return id_col, first_col, last_col
 
@@ -130,7 +134,7 @@ class ResultComparator:
                     e_id,
                     e_first,
                     e_last,
-                    find_column(existing_cols, _EMAIL_CANDIDATES),
+                    find_column(existing_cols, _email_candidates()),
                 ],
             )
         )

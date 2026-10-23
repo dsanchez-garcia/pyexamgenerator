@@ -140,3 +140,37 @@ def test_groups_come_from_the_settings():
         pd.DataFrame(columns=["Cuestionario:Cuestionario Tema 3 - Tarde (Real)", "Nota"])
     )
     assert quiz_columns == {("TEMA 03", "Tarde"): "Cuestionario:Cuestionario Tema 3 - Tarde (Real)"}
+
+
+def _final_grade(tmp_path, columns, row):
+    from pyexamgenerator.grading.final_grade import FinalGradeCalculator
+
+    path = tmp_path / "parcial.xlsx"
+    pd.DataFrame([row], columns=columns).to_excel(path, index=False)
+    return FinalGradeCalculator().compute_by_files([{"path": str(path), "label": "P1"}])
+
+
+def test_a_moodle_export_with_broken_accents_is_read_everywhere(tmp_path):
+    """La nota final no buscaba «Calificacin/10,00» (con la tilde rota), y la integración de Moodle sí."""
+    result = _final_grade(
+        tmp_path, ["Número de ID", "Nombre", "Apellido(s)", "Calificacin/10,00"], ["1", "Ana", "Gil", "7,5"]
+    )
+
+    assert result[["Número de ID", "Nota_Final"]].values.tolist() == [["1", 7.5]]
+
+
+def test_the_moodle_column_names_can_be_configured(tmp_path):
+    _write(
+        {
+            "columnas_moodle": {
+                "id": ["ID number"],
+                "nombre": ["First name"],
+                "apellidos": ["Surname"],
+                "nota": ["Grade/10.00"],
+            }
+        }
+    )
+
+    result = _final_grade(tmp_path, ["ID number", "First name", "Surname", "Grade/10.00"], ["1", "Ana", "Gil", "8"])
+
+    assert result[["Número de ID", "Nombre", "Apellido(s)", "Nota_Final"]].values.tolist() == [["1", "Ana", "Gil", 8.0]]

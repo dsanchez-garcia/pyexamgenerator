@@ -15,7 +15,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._text import normalize_key, parse_decimal
-from pyexamgenerator.grading.settings import current_settings
+from pyexamgenerator.grading.settings import current_settings, moodle_columns
 
 
 def _normalize_bonus_id(value: object) -> str:
@@ -138,7 +138,8 @@ def _compute_theory_bonus(
     out_df["Incremento_Aplicado"] = 0.0
     out_df["Motivo_No_Incremento"] = ""
 
-    id_candidates = ["Número de ID", "Numero de ID", "Nombre de usuario", "ID_Alumno", "ID_Oficial", "ID"]
+    # Exact column names (not normalized): the Moodle ones of grading_settings.json and the usual others.
+    id_candidates = [*moodle_columns("id"), "Numero de ID", "Nombre de usuario", "ID_Alumno", "ID_Oficial", "ID"]
     for idx, row in out_df.iterrows():
         id_keys = [_normalize_bonus_id(row.get(col, "")) for col in id_candidates if col in out_df.columns]
         name_key = normalize_key(f"{row.get('Nombre', '')} {row.get('Apellido(s)', '')}")

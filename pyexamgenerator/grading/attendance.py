@@ -20,7 +20,7 @@ from pyexamgenerator.grading._names import match_name
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import find_column, normalize_key, parse_decimal
 from pyexamgenerator.grading._topics import topic_key
-from pyexamgenerator.grading.settings import current_settings
+from pyexamgenerator.grading.settings import current_settings, moodle_columns
 
 # Moved to their own modules (ARC-5); still importable from here.
 from pyexamgenerator.grading.pir_bonus import PIRBonusCalculator as PIRBonusCalculator
@@ -385,15 +385,15 @@ class AbsenceJustificationManager:
 
     def _load_enrollment(self) -> pd.DataFrame:
         df = pd.read_excel(self.enrollment_xlsx_path, sheet_name=self.enrollment_sheet)
-        first_name_col = self._find_column(df.columns, self._candidates(self.first_name_col, ["Nombre"]))
-        last_name_col = self._find_column(
-            df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+        first_name_col = self._find_column(
+            df.columns, self._candidates(self.first_name_col, moodle_columns("first_name"))
         )
+        last_name_col = self._find_column(df.columns, self._candidates(self.last_name_col, moodle_columns("last_name")))
         email_col = self._find_column(
             df.columns,
-            self._candidates(self.email_col, ["Dirección de correo", "Direccin de correo", "Correo", "Email"]),
+            self._candidates(self.email_col, [*moodle_columns("email"), "Correo", "Email"]),
         )
-        id_col = self._find_column(df.columns, self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID"]))
+        id_col = self._find_column(df.columns, self._candidates(self.id_col, [*moodle_columns("id"), "ID"]))
 
         if first_name_col is None or last_name_col is None:
             raise ValueError("Enrollment file must contain first and last name columns.")
@@ -442,13 +442,15 @@ class AbsenceJustificationManager:
         attendance_df = pd.read_excel(
             self.attendance_xlsx_path, sheet_name=self.attendance_sheet, header=self.attendance_header_row
         )
-        first_name_col = self._find_column(attendance_df.columns, self._candidates(self.first_name_col, ["Nombre"]))
+        first_name_col = self._find_column(
+            attendance_df.columns, self._candidates(self.first_name_col, moodle_columns("first_name"))
+        )
         last_name_col = self._find_column(
-            attendance_df.columns, self._candidates(self.last_name_col, ["Apellido(s)", "Apellidos", "Apellido"])
+            attendance_df.columns, self._candidates(self.last_name_col, moodle_columns("last_name"))
         )
         id_col = self._find_column(
             attendance_df.columns,
-            self._candidates(self.id_col, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"]),
+            self._candidates(self.id_col, [*moodle_columns("id"), "ID", "ID de estudiante"]),
         )
 
         if first_name_col is None or last_name_col is None:
@@ -669,8 +671,8 @@ class AbsenceJustificationManager:
                     )
                 )
 
-        q_first_col = self._find_column(quizzes_df.columns, ["Nombre"])
-        q_last_col = self._find_column(quizzes_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
+        q_first_col = self._find_column(quizzes_df.columns, moodle_columns("first_name"))
+        q_last_col = self._find_column(quizzes_df.columns, moodle_columns("last_name"))
         if q_first_col is None or q_last_col is None:
             return pd.DataFrame()
 
@@ -680,9 +682,9 @@ class AbsenceJustificationManager:
             if key and key not in quiz_by_key:
                 quiz_by_key[key] = qrow
 
-        a_first_col = self._find_column(attendance_df.columns, ["Nombre"])
-        a_last_col = self._find_column(attendance_df.columns, ["Apellido(s)", "Apellidos", "Apellido"])
-        a_id_col = self._find_column(attendance_df.columns, ["Número de ID", "Nmero de ID", "ID", "ID de estudiante"])
+        a_first_col = self._find_column(attendance_df.columns, moodle_columns("first_name"))
+        a_last_col = self._find_column(attendance_df.columns, moodle_columns("last_name"))
+        a_id_col = self._find_column(attendance_df.columns, [*moodle_columns("id"), "ID", "ID de estudiante"])
 
         rows: List[Dict[str, object]] = []
         for _, arow in attendance_df.iterrows():

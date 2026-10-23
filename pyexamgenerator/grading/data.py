@@ -9,7 +9,7 @@ import pandas as pd
 
 from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._text import clean_text, find_column, normalize_key
-from pyexamgenerator.grading.settings import current_settings
+from pyexamgenerator.grading.settings import current_settings, moodle_columns
 
 
 QuestionMap = Dict[str, Dict[str, float]]
@@ -206,10 +206,10 @@ class EnrollmentMerger:
             self.source_dfs.append(df)
             columns = list(df.columns)
 
-            last_name_col = find_column(columns, ["Apellido(s)", "Apellidos", "Apellido"])
-            first_name_col = find_column(columns, ["Nombre"])
-            id_col = find_column(columns, ["Número de ID", "Nmero de ID", "ID", "DNI"])
-            email_col = find_column(columns, ["Dirección de correo", "Direccin de correo", "Email", "Correo"])
+            last_name_col = find_column(columns, moodle_columns("last_name"))
+            first_name_col = find_column(columns, moodle_columns("first_name"))
+            id_col = find_column(columns, [*moodle_columns("id"), "ID", "DNI"])
+            email_col = find_column(columns, [*moodle_columns("email"), "Email", "Correo"])
             subgroup_col = find_column(columns, ["Consulta", "Subgrupo", "Grupo", "Grupo prácticas"])
             source_group = _detect_macro_group(path)
 

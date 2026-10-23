@@ -12,6 +12,7 @@ from pyexamgenerator.grading._ids import normalize_id
 from pyexamgenerator.grading._paths import prepare_output_path
 from pyexamgenerator.grading._text import clean_text, find_column, normalize_key, normalize_text, parse_decimal
 from pyexamgenerator.grading.data import build_merged_enrollment_from_sources
+from pyexamgenerator.grading.settings import moodle_columns
 
 logger = logging.getLogger(__name__)
 
@@ -191,16 +192,16 @@ class MoodleGradeIntegrator:
     def _is_exam_totals_format(self, df: pd.DataFrame) -> bool:
         cols = list(df.columns)
         has_total_columns = any(self._parse_quiz_total_column(c) is not None for c in cols)
-        first_name_col = self._find_column(cols, ["Nombre"])
-        last_name_col = self._find_column(cols, ["Apellido(s)", "Apellidos", "Apellido"])
+        first_name_col = self._find_column(cols, moodle_columns("first_name"))
+        last_name_col = self._find_column(cols, moodle_columns("last_name"))
         return has_total_columns and first_name_col is not None and last_name_col is not None
 
     def _normalize_exam_totals_file(self, df: pd.DataFrame, file_path: str) -> pd.DataFrame:
         columns = list(df.columns)
-        id_source_col = self._find_column(columns, ["Número de ID", "Nmero de ID", "ID", "Nombre de usuario"])
-        first_name_source_col = self._find_column(columns, ["Nombre"])
-        last_name_source_col = self._find_column(columns, ["Apellido(s)", "Apellidos", "Apellido"])
-        email_source_col = self._find_column(columns, ["Dirección de correo", "Direccin de correo", "Email", "Correo"])
+        id_source_col = self._find_column(columns, [*moodle_columns("id"), "ID", "Nombre de usuario"])
+        first_name_source_col = self._find_column(columns, moodle_columns("first_name"))
+        last_name_source_col = self._find_column(columns, moodle_columns("last_name"))
+        email_source_col = self._find_column(columns, [*moodle_columns("email"), "Email", "Correo"])
 
         quiz_columns = []
         for col in columns:
@@ -249,19 +250,19 @@ class MoodleGradeIntegrator:
         rename_map = {}
         cols = list(df.columns)
 
-        id_col = self._find_column(cols, [self.id_col, "Número de ID", "Nmero de ID", "ID", "Nombre de usuario"])
+        id_col = self._find_column(cols, [self.id_col, *moodle_columns("id"), "ID", "Nombre de usuario"])
         if id_col and id_col != self.id_col:
             rename_map[id_col] = self.id_col
 
-        first_col = self._find_column(cols, [self.first_name_col, "Nombre"])
+        first_col = self._find_column(cols, [self.first_name_col, *moodle_columns("first_name")])
         if first_col and first_col != self.first_name_col:
             rename_map[first_col] = self.first_name_col
 
-        last_col = self._find_column(cols, [self.last_name_col, "Apellido(s)", "Apellidos", "Apellido"])
+        last_col = self._find_column(cols, [self.last_name_col, *moodle_columns("last_name")])
         if last_col and last_col != self.last_name_col:
             rename_map[last_col] = self.last_name_col
 
-        total_col = self._find_column(cols, [self.total_grade_col, "Calificación/10,00", "Calificacin/10,00"])
+        total_col = self._find_column(cols, [self.total_grade_col, *moodle_columns("grade")])
         if total_col and total_col != self.total_grade_col:
             rename_map[total_col] = self.total_grade_col
 
@@ -611,7 +612,7 @@ class OcrGradeIntegrator:
 
     @classmethod
     def _find_total_grade_col(cls, ocr_cols: List[str]) -> Optional[str]:
-        return cls._find_column(ocr_cols, ["calificacion1000", "calificacin1000", "total", "nota", "grade"])
+        return cls._find_column(ocr_cols, [*moodle_columns("grade"), "total", "nota", "grade"])
 
     def _build_group_map_from_enrollment(self) -> Dict[str, str]:
         if not self.enrollment_paths:
@@ -689,14 +690,14 @@ class OcrGradeIntegrator:
         general_cols = list(general_df.columns)
         ocr_cols = list(ocr_df.columns)
 
-        general_id_col = self._find_column(general_cols, ["numerodeid", "nmerodeid", "id", "nombredeusuario"])
-        general_first_name_col = self._find_column(general_cols, ["nombre", "firstname"])
+        general_id_col = self._find_column(general_cols, [*moodle_columns("id"), "id", "nombredeusuario"])
+        general_first_name_col = self._find_column(general_cols, [*moodle_columns("first_name"), "firstname"])
         general_last_name_col = self._find_column(
-            general_cols, ["apellidos", "apellido", "apellidosynombre", "lastname"]
+            general_cols, [*moodle_columns("last_name"), "apellidosynombre", "lastname"]
         )
-        ocr_id_col = self._find_column(ocr_cols, ["numerodeid", "nmerodeid", "idoficial", "id"])
-        ocr_first_name_col = self._find_column(ocr_cols, ["nombre", "firstname"])
-        ocr_last_name_col = self._find_column(ocr_cols, ["apellidos", "apellido", "lastname"])
+        ocr_id_col = self._find_column(ocr_cols, [*moodle_columns("id"), "idoficial", "id"])
+        ocr_first_name_col = self._find_column(ocr_cols, [*moodle_columns("first_name"), "firstname"])
+        ocr_last_name_col = self._find_column(ocr_cols, [*moodle_columns("last_name"), "lastname"])
         ocr_image_col = self._find_column(ocr_cols, ["imagen", "image", "archivo"])
         exam_type_col = self._find_exam_type_col(ocr_cols)
         total_grade_col = self._find_total_grade_col(ocr_cols)
@@ -869,12 +870,12 @@ class OcrGradeIntegrator:
         for col in quizzes_by_group_type.values():
             out_df[col] = pd.to_numeric(out_df[col].apply(self._to_float_grade), errors="coerce")
 
-        id_source_col = self._find_column(general_cols, ["numerodeid", "nmerodeid", "id", "nombredeusuario"])
-        first_name_source_col = self._find_column(general_cols, ["nombre", "firstname"])
+        id_source_col = self._find_column(general_cols, [*moodle_columns("id"), "id", "nombredeusuario"])
+        first_name_source_col = self._find_column(general_cols, [*moodle_columns("first_name"), "firstname"])
         last_name_source_col = self._find_column(
-            general_cols, ["apellidos", "apellido", "apellidosynombre", "lastname"]
+            general_cols, [*moodle_columns("last_name"), "apellidosynombre", "lastname"]
         )
-        email_source_col = self._find_column(general_cols, ["direcciondecorreo", "direccindecorreo", "email", "correo"])
+        email_source_col = self._find_column(general_cols, [*moodle_columns("email"), "email", "correo"])
 
         normalized_rows = []
         source_basename = Path(self.general_xlsx_path).name
@@ -919,12 +920,12 @@ class OcrGradeIntegrator:
         general_cols = list(general_df.columns)
         ocr_cols = list(ocr_df.columns)
 
-        general_id_col = self._find_column(general_cols, ["numerodeid", "nmerodeid", "id"])
-        general_first_name_col = self._find_column(general_cols, ["nombre", "firstname"])
-        general_last_name_col = self._find_column(general_cols, ["apellidos", "apellido", "lastname"])
-        ocr_id_col = self._find_column(ocr_cols, ["numerodeid", "nmerodeid", "idoficial", "id"])
-        ocr_first_name_col = self._find_column(ocr_cols, ["nombre", "firstname"])
-        ocr_last_name_col = self._find_column(ocr_cols, ["apellidos", "apellido", "lastname"])
+        general_id_col = self._find_column(general_cols, [*moodle_columns("id"), "id"])
+        general_first_name_col = self._find_column(general_cols, [*moodle_columns("first_name"), "firstname"])
+        general_last_name_col = self._find_column(general_cols, [*moodle_columns("last_name"), "lastname"])
+        ocr_id_col = self._find_column(ocr_cols, [*moodle_columns("id"), "idoficial", "id"])
+        ocr_first_name_col = self._find_column(ocr_cols, [*moodle_columns("first_name"), "firstname"])
+        ocr_last_name_col = self._find_column(ocr_cols, [*moodle_columns("last_name"), "lastname"])
         ocr_exam_type_col = self._find_exam_type_col(ocr_cols)
         ocr_image_col = self._find_column(ocr_cols, ["imagen", "image", "archivo"])
 
