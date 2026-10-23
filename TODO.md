@@ -245,6 +245,7 @@ búscalas por nombre de función si no coinciden.
   y la API importan `PIRBonusCalculator`, `ImageExamGrader`… desde ellos). Después, tiparlos con
   mypy (DEV-2).* — hecho en `b420694` (además, `_topics.topic_key` comparte la detección de temas
   entre las justificaciones y el PIR; `extraction` reexporta con un `__getattr__` de módulo).
+  Tipados con mypy en `ac6a583`.
 - [x] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
   *Parcial (`58fe477`, PR #24; alcance decidido de forma autónoma el 2026-10-23): el método
@@ -404,8 +405,9 @@ búscalas por nombre de función si no coinciden.
   *Ampliado en `2356d6c` (PR #25, 2026-10-23): `question_generator`, `question_bank_manager`,
   `tooltip` y `grading/{comparison,data,final_grade,graders}`, casi todo con anotaciones. Después,
   `exam_generator` y `main_app` (los DOCX se anotan con la
-  clase `docx.document.Document`; `docx.Document` es una función). Quedan
-  `grading/{attendance,extraction,integrations}` (15, 20 y 18 avisos).*
+  clase `docx.document.Document`; `docx.Document` es una función). Quedaban
+  `grading/{attendance,extraction,integrations}`: tras dividirlos (ARC-5) se tiparon en `ac6a583`
+  con los módulos nuevos, y mypy revisa ya todo el paquete.*
 - [x] **DEV-3 (P3)** Scripts `.bat` solo para Windows; `install_current_version.bat --add-path` usa
   `setx Path`, que trunca el PATH a 1.024 caracteres. Considerar `py -m pip install -e .` y
   documentar el PATH manualmente, o usar PowerShell. — hecho en `ca7376e` (`add_user_path.ps1`;
