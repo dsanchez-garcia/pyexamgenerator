@@ -216,7 +216,7 @@ búscalas por nombre de función si no coinciden.
   `integrations.py`, `attendance.py`, `extraction.py`). Unificar en `grading/_text.py`. — hecho en
   `27023c8` (de paso, las filas sin ID ni nombre ya no cuentan como un alumno en la nota final ni en
   la comparación).
-- [ ] **ARC-5 (P2)** Módulos de `grading` que son concatenaciones de ficheros antiguos (imports a
+- [x] **ARC-5 (P2)** Módulos de `grading` que son concatenaciones de ficheros antiguos (imports a
   mitad de fichero, bloques `if __name__ == "__main__"` intermedios en `integrations.py:1108`,
   `extraction.py:841`). Dividir `attendance.py` (1.890 líneas) y `extraction.py` (1.590).
   *Nota: `extraction.py` también define dos veces las funciones de módulo `_parse_args` y `main`
@@ -226,7 +226,7 @@ búscalas por nombre de función si no coinciden.
   quedaban a mitad de fichero suben a la cabecera y cada bloque `__main__` queda al final. Falta
   dividir `attendance.py` y `extraction.py` (conviene acordar antes los módulos nuevos y mantener
   las rutas de import actuales).*
-  *Propuesta (2026-10-23, sin decidir): `attendance.py` se queda con las justificaciones
+  *Propuesta (aprobada por el mantenedor el 2026-10-23): `attendance.py` se queda con las justificaciones
   (`AbsenceJustificationManager`, su resultado y la CLI); `pir_bonus.py` con `PIRSession`,
   `PIRBonusCalculator` y sus helpers de fechas, temas y grupos; `theory_bonus.py` con
   `TheoryBonusApplier`, `apply_theory_bonus_from_attendance_quiz`, `TheoryTopicReporter` y
@@ -234,7 +234,8 @@ búscalas por nombre de función si no coinciden.
   `SheetResult`…; sigue siendo el único con cv2/numpy/rapidocr) e `image_grading.py` recibe
   `ImageExamGrader`, `QuestionInfo` y la CLI. Los módulos actuales reexportan lo movido (los tests
   y la API importan `PIRBonusCalculator`, `ImageExamGrader`… desde ellos). Después, tiparlos con
-  mypy (DEV-2).*
+  mypy (DEV-2).* — hecho en `b420694` (además, `_topics.topic_key` comparte la detección de temas
+  entre las justificaciones y el PIR; `extraction` reexporta con un `__getattr__` de módulo).
 - [ ] **ARC-6 (P2)** `generate_exam_from_excel` ≈ 450 líneas y 26 parámetros. Introducir un
   `ExamConfig` (dataclass) y separar selección / construcción de variantes / escritura.
   *Parcial (`58fe477`, PR #24; alcance decidido de forma autónoma el 2026-10-23): el método

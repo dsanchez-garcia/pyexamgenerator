@@ -29,16 +29,14 @@ from pyexamgenerator.grading.integrations import MoodleGradeIntegrator, OcrGrade
 from pyexamgenerator.grading.session import GradingSession
 from pyexamgenerator.grading.final_grade import FinalGradeCalculator
 from pyexamgenerator.grading.comparison import ResultComparator, ComparisonResult
-from pyexamgenerator.grading.attendance import (
-    AbsenceJustificationManager,
-    PIRBonusCalculator,
-    TheoryBonusApplier,
-    TheoryTopicReporter,
-)
+from pyexamgenerator.grading.attendance import AbsenceJustificationManager
+from pyexamgenerator.grading.pir_bonus import PIRBonusCalculator
+from pyexamgenerator.grading.theory_bonus import TheoryBonusApplier, TheoryTopicReporter
 
 # OCR pesado (cv2/rapidocr): opcional -> pip install pyexamgenerator[grading]
 try:
-    from pyexamgenerator.grading.extraction import AnswerSheetExtractor, ImageExamGrader
+    from pyexamgenerator.grading.extraction import AnswerSheetExtractor
+    from pyexamgenerator.grading.image_grading import ImageExamGrader
 
     HAS_OCR = True
 except ImportError:

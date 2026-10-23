@@ -144,22 +144,27 @@ numerados y un `manifest.json`. Los resultados se guardan en `api.results` y en 
 | Método | Config | Clase de trabajo |
 |---|---|---|
 | `grade_from_excel` | `ExcelGradingConfig` | `graders.ExamGrader` |
-| `grade_from_images` | `ImageGradingConfig` | `extraction.ImageExamGrader` / `AnswerSheetExtractor` (OCR) |
+| `grade_from_images` | `ImageGradingConfig` | `image_grading.ImageExamGrader` / `extraction.AnswerSheetExtractor` (OCR) |
 | `integrate_moodle_grades` | `MoodleIntegrationConfig` | `integrations.MoodleGradeIntegrator` |
 | `integrate_ocr_grades` | `OCRIntegrationConfig` | `integrations.OcrGradeIntegrator` |
 | `run_moodle_plus_ocr_pipeline` | las dos anteriores | ambos integradores |
 | `run_full_pipeline` | `FullPipelineConfig` | matrícula → OCR → integración → asistencias → punto extra → informe (el «Pipeline completo» de la GUI; borra `_intermedios` también tras un error) |
 | `merge_enrollment_sources` | `EnrollmentMergeConfig` | `data.EnrollmentMerger` |
 | `process_absence_justifications` | `AbsenceJustificationConfig` | `attendance.AbsenceJustificationManager` |
-| `calculate_pir_bonus` | `PIRBonusConfig` | `attendance.PIRBonusCalculator` |
-| `apply_theory_bonus` | `TheoryBonusConfig` | `attendance.TheoryBonusApplier` |
-| `export_theory_topic_reports` | `TheoryTopicReportConfig` | `attendance.TheoryTopicReporter` |
+| `calculate_pir_bonus` | `PIRBonusConfig` | `pir_bonus.PIRBonusCalculator` |
+| `apply_theory_bonus` | `TheoryBonusConfig` | `theory_bonus.TheoryBonusApplier` |
+| `export_theory_topic_reports` | `TheoryTopicReportConfig` | `theory_bonus.TheoryTopicReporter` |
 | `compute_final_grade` | `FinalGradeConfig` | `final_grade.FinalGradeCalculator` |
 | `compare_results` | `ComparisonConfig` | `comparison.ResultComparator` |
 | `save_session` / `load_session` | — | `session.GradingSession` |
 
 Las clases de trabajo guardan sus entradas y salidas como atributos para poder inspeccionarlas.
-`data.SharedExamDataStore` cachea lecturas de Excel/XML compartidas.
+`data.SharedExamDataStore` cachea lecturas de Excel/XML compartidas. `attendance.py` y
+`extraction.py` siguen exportando lo que pasó a `pir_bonus.py`, `theory_bonus.py` e
+`image_grading.py` (ARC-5; en `extraction` con un `__getattr__` del módulo, porque `image_grading`
+lo importa), y `python -m pyexamgenerator.grading.extraction` sigue lanzando la corrección por
+imágenes. El tema de una sesión o un cuestionario (`LPRL`, `RSP`, `TEMA NN`) lo reconoce
+`_topics.topic_key`, igual para las justificaciones y para el PIR.
 
 - **Rutas de salida:** un nombre relativo se escribe en la carpeta de salida (`output_dir` del
   config o `default_output_dir` de la fachada; solo se conserva el nombre del fichero) y una ruta
@@ -175,7 +180,7 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
   mayúsculas) o el único alumno que contiene todas sus palabras. Si no, no asigna y devuelve el
   alumno más parecido como candidato para el informe (`GRD-6`): un umbral de parecido no distingue
   una errata de otra persona («Mario» y «María» puntúan 0,94). El OCR de hojas manuscritas sigue
-  usando parecido (`extraction.py`), con la incidencia `MISSING_ID` si no encuentra al alumno.
+  usando parecido (`image_grading.py`), con la incidencia `MISSING_ID` si no encuentra al alumno.
 - **`export_steps_dir`:** las entradas solo se vuelven a leer para exportarlas cuando se pide
   (`_export_step_input`).
 
@@ -202,8 +207,8 @@ Las clases de trabajo guardan sus entradas y salidas como atributos para poder i
 
 - `pip install pyexamgenerator[grading]` instala `rapidocr` (Python ≥ 3.13) o
   `rapidocr-onnxruntime` (< 3.13) junto con numpy/opencv compatibles (ver `pyproject.toml`).
-- Solo `grading/extraction.py` importa esas librerías; `grading/__init__.py` lo protege con
-  `try/except ImportError` y expone `HAS_OCR`.
+- Solo `grading/extraction.py` importa esas librerías (`grading/image_grading.py` depende de él);
+  `grading/__init__.py` importa los dos dentro de `try/except ImportError` y expone `HAS_OCR`.
 - `docs/source/conf.py` simula `cv2`/`rapidocr*` con `autodoc_mock_imports` para Read the Docs.
 
 ## GUI — `main_app.py`
@@ -276,6 +281,7 @@ En los tests, `conftest.py` la lleva a `tmp_path`.
 | `test_grading_attendance_flow.py` | justificaciones, punto extra en modo extremo y normal, `export_steps_dir` y `manifest.json`; correos de nombre parecido, desde otra dirección o que no justifican nada |
 | `test_grading_names.py` | emparejamiento seguro de un nombre con la matrícula (`match_name`) |
 | `test_grading_ocr_sheet.py` | hojas de respuestas PNG sintéticas con RapidOCR simulado, de la imagen a la nota (requiere `[grading]`) |
+| `test_grading_module_split.py` | ARC-5: los nombres movidos de `attendance` y `extraction` se siguen importando desde allí |
 | `test_grading_text_helpers.py` | reglas comunes de `grading/_text.py`; filas sin ID ni nombre en la nota final y la comparación |
 | `test_gui_logic.py` | `gui_logic.py` sin pantalla: listas de rutas, penalización, pesos, tipos forzados, nombres de examen, preguntas por tema |
 | `test_credentials.py` | clave de API: almacén de credenciales (en memoria, `conftest.py`), fichero alternativo, `GEMINI_API_KEY`, `config.json` antiguo y uso desde la librería |
